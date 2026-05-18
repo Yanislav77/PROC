@@ -62,7 +62,6 @@ def post_raw(body: dict, terminal_id: str = None) -> requests.Response:
     "type",
     "merchant_data",
     "financial_data",
-    "flow_data",
     "customer_data",
     "transaction_data",
 ])
@@ -111,9 +110,8 @@ def test_missing_currency():
 # ─────────────────────────────────────────────
 # MERCHANT DATA — отсутствие обязательных полей
 # ─────────────────────────────────────────────
-@pytest.mark.parametrize("missing_field", ["order_id", "webhook_url"])
-def test_missing_merchant_field(missing_field):
-    merchant = {k: v for k, v in MERCHANT_DATA.items() if k != missing_field}
+def test_missing_merchant_order_id():
+    merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "order_id"}
     body = {**VALID_PAYIN_BODY, "merchant_data": merchant}
     resp = post_raw(body)
     assert_error(resp, 422)
@@ -142,8 +140,9 @@ def test_expired_card():
     assert_error(resp, 422)
 
 
-def test_missing_cvv():
-    details = {k: v for k, v in CARD_DETAILS.items() if k != "cvv"}
+@pytest.mark.parametrize("missing_field", ["pan", "holder", "expiry_month", "expiry_year", "cvv"])
+def test_missing_card_required_field(missing_field):
+    details = {k: v for k, v in CARD_DETAILS.items() if k != missing_field}
     body = {
         **VALID_PAYIN_BODY,
         "transaction_data": {"method": "card", "details": details},
@@ -205,7 +204,7 @@ def test_unknown_terminal_id():
     raw = json.dumps(VALID_PAYIN_BODY, separators=(",", ":"))
     timestamp = str(int(time.time()))
     # Считаем подпись с несуществующим terminal_id
-    message = f"POST\n99999\n{timestamp}\n{raw}"
+    message = f"{timestamp}99999{raw}"
     sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
     headers = {
         "Content-Type":        "application/json",
@@ -231,7 +230,7 @@ def test_idempotency_key_deduplication():
     idempotency_key = str(uuid.uuid4())
 
     def send(ts: str):
-        message = f"POST\n{TERMINAL_ID}\n{ts}\n{raw}"
+        message = f"{ts}{TERMINAL_ID}{raw}"
         sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
         headers = {
             "Content-Type":        "application/json",
@@ -259,7 +258,7 @@ def test_idempotency_key_deduplication():
 def test_invalid_json_body():
     timestamp = str(int(time.time()))
     raw = "this is not json"
-    message = f"POST\n{TERMINAL_ID}\n{timestamp}\n{raw}"
+    message = f"{timestamp}{TERMINAL_ID}{raw}"
     sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
     headers = {
         "Content-Type":        "application/json",

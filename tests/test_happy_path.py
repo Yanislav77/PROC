@@ -209,3 +209,65 @@ def test_refund(payin_transaction_id):
     data = resp.json()
     assert "transaction_id" in data
     assert "status" in data
+
+
+# ─────────────────────────────────────────────
+# НЕОБЯЗАТЕЛЬНЫЕ ПОЛЯ — позитивные сценарии
+# ─────────────────────────────────────────────
+def test_payin_card_without_flow_data():
+    """flow_data не обязательное — запрос без него должен вернуть 201."""
+    body = {
+        "type": "payin",
+        "merchant_data": MERCHANT_DATA,
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    assert_success(resp, expected_type="payin")
+
+
+def test_payin_card_without_webhook_url():
+    """merchant_data.webhook_url не обязательное — запрос без него должен вернуть 201."""
+    merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "webhook_url"}
+    body = {
+        "type": "payin",
+        "merchant_data": merchant,
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    assert_success(resp, expected_type="payin")
+
+
+# ─────────────────────────────────────────────
+# НЕОБЯЗАТЕЛЬНЫЕ ПОЛЯ — позитивные сценарии
+# ─────────────────────────────────────────────
+def test_payin_card_without_flow_data():
+    """flow_data не обязательное — запрос без него должен вернуть 201."""
+    body = {
+        "type": "payin",
+        "merchant_data": MERCHANT_DATA,
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    assert_success(resp, expected_type="payin")
+
+
+def test_payin_card_without_webhook_url():
+    """merchant_data.webhook_url не обязательное — запрос без него должен вернуть 201."""
+    merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "webhook_url"}
+    body = {
+        "type": "payin",
+        "merchant_data": merchant,
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    assert_success(resp, expected_type="payin")

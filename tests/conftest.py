@@ -20,9 +20,9 @@ TERMINAL_ID    = os.environ.get("TERMINAL_ID", "374")
 # ─────────────────────────────────────────────
 # SIGNATURE HELPER
 # ─────────────────────────────────────────────
-def calc_signature(method: str, terminal_id: str, timestamp: str, raw_body: str) -> str:
-    """HMAC-SHA256 hexdigest: METHOD\nApi-Terminal-ID\nApi-Timestamp\nraw_body"""
-    message = f"{method}\n{terminal_id}\n{timestamp}\n{raw_body}"
+def calc_signature(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
+    """HMAC-SHA256: Api-Timestamp + Api-Terminal-ID + raw_body (POST) или Api-Timestamp + Api-Terminal-ID (GET/DELETE)"""
+    message = f"{timestamp}{terminal_id}{raw_body}"
     return hmac.new(
         SERVICE_SECRET.encode(),
         message.encode(),
@@ -33,9 +33,10 @@ def calc_signature(method: str, terminal_id: str, timestamp: str, raw_body: str)
 # ─────────────────────────────────────────────
 # REQUEST BUILDER
 # ─────────────────────────────────────────────
-def make_headers(terminal_id: str, raw_body: str, method: str = "POST") -> dict:
+def make_headers(terminal_id: str, raw_body: str = "", method: str = "POST") -> dict:
     timestamp = str(int(time.time()))
-    signature = calc_signature(method, terminal_id, timestamp, raw_body)
+    body_for_sig = raw_body if method == "POST" else ""
+    signature = calc_signature(terminal_id, timestamp, body_for_sig)
     return {
         "Content-Type":        "application/json",
         "Api-Terminal-ID":     terminal_id,
