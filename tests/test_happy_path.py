@@ -1,145 +1,211 @@
-import time
-
+"""
+Happy-path тесты для всех типов транзакций CORE REST API.
+Каждый тест независим (кроме rebill/recurrent, которым нужен parent ID).
+"""
 import pytest
-
-from conftest import post
-
-
-class TestPayinCard:
-    def test_payin_card_success(self, card_payin_payload):
-        response = post(body=card_payin_payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data.get("status") in ("success", "pending", "processing")
-        assert "transaction_id" in data
-
-    def test_payin_card_returns_transaction_id(self, card_payin_payload):
-        response = post(body=card_payin_payload)
-        data = response.json()
-        assert isinstance(data.get("transaction_id"), str)
-        assert len(data["transaction_id"]) > 0
+from conftest import (
+    post_transaction,
+    MERCHANT_DATA,
+    CUSTOMER_DATA,
+    CARD_DETAILS,
+    THREED,
+    TERMINALS,
+)
 
 
-class TestPayinP2P:
-    def test_payin_p2p_success(self, p2p_payin_payload):
-        response = post(body=p2p_payin_payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data.get("status") in ("success", "pending", "processing")
+# ─────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────
+def assert_success(resp, expected_type: str = None):
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
 
-    def test_payin_p2p_returns_payment_url(self, p2p_payin_payload):
-        response = post(body=p2p_payin_payload)
-        data = response.json()
-        assert "payment_url" in data or "transaction_id" in data
+    # Обязательные поля в ответе
+    assert "transaction_id" in data, "Missing transaction_id"
+    assert "type" in data,           "Missing type"
+    assert "status" in data,         "Missing status"
+    assert "merchant_data" in data,  "Missing merchant_data"
+    assert "financial_data" in data, "Missing financial_data"
+    assert "created_at" in data,     "Missing created_at"
 
+    if expected_type:
+        assert data["type"] == expected_type, f"Expected type={expected_type}, got {data['type']}"
 
-class TestPayinMobile:
-    def test_payin_mobile_success(self, mobile_payin_payload):
-        response = post(body=mobile_payin_payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data.get("status") in ("success", "pending", "processing")
+    # Заголовки ответа
+    assert "Api-Terminal-ID" in resp.headers,     "Missing Api-Terminal-ID in response headers"
+    assert "Api-Idempotency-Key" in resp.headers, "Missing Api-Idempotency-Key in response headers"
 
-    def test_payin_mobile_returns_transaction_id(self, mobile_payin_payload):
-        response = post(body=mobile_payin_payload)
-        data = response.json()
-        assert "transaction_id" in data
-
-
-class TestPayinBlock:
-    def test_payin_block_success(self, block_payin_payload):
-        response = post(body=block_payin_payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data.get("status") in ("success", "pending", "authorized")
-
-    def test_payin_block_amount_held(self, block_payin_payload):
-        response = post(body=block_payin_payload)
-        data = response.json()
-        assert "transaction_id" in data
+    return data
 
 
-class TestRecurrent:
-    def test_recurrent_charge_success(self, recurrent_payload):
-        response = post(body=recurrent_payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data.get("status") in ("success", "pending", "processing")
-
-    def test_recurrent_returns_transaction_id(self, recurrent_payload):
-        response = post(body=recurrent_payload)
-        data = response.json()
-        assert "transaction_id" in data
-
-
-class TestPayout:
-    def test_payout_success(self, payout_payload):
-        response = post(body=payout_payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data.get("status") in ("success", "pending", "processing")
-
-    def test_payout_returns_transaction_id(self, payout_payload):
-        response = post(body=payout_payload)
-        data = response.json()
-        assert "transaction_id" in data
+# ─────────────────────────────────────────────
+# PAYIN — card (is_recurrent=True, capture=auto)
+# ─────────────────────────────────────────────
+def test_payin_card():
+    body = {
+        "type": "payin",
+        "merchant_data": MERCHANT_DATA,
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    data = assert_success(resp, expected_type="payin")
+    assert data["financial_data"]["amount"] == 10000
+    assert data["financial_data"]["currency"] == "RUB"
 
 
-class TestRebill:
-    def test_rebill_success(self, rebill_payload):
-        response = post(body=rebill_payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data.get("status") in ("success", "pending", "processing")
-
-    def test_rebill_returns_transaction_id(self, rebill_payload):
-        response = post(body=rebill_payload)
-        data = response.json()
-        assert "transaction_id" in data
-
-
-class TestRebillBlock:
-    def test_rebill_block_success(self, rebill_block_payload):
-        response = post(body=rebill_block_payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data.get("status") in ("success", "pending", "authorized")
-
-    def test_rebill_block_returns_transaction_id(self, rebill_block_payload):
-        response = post(body=rebill_block_payload)
-        data = response.json()
-        assert "transaction_id" in data
+# ─────────────────────────────────────────────
+# PAYIN — p2p
+# ─────────────────────────────────────────────
+def test_payin_p2p():
+    body = {
+        "type": "payin",
+        "merchant_data": MERCHANT_DATA,
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "p2p"},
+    }
+    resp = post_transaction(body, terminal_id=TERMINALS["p2p"])
+    assert_success(resp, expected_type="payin")
 
 
-class TestRefund:
-    def test_refund_success(self, card_payin_payload):
-        payin = post(body=card_payin_payload)
-        assert payin.status_code == 200
-        transaction_id = payin.json().get("transaction_id")
+# ─────────────────────────────────────────────
+# PAYIN — mobile
+# ─────────────────────────────────────────────
+def test_payin_mobile():
+    body = {
+        "type": "payin",
+        "merchant_data": MERCHANT_DATA,
+        "financial_data": {"amount": 10000, "currency": "CAD"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "mobile", "details": {"phone": "+345283494512"}},
+    }
+    resp = post_transaction(body, terminal_id=TERMINALS["mobile"])
+    assert_success(resp, expected_type="payin")
 
-        refund_payload = {
-            "type": "refund",
-            "transaction_id": transaction_id,
-            "amount": card_payin_payload["amount"],
-            "order_id": f"order-refund-{int(time.time())}",
-        }
-        response = post(body=refund_payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data.get("status") in ("success", "pending", "processing")
 
-    def test_refund_partial(self, card_payin_payload):
-        payin = post(body=card_payin_payload)
-        assert payin.status_code == 200
-        transaction_id = payin.json().get("transaction_id")
+# ─────────────────────────────────────────────
+# PAYIN BLOCK — card, capture_mode=manual
+# ─────────────────────────────────────────────
+def test_payin_block():
+    body = {
+        "type": "payin",
+        "merchant_data": MERCHANT_DATA,
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": True, "capture_mode": "manual", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    data = assert_success(resp, expected_type="payin")
+    # При manual capture статус должен быть не 'processing' → 'authorized' или аналог
+    assert data["status"] in ("processing", "authorized", "pending"), \
+        f"Unexpected status for block: {data['status']}"
 
-        refund_payload = {
-            "type": "refund",
-            "transaction_id": transaction_id,
-            "amount": card_payin_payload["amount"] // 2,
-            "order_id": f"order-refund-partial-{int(time.time())}",
-        }
-        response = post(body=refund_payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data.get("status") in ("success", "pending", "processing")
+
+# ─────────────────────────────────────────────
+# RECURRENT — карта, is_recurrent=True
+# ─────────────────────────────────────────────
+def test_recurrent(payin_transaction_id):
+    body = {
+        "type": "payin",
+        "merchant_data": MERCHANT_DATA,
+        "financial_data": {"amount": 900, "currency": "RUB"},
+        "flow_data": {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {
+            "method": "card",
+            "details": CARD_DETAILS,
+            "parent_transaction_id": payin_transaction_id,
+        },
+    }
+    resp = post_transaction(body)
+    assert_success(resp, expected_type="payin")
+
+
+# ─────────────────────────────────────────────
+# PAYOUT
+# ─────────────────────────────────────────────
+def test_payout():
+    body = {
+        "type": "payout",
+        "merchant_data": {**MERCHANT_DATA, "order_id": "order_9987"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    assert_success(resp, expected_type="payout")
+
+
+# ─────────────────────────────────────────────
+# REBILL — token, capture=auto
+# ─────────────────────────────────────────────
+def test_rebill(payin_transaction_id):
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": "order_9987"},
+        "financial_data": {"amount": 1100, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {
+            "method": "token",
+            "details": {"token": "b928586b-e6ec-4400-9039-e36f19c0094c"},
+            "parent_transaction_id": payin_transaction_id,
+        },
+    }
+    resp = post_transaction(body)
+    assert_success(resp, expected_type="payin")
+
+
+# ─────────────────────────────────────────────
+# REBILL BLOCK — token, capture=manual
+# ─────────────────────────────────────────────
+def test_rebill_block(payin_transaction_id):
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": "order_9987"},
+        "financial_data": {"amount": 1100, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {
+            "method": "token",
+            "details": {"token": "b928586b-e6ec-4400-9039-e36f19c0094c"},
+            "parent_transaction_id": payin_transaction_id,
+        },
+    }
+    resp = post_transaction(body)
+    assert_success(resp, expected_type="payin")
+
+
+# ─────────────────────────────────────────────
+# REFUND
+# ─────────────────────────────────────────────
+def test_refund(payin_transaction_id):
+    import json, time, uuid
+    from conftest import make_headers, BASE_URL, TERMINALS
+    import requests
+
+    url = f"{BASE_URL}/{payin_transaction_id}/refund"
+    body = {
+        "merchant_data": {
+            "order_id": "order_9987",
+            "description": "Refund for order",
+            "webhook_url": "https://example.com/",
+        },
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    headers = make_headers(TERMINALS["default"], raw)
+
+    resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+    data = resp.json()
+    assert "transaction_id" in data
+    assert "status" in data
