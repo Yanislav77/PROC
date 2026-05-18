@@ -1,167 +1,136 @@
 import hashlib
 import hmac
-import json
-import os
 import time
-
+import uuid
 import pytest
 import requests
 
+# ─────────────────────────────────────────────
+# CONFIG  (edit here when env changes)
+# ─────────────────────────────────────────────
 BASE_URL = "https://papiv3preprod.testpaygate.com/api/v1/transactions"
 
-TERMINAL_ID = os.environ.get("API_TERMINAL_ID", "your-terminal-id")
-SECRET_KEY = os.environ.get("API_SECRET_KEY", "your-secret-key").encode()
+SERVICE_SECRET = "your_service_secret_here"  # ← заменить на реальный
+
+TERMINALS = {
+    "default":  "374",
+    "p2p":      "502",
+    "mobile":   "503",
+}
+
+# ─────────────────────────────────────────────
+# SIGNATURE HELPER
+# ─────────────────────────────────────────────
+def calc_signature(method: str, terminal_id: str, timestamp: str, raw_body: str) -> str:
+    """HMAC-SHA256 hexdigest: METHOD\nApi-Terminal-ID\nApi-Timestamp\nraw_body"""
+    message = f"{method}\n{terminal_id}\n{timestamp}\n{raw_body}"
+    return hmac.new(
+        SERVICE_SECRET.encode(),
+        message.encode(),
+        hashlib.sha256,
+    ).hexdigest()
 
 
-def make_signature(method: str, timestamp: str, raw_body: str) -> str:
-    """HMAC-SHA256: METHOD\nApi-Terminal-ID\nApi-Timestamp\nraw_body"""
-    message = "\n".join([method, TERMINAL_ID, timestamp, raw_body]).encode()
-    return hmac.new(SECRET_KEY, message, hashlib.sha256).hexdigest()
-
-
-def auth_headers(method: str, body: dict | None = None) -> dict:
+# ─────────────────────────────────────────────
+# REQUEST BUILDER
+# ─────────────────────────────────────────────
+def make_headers(terminal_id: str, raw_body: str, method: str = "POST") -> dict:
     timestamp = str(int(time.time()))
-    raw_body = json.dumps(body, separators=(",", ":")) if body else ""
-    signature = make_signature(method, timestamp, raw_body)
+    signature = calc_signature(method, terminal_id, timestamp, raw_body)
     return {
-        "Content-Type": "application/json",
-        "Api-Terminal-ID": TERMINAL_ID,
-        "Api-Timestamp": timestamp,
-        "Api-Signature": signature,
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     terminal_id,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       signature,
+        "Api-Timestamp":       timestamp,
     }
 
 
-def post(path: str = "", body: dict | None = None) -> requests.Response:
-    url = BASE_URL + (f"/{path}" if path else "")
-    headers = auth_headers("POST", body)
-    return requests.post(url, json=body, headers=headers)
+def post_transaction(body: dict, terminal_id: str = None) -> requests.Response:
+    import json
+    tid = terminal_id or TERMINALS["default"]
+    raw = json.dumps(body, separators=(",", ":"))
+    headers = make_headers(tid, raw)
+    return requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
 
 
-def get(path: str = "", params: dict | None = None) -> requests.Response:
-    url = BASE_URL + (f"/{path}" if path else "")
-    headers = auth_headers("GET")
-    return requests.get(url, params=params, headers=headers)
+# ─────────────────────────────────────────────
+# SHARED PAYLOADS
+# ─────────────────────────────────────────────
+CUSTOMER_DATA = {
+    "contact_info": {
+        "email": "user@example.com",
+        "phone": "+19991231212",
+        "country": "US",
+        "city": "New York",
+        "zip": "10001",
+        "state": "NY",
+    },
+    "personal_info": {
+        "first_name": "John",
+        "last_name": "Doe",
+        "date_of_birth": "1990-05-25",
+        "nationality": "JP",
+        "document_type": "passport",
+        "document_details": {
+            "number": "11223344",
+            "issue_date": "2020-05-25",
+            "expiry_date": "2030-05-25",
+            "gender": "M",
+            "issuer": "string",
+            "department_code": "032-018",
+            "series": "string",
+        },
+    },
+    "browser_info": {
+        "screen_height": 1080,
+        "screen_width": 1920,
+        "time_zone": -120,
+        "color_depth": 24,
+        "user_agent": "Mozilla/5.0",
+        "accept_header": "application/json",
+        "java_enabled": False,
+        "java_script_enabled": True,
+        "ip": "192.168.1.1",
+        "language": "ru",
+    },
+    "payer_info": {"payer_id": "payer_abc123"},
+}
+
+MERCHANT_DATA = {
+    "order_id": "order_1111",
+    "description": "Order payment",
+    "webhook_url": "https://merchant.com/webhook",
+    "return_url": "https://merchant.com/return",
+}
+
+CARD_DETAILS = {
+    "pan": "4111111111111111",
+    "holder": "JOHN DOE",
+    "expiry_month": "05",
+    "expiry_year": "27",
+    "cvv": "666",
+}
+
+THREED = {"challenge_window_size": "05"}
 
 
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
+# ─────────────────────────────────────────────
+# FIXTURE: transaction_id от успешного Payin
+# ─────────────────────────────────────────────
 @pytest.fixture(scope="session")
-def session():
-    s = requests.Session()
-    yield s
-
-
-@pytest.fixture
-def card_payin_payload():
-    return {
+def payin_transaction_id():
+    """Делает реальный Payin и возвращает transaction_id для Rebill/Recurrent."""
+    body = {
         "type": "payin",
-        "method": "card",
-        "amount": 100,
-        "currency": "USD",
-        "order_id": f"order-card-{int(time.time())}",
-        "card": {
-            "number": "4111111111111111",
-            "exp_month": "12",
-            "exp_year": "2030",
-            "cvv": "123",
-        },
-        "customer": {
-            "name": "Test User",
-            "email": "test@example.com",
-        },
+        "merchant_data": MERCHANT_DATA,
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
     }
-
-
-@pytest.fixture
-def p2p_payin_payload():
-    return {
-        "type": "payin",
-        "method": "p2p",
-        "amount": 200,
-        "currency": "USD",
-        "order_id": f"order-p2p-{int(time.time())}",
-        "customer": {"name": "Test User", "email": "test@example.com"},
-    }
-
-
-@pytest.fixture
-def mobile_payin_payload():
-    return {
-        "type": "payin",
-        "method": "mobile",
-        "amount": 50,
-        "currency": "USD",
-        "order_id": f"order-mobile-{int(time.time())}",
-        "phone": "+79001234567",
-        "customer": {"name": "Test User", "email": "test@example.com"},
-    }
-
-
-@pytest.fixture
-def block_payin_payload():
-    return {
-        "type": "payin",
-        "method": "block",
-        "amount": 100,
-        "currency": "USD",
-        "order_id": f"order-block-{int(time.time())}",
-        "card": {
-            "number": "4111111111111111",
-            "exp_month": "12",
-            "exp_year": "2030",
-            "cvv": "123",
-        },
-        "customer": {"name": "Test User", "email": "test@example.com"},
-    }
-
-
-@pytest.fixture
-def recurrent_payload():
-    return {
-        "type": "recurrent",
-        "amount": 100,
-        "currency": "USD",
-        "order_id": f"order-recurrent-{int(time.time())}",
-        "recurrent_token": "valid-recurrent-token",
-        "customer": {"name": "Test User", "email": "test@example.com"},
-    }
-
-
-@pytest.fixture
-def payout_payload():
-    return {
-        "type": "payout",
-        "amount": 100,
-        "currency": "USD",
-        "order_id": f"order-payout-{int(time.time())}",
-        "card": {
-            "number": "4111111111111111",
-            "exp_month": "12",
-            "exp_year": "2030",
-        },
-        "customer": {"name": "Test User", "email": "test@example.com"},
-    }
-
-
-@pytest.fixture
-def rebill_payload():
-    return {
-        "type": "rebill",
-        "amount": 100,
-        "currency": "USD",
-        "order_id": f"order-rebill-{int(time.time())}",
-        "rebill_token": "valid-rebill-token",
-    }
-
-
-@pytest.fixture
-def rebill_block_payload():
-    return {
-        "type": "rebill_block",
-        "amount": 100,
-        "currency": "USD",
-        "order_id": f"order-rebill-block-{int(time.time())}",
-        "rebill_token": "valid-rebill-token",
-    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Setup Payin failed: {resp.text}"
+    data = resp.json()
+    assert "transaction_id" in data, f"No transaction_id in response: {data}"
+    return data["transaction_id"]
