@@ -1,18 +1,21 @@
 import hashlib
 import hmac
+import os
 import time
 import uuid
 import pytest
 import requests
+from dotenv import load_dotenv
+
+load_dotenv()  # читает .env из корня проекта
 
 # ─────────────────────────────────────────────
-# CONFIG  (edit here when env changes)
+# CONFIG
 # ─────────────────────────────────────────────
 BASE_URL = "https://papiv3preprod.testpaygate.com/api/v1/transactions"
 
-SERVICE_SECRET = "your_service_secret_here"  # ← заменить на реальный
-
-TERMINAL_ID = "374"
+SERVICE_SECRET = os.environ["SERVICE_SECRET"]   # обязательно: задать в .env
+TERMINAL_ID    = os.environ.get("TERMINAL_ID", "374")
 
 # ─────────────────────────────────────────────
 # SIGNATURE HELPER
