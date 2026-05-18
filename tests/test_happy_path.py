@@ -9,7 +9,7 @@ from conftest import (
     CUSTOMER_DATA,
     CARD_DETAILS,
     THREED,
-    TERMINALS,
+    TERMINAL_ID,
 )
 
 
@@ -68,7 +68,7 @@ def test_payin_p2p():
         "customer_data": CUSTOMER_DATA,
         "transaction_data": {"method": "p2p"},
     }
-    resp = post_transaction(body, terminal_id=TERMINALS["p2p"])
+    resp = post_transaction(body)
     assert_success(resp, expected_type="payin")
 
 
@@ -84,7 +84,7 @@ def test_payin_mobile():
         "customer_data": CUSTOMER_DATA,
         "transaction_data": {"method": "mobile", "details": {"phone": "+345283494512"}},
     }
-    resp = post_transaction(body, terminal_id=TERMINALS["mobile"])
+    resp = post_transaction(body)
     assert_success(resp, expected_type="payin")
 
 
@@ -188,7 +188,7 @@ def test_rebill_block(payin_transaction_id):
 # ─────────────────────────────────────────────
 def test_refund(payin_transaction_id):
     import json, time, uuid
-    from conftest import make_headers, BASE_URL, TERMINALS
+    from conftest import make_headers, BASE_URL, TERMINAL_ID
     import requests
 
     url = f"{BASE_URL}/{payin_transaction_id}/refund"
@@ -201,7 +201,7 @@ def test_refund(payin_transaction_id):
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     raw = json.dumps(body, separators=(",", ":"))
-    headers = make_headers(TERMINALS["default"], raw)
+    headers = make_headers(TERMINAL_ID, raw)
 
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"

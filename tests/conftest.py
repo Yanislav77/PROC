@@ -12,11 +12,7 @@ BASE_URL = "https://papiv3preprod.testpaygate.com/api/v1/transactions"
 
 SERVICE_SECRET = "your_service_secret_here"  # ← заменить на реальный
 
-TERMINALS = {
-    "default":  "374",
-    "p2p":      "502",
-    "mobile":   "503",
-}
+TERMINAL_ID = "374"
 
 # ─────────────────────────────────────────────
 # SIGNATURE HELPER
@@ -48,7 +44,7 @@ def make_headers(terminal_id: str, raw_body: str, method: str = "POST") -> dict:
 
 def post_transaction(body: dict, terminal_id: str = None) -> requests.Response:
     import json
-    tid = terminal_id or TERMINALS["default"]
+    tid = terminal_id or TERMINAL_ID
     raw = json.dumps(body, separators=(",", ":"))
     headers = make_headers(tid, raw)
     return requests.post(BASE_URL, data=raw, headers=headers, timeout=30)

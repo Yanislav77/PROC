@@ -17,11 +17,11 @@ from conftest import (
     make_headers,
     BASE_URL,
     SERVICE_SECRET,
+    TERMINAL_ID,
     MERCHANT_DATA,
     CUSTOMER_DATA,
     CARD_DETAILS,
     THREED,
-    TERMINALS,
 )
 
 # ─────────────────────────────────────────────
@@ -49,7 +49,7 @@ def assert_error(resp, expected_status: int):
 
 def post_raw(body: dict, terminal_id: str = None) -> requests.Response:
     """Собирает запрос с корректной подписью, но произвольным телом."""
-    tid = terminal_id or TERMINALS["default"]
+    tid = terminal_id or TERMINAL_ID
     raw = json.dumps(body, separators=(",", ":"))
     headers = make_headers(tid, raw)
     return requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
@@ -160,7 +160,7 @@ def test_invalid_signature():
     timestamp = str(int(time.time()))
     headers = {
         "Content-Type":        "application/json",
-        "Api-Terminal-ID":     TERMINALS["default"],
+        "Api-Terminal-ID":     TERMINAL_ID,
         "Api-Idempotency-Key": str(uuid.uuid4()),
         "Api-Signature":       "0000000000000000000000000000000000000000000000000000000000000000",
         "Api-Timestamp":       timestamp,
@@ -176,7 +176,7 @@ def test_missing_signature_header():
     timestamp = str(int(time.time()))
     headers = {
         "Content-Type":        "application/json",
-        "Api-Terminal-ID":     TERMINALS["default"],
+        "Api-Terminal-ID":     TERMINAL_ID,
         "Api-Idempotency-Key": str(uuid.uuid4()),
         "Api-Timestamp":       timestamp,
         # Api-Signature намеренно отсутствует
@@ -231,11 +231,11 @@ def test_idempotency_key_deduplication():
     idempotency_key = str(uuid.uuid4())
 
     def send(ts: str):
-        message = f"POST\n{TERMINALS['default']}\n{ts}\n{raw}"
+        message = f"POST\n{TERMINAL_ID}\n{ts}\n{raw}"
         sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
         headers = {
             "Content-Type":        "application/json",
-            "Api-Terminal-ID":     TERMINALS["default"],
+            "Api-Terminal-ID":     TERMINAL_ID,
             "Api-Idempotency-Key": idempotency_key,
             "Api-Signature":       sig,
             "Api-Timestamp":       ts,
@@ -259,11 +259,11 @@ def test_idempotency_key_deduplication():
 def test_invalid_json_body():
     timestamp = str(int(time.time()))
     raw = "this is not json"
-    message = f"POST\n{TERMINALS['default']}\n{timestamp}\n{raw}"
+    message = f"POST\n{TERMINAL_ID}\n{timestamp}\n{raw}"
     sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
     headers = {
         "Content-Type":        "application/json",
-        "Api-Terminal-ID":     TERMINALS["default"],
+        "Api-Terminal-ID":     TERMINAL_ID,
         "Api-Idempotency-Key": str(uuid.uuid4()),
         "Api-Signature":       sig,
         "Api-Timestamp":       timestamp,
@@ -286,7 +286,7 @@ def test_refund_nonexistent_transaction():
         "financial_data": {"amount": 100, "currency": "RUB"},
     }
     raw = json.dumps(body, separators=(",", ":"))
-    headers = make_headers(TERMINALS["default"], raw)
+    headers = make_headers(TERMINAL_ID, raw)
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (404, 422)
 
@@ -302,6 +302,6 @@ def test_refund_amount_exceeds_original(payin_transaction_id):
         "financial_data": {"amount": 99999999, "currency": "RUB"},
     }
     raw = json.dumps(body, separators=(",", ":"))
-    headers = make_headers(TERMINALS["default"], raw)
+    headers = make_headers(TERMINAL_ID, raw)
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (422, 400)
