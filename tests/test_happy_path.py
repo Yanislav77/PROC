@@ -20,7 +20,6 @@ def assert_success(resp, expected_type: str = None):
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
     data = resp.json()
 
-    # Обязательные поля в ответе
     assert "transaction_id" in data, "Missing transaction_id"
     assert "type" in data,           "Missing type"
     assert "status" in data,         "Missing status"
@@ -31,7 +30,6 @@ def assert_success(resp, expected_type: str = None):
     if expected_type:
         assert data["type"] == expected_type, f"Expected type={expected_type}, got {data['type']}"
 
-    # Заголовки ответа
     assert "Api-Terminal-ID" in resp.headers,     "Missing Api-Terminal-ID in response headers"
     assert "Api-Idempotency-Key" in resp.headers, "Missing Api-Idempotency-Key in response headers"
 
@@ -39,9 +37,10 @@ def assert_success(resp, expected_type: str = None):
 
 
 # ─────────────────────────────────────────────
-# PAYIN — card (is_recurrent=True, capture=auto)
+# PAYIN
 # ─────────────────────────────────────────────
 def test_payin_card():
+    """Payin картой: is_recurrent=True, capture=auto. Проверяет сумму и валюту в ответе."""
     body = {
         "type": "payin",
         "merchant_data": MERCHANT_DATA,
@@ -56,10 +55,8 @@ def test_payin_card():
     assert data["financial_data"]["currency"] == "RUB"
 
 
-# ─────────────────────────────────────────────
-# PAYIN — p2p
-# ─────────────────────────────────────────────
 def test_payin_p2p():
+    """Payin через P2P-перевод. Детали карты не передаются — только method=p2p."""
     body = {
         "type": "payin",
         "merchant_data": MERCHANT_DATA,
@@ -72,10 +69,8 @@ def test_payin_p2p():
     assert_success(resp, expected_type="payin")
 
 
-# ─────────────────────────────────────────────
-# PAYIN — mobile
-# ─────────────────────────────────────────────
 def test_payin_mobile():
+    """Payin через мобильный платёж. Передаётся номер телефона в transaction_data.details."""
     body = {
         "type": "payin",
         "merchant_data": MERCHANT_DATA,
@@ -88,10 +83,8 @@ def test_payin_mobile():
     assert_success(resp, expected_type="payin")
 
 
-# ─────────────────────────────────────────────
-# PAYIN BLOCK — card, capture_mode=manual
-# ─────────────────────────────────────────────
 def test_payin_block():
+    """Payin картой с блокировкой средств (capture=manual). Деньги холдируются, но не списываются."""
     body = {
         "type": "payin",
         "merchant_data": MERCHANT_DATA,
@@ -102,15 +95,15 @@ def test_payin_block():
     }
     resp = post_transaction(body)
     data = assert_success(resp, expected_type="payin")
-    # При manual capture статус должен быть не 'processing' → 'authorized' или аналог
     assert data["status"] in ("processing", "authorized", "pending"), \
         f"Unexpected status for block: {data['status']}"
 
 
 # ─────────────────────────────────────────────
-# RECURRENT — карта, is_recurrent=True
+# RECURRENT / REBILL / PAYOUT / REFUND
 # ─────────────────────────────────────────────
 def test_recurrent(payin_transaction_id):
+    """Рекуррентный платёж по данным предыдущей транзакции (parent_transaction_id)."""
     body = {
         "type": "payin",
         "merchant_data": MERCHANT_DATA,
@@ -127,10 +120,8 @@ def test_recurrent(payin_transaction_id):
     assert_success(resp, expected_type="payin")
 
 
-# ─────────────────────────────────────────────
-# PAYOUT
-# ─────────────────────────────────────────────
 def test_payout():
+    """Выплата на карту (type=payout). Деньги идут от мерчанта клиенту."""
     body = {
         "type": "payout",
         "merchant_data": {**MERCHANT_DATA, "order_id": "order_9987"},
@@ -143,10 +134,8 @@ def test_payout():
     assert_success(resp, expected_type="payout")
 
 
-# ─────────────────────────────────────────────
-# REBILL — token, capture=auto
-# ─────────────────────────────────────────────
 def test_rebill(payin_transaction_id):
+    """Ребилл по сохранённому токену карты (method=token), capture=auto."""
     body = {
         "type": "payin",
         "merchant_data": {**MERCHANT_DATA, "order_id": "order_9987"},
@@ -163,10 +152,8 @@ def test_rebill(payin_transaction_id):
     assert_success(resp, expected_type="payin")
 
 
-# ─────────────────────────────────────────────
-# REBILL BLOCK — token, capture=manual
-# ─────────────────────────────────────────────
 def test_rebill_block(payin_transaction_id):
+    """Ребилл по токену с блокировкой средств (capture=manual). Деньги холдируются без списания."""
     body = {
         "type": "payin",
         "merchant_data": {**MERCHANT_DATA, "order_id": "order_9987"},
@@ -183,11 +170,9 @@ def test_rebill_block(payin_transaction_id):
     assert_success(resp, expected_type="payin")
 
 
-# ─────────────────────────────────────────────
-# REFUND
-# ─────────────────────────────────────────────
 def test_refund(payin_transaction_id):
-    import json, time, uuid
+    """Частичный возврат (1000 из 10000) по существующей транзакции через /{id}/refund."""
+    import json
     from conftest import make_headers, BASE_URL, TERMINAL_ID
     import requests
 
@@ -212,7 +197,7 @@ def test_refund(payin_transaction_id):
 
 
 # ─────────────────────────────────────────────
-# НЕОБЯЗАТЕЛЬНЫЕ ПОЛЯ — позитивные сценарии
+# НЕОБЯЗАТЕЛЬНЫЕ ПОЛЯ
 # ─────────────────────────────────────────────
 def test_payin_card_without_flow_data():
     """flow_data не обязательное — запрос без него должен вернуть 201."""
@@ -228,38 +213,7 @@ def test_payin_card_without_flow_data():
 
 
 def test_payin_card_without_webhook_url():
-    """merchant_data.webhook_url не обязательное — запрос без него должен вернуть 201."""
-    merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "webhook_url"}
-    body = {
-        "type": "payin",
-        "merchant_data": merchant,
-        "financial_data": {"amount": 10000, "currency": "RUB"},
-        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
-        "customer_data": CUSTOMER_DATA,
-        "transaction_data": {"method": "card", "details": CARD_DETAILS},
-    }
-    resp = post_transaction(body)
-    assert_success(resp, expected_type="payin")
-
-
-# ─────────────────────────────────────────────
-# НЕОБЯЗАТЕЛЬНЫЕ ПОЛЯ — позитивные сценарии
-# ─────────────────────────────────────────────
-def test_payin_card_without_flow_data():
-    """flow_data не обязательное — запрос без него должен вернуть 201."""
-    body = {
-        "type": "payin",
-        "merchant_data": MERCHANT_DATA,
-        "financial_data": {"amount": 10000, "currency": "RUB"},
-        "customer_data": CUSTOMER_DATA,
-        "transaction_data": {"method": "card", "details": CARD_DETAILS},
-    }
-    resp = post_transaction(body)
-    assert_success(resp, expected_type="payin")
-
-
-def test_payin_card_without_webhook_url():
-    """merchant_data.webhook_url не обязательное — запрос без него должен вернуть 201."""
+    """merchant_data.webhook_url не обязательное — может быть настроен на уровне терминала."""
     merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "webhook_url"}
     body = {
         "type": "payin",

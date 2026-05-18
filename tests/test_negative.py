@@ -41,7 +41,6 @@ def assert_error(resp, expected_status: int):
     assert resp.status_code == expected_status, (
         f"Expected {expected_status}, got {resp.status_code}: {resp.text}"
     )
-    # Ответ должен быть валидным JSON даже при ошибке
     data = resp.json()
     assert isinstance(data, dict), "Error response is not a JSON object"
     return data
@@ -66,6 +65,7 @@ def post_raw(body: dict, terminal_id: str = None) -> requests.Response:
     "transaction_data",
 ])
 def test_missing_top_level_field(missing_field):
+    """Каждое из 5 обязательных полей верхнего уровня по одному удаляется из запроса. Ожидается 422."""
     body = {k: v for k, v in VALID_PAYIN_BODY.items() if k != missing_field}
     resp = post_raw(body)
     assert_error(resp, 422)
@@ -75,6 +75,7 @@ def test_missing_top_level_field(missing_field):
 # НЕВАЛИДНЫЙ ТИП ТРАНЗАКЦИИ
 # ─────────────────────────────────────────────
 def test_invalid_transaction_type():
+    """Передаётся неизвестный тип транзакции. Ожидается 422."""
     body = {**VALID_PAYIN_BODY, "type": "unknown_type"}
     resp = post_raw(body)
     assert_error(resp, 422)
@@ -84,24 +85,28 @@ def test_invalid_transaction_type():
 # ФИНАНСОВЫЕ ДАННЫЕ — невалидные значения
 # ─────────────────────────────────────────────
 def test_negative_amount():
+    """Отрицательная сумма. Ожидается 422."""
     body = {**VALID_PAYIN_BODY, "financial_data": {"amount": -100, "currency": "RUB"}}
     resp = post_raw(body)
     assert_error(resp, 422)
 
 
 def test_zero_amount():
+    """Нулевая сумма. Ожидается 422."""
     body = {**VALID_PAYIN_BODY, "financial_data": {"amount": 0, "currency": "RUB"}}
     resp = post_raw(body)
     assert_error(resp, 422)
 
 
 def test_invalid_currency():
+    """Несуществующий код валюты. Ожидается 422."""
     body = {**VALID_PAYIN_BODY, "financial_data": {"amount": 1000, "currency": "INVALID"}}
     resp = post_raw(body)
     assert_error(resp, 422)
 
 
 def test_missing_currency():
+    """Поле currency отсутствует в financial_data. Ожидается 422."""
     body = {**VALID_PAYIN_BODY, "financial_data": {"amount": 1000}}
     resp = post_raw(body)
     assert_error(resp, 422)
@@ -111,6 +116,7 @@ def test_missing_currency():
 # MERCHANT DATA — отсутствие обязательных полей
 # ─────────────────────────────────────────────
 def test_missing_merchant_order_id():
+    """Поле order_id отсутствует в merchant_data. Ожидается 422."""
     merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "order_id"}
     body = {**VALID_PAYIN_BODY, "merchant_data": merchant}
     resp = post_raw(body)
@@ -121,7 +127,8 @@ def test_missing_merchant_order_id():
 # ДАННЫЕ КАРТЫ — невалидные значения
 # ─────────────────────────────────────────────
 def test_invalid_card_pan():
-    details = {**CARD_DETAILS, "pan": "1234"}  # слишком короткий
+    """PAN из 4 цифр — слишком короткий. Ожидается 422."""
+    details = {**CARD_DETAILS, "pan": "1234"}
     body = {
         **VALID_PAYIN_BODY,
         "transaction_data": {"method": "card", "details": details},
@@ -131,6 +138,7 @@ def test_invalid_card_pan():
 
 
 def test_expired_card():
+    """Истёкший срок карты (год 2020). Ожидается 422."""
     details = {**CARD_DETAILS, "expiry_year": "20", "expiry_month": "01"}
     body = {
         **VALID_PAYIN_BODY,
@@ -142,6 +150,7 @@ def test_expired_card():
 
 @pytest.mark.parametrize("missing_field", ["pan", "holder", "expiry_month", "expiry_year", "cvv"])
 def test_missing_card_required_field(missing_field):
+    """Каждое из 5 обязательных полей карты по одному удаляется из запроса. Ожидается 422."""
     details = {k: v for k, v in CARD_DETAILS.items() if k != missing_field}
     body = {
         **VALID_PAYIN_BODY,
@@ -155,6 +164,7 @@ def test_missing_card_required_field(missing_field):
 # АВТОРИЗАЦИЯ — неверная подпись
 # ─────────────────────────────────────────────
 def test_invalid_signature():
+    """Подпись заменена на строку из нулей. Ожидается 401 или 403."""
     raw = json.dumps(VALID_PAYIN_BODY, separators=(",", ":"))
     timestamp = str(int(time.time()))
     headers = {
@@ -171,6 +181,7 @@ def test_invalid_signature():
 
 
 def test_missing_signature_header():
+    """Заголовок Api-Signature отсутствует полностью. Ожидается 400, 401 или 403."""
     raw = json.dumps(VALID_PAYIN_BODY, separators=(",", ":"))
     timestamp = str(int(time.time()))
     headers = {
@@ -178,7 +189,6 @@ def test_missing_signature_header():
         "Api-Terminal-ID":     TERMINAL_ID,
         "Api-Idempotency-Key": str(uuid.uuid4()),
         "Api-Timestamp":       timestamp,
-        # Api-Signature намеренно отсутствует
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (400, 401, 403), (
@@ -187,9 +197,9 @@ def test_missing_signature_header():
 
 
 def test_missing_terminal_id_header():
+    """Заголовок Api-Terminal-ID отсутствует. Ожидается 400, 401 или 403."""
     raw = json.dumps(VALID_PAYIN_BODY, separators=(",", ":"))
     timestamp = str(int(time.time()))
-    # Подпись считаем без terminal_id (невалидная)
     headers = {
         "Content-Type":        "application/json",
         "Api-Idempotency-Key": str(uuid.uuid4()),
@@ -201,9 +211,9 @@ def test_missing_terminal_id_header():
 
 
 def test_unknown_terminal_id():
+    """Подпись корректно посчитана для несуществующего терминала 99999. Ожидается 401, 403 или 404."""
     raw = json.dumps(VALID_PAYIN_BODY, separators=(",", ":"))
     timestamp = str(int(time.time()))
-    # Считаем подпись с несуществующим terminal_id
     message = f"{timestamp}99999{raw}"
     sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
     headers = {
@@ -242,7 +252,7 @@ def test_idempotency_key_deduplication():
         return requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
 
     resp1 = send(timestamp)
-    resp2 = send(str(int(time.time())))  # повтор через секунду, тот же ключ
+    resp2 = send(str(int(time.time())))
 
     assert resp1.status_code == 201
     assert resp2.status_code in (200, 201), "Idempotent repeat should succeed"
@@ -256,6 +266,7 @@ def test_idempotency_key_deduplication():
 # НЕВАЛИДНЫЙ JSON В ТЕЛЕ
 # ─────────────────────────────────────────────
 def test_invalid_json_body():
+    """Тело запроса — невалидный JSON при Content-Type: application/json. Ожидается 400 или 422."""
     timestamp = str(int(time.time()))
     raw = "this is not json"
     message = f"{timestamp}{TERMINAL_ID}{raw}"
@@ -272,9 +283,10 @@ def test_invalid_json_body():
 
 
 # ─────────────────────────────────────────────
-# REFUND — несуществующий transaction_id
+# REFUND — граничные случаи
 # ─────────────────────────────────────────────
 def test_refund_nonexistent_transaction():
+    """Возврат по несуществующему transaction_id. Ожидается 404 или 422."""
     url = f"{BASE_URL}/nonexistent-id-000000/refund"
     body = {
         "merchant_data": {
@@ -291,6 +303,7 @@ def test_refund_nonexistent_transaction():
 
 
 def test_refund_amount_exceeds_original(payin_transaction_id):
+    """Сумма возврата (99999999) превышает сумму оригинальной транзакции (10000). Ожидается 400 или 422."""
     url = f"{BASE_URL}/{payin_transaction_id}/refund"
     body = {
         "merchant_data": {
