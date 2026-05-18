@@ -1,189 +1,307 @@
-import hashlib
-import hmac
+"""
+Негативные тесты CORE REST API.
+Покрывают: отсутствие обязательных полей, невалидные значения,
+неверную подпись, дедупликацию по idempotency key.
+"""
 import json
 import time
+import uuid
+import hashlib
+import hmac
 
 import pytest
 import requests
 
-from conftest import BASE_URL, TERMINAL_ID, post, auth_headers
+from conftest import (
+    post_transaction,
+    make_headers,
+    BASE_URL,
+    SERVICE_SECRET,
+    MERCHANT_DATA,
+    CUSTOMER_DATA,
+    CARD_DETAILS,
+    THREED,
+    TERMINALS,
+)
+
+# ─────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────
+VALID_PAYIN_BODY = {
+    "type": "payin",
+    "merchant_data": MERCHANT_DATA,
+    "financial_data": {"amount": 10000, "currency": "RUB"},
+    "flow_data": {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
+    "customer_data": CUSTOMER_DATA,
+    "transaction_data": {"method": "card", "details": CARD_DETAILS},
+}
 
 
-class TestMissingRequiredFields:
-    def test_missing_type(self, card_payin_payload):
-        payload = {k: v for k, v in card_payin_payload.items() if k != "type"}
-        response = post(body=payload)
-        assert response.status_code in (400, 422)
-        data = response.json()
-        assert "error" in data or "message" in data
-
-    def test_missing_amount(self, card_payin_payload):
-        payload = {k: v for k, v in card_payin_payload.items() if k != "amount"}
-        response = post(body=payload)
-        assert response.status_code in (400, 422)
-
-    def test_missing_currency(self, card_payin_payload):
-        payload = {k: v for k, v in card_payin_payload.items() if k != "currency"}
-        response = post(body=payload)
-        assert response.status_code in (400, 422)
-
-    def test_missing_order_id(self, card_payin_payload):
-        payload = {k: v for k, v in card_payin_payload.items() if k != "order_id"}
-        response = post(body=payload)
-        assert response.status_code in (400, 422)
-
-    def test_missing_card_number(self, card_payin_payload):
-        payload = card_payin_payload.copy()
-        payload["card"] = {k: v for k, v in payload["card"].items() if k != "number"}
-        response = post(body=payload)
-        assert response.status_code in (400, 422)
-
-    def test_empty_body(self):
-        response = post(body={})
-        assert response.status_code in (400, 422)
+def assert_error(resp, expected_status: int):
+    assert resp.status_code == expected_status, (
+        f"Expected {expected_status}, got {resp.status_code}: {resp.text}"
+    )
+    # Ответ должен быть валидным JSON даже при ошибке
+    data = resp.json()
+    assert isinstance(data, dict), "Error response is not a JSON object"
+    return data
 
 
-class TestInvalidValues:
-    def test_invalid_card_number(self, card_payin_payload):
-        payload = card_payin_payload.copy()
-        payload["card"] = {**payload["card"], "number": "0000000000000000"}
-        response = post(body=payload)
-        assert response.status_code in (400, 422, 200)
-        if response.status_code == 200:
-            assert response.json().get("status") in ("declined", "error", "failed")
-
-    def test_negative_amount(self, card_payin_payload):
-        payload = {**card_payin_payload, "amount": -100}
-        response = post(body=payload)
-        assert response.status_code in (400, 422)
-
-    def test_zero_amount(self, card_payin_payload):
-        payload = {**card_payin_payload, "amount": 0}
-        response = post(body=payload)
-        assert response.status_code in (400, 422)
-
-    def test_invalid_currency(self, card_payin_payload):
-        payload = {**card_payin_payload, "currency": "XXX"}
-        response = post(body=payload)
-        assert response.status_code in (400, 422)
-
-    def test_expired_card(self, card_payin_payload):
-        payload = card_payin_payload.copy()
-        payload["card"] = {**payload["card"], "exp_year": "2020", "exp_month": "01"}
-        response = post(body=payload)
-        assert response.status_code in (400, 422, 200)
-        if response.status_code == 200:
-            assert response.json().get("status") in ("declined", "error", "failed")
-
-    def test_invalid_cvv(self, card_payin_payload):
-        payload = card_payin_payload.copy()
-        payload["card"] = {**payload["card"], "cvv": "99"}
-        response = post(body=payload)
-        assert response.status_code in (400, 422)
-
-    def test_invalid_type(self, card_payin_payload):
-        payload = {**card_payin_payload, "type": "unknown_type"}
-        response = post(body=payload)
-        assert response.status_code in (400, 422)
+def post_raw(body: dict, terminal_id: str = None) -> requests.Response:
+    """Собирает запрос с корректной подписью, но произвольным телом."""
+    tid = terminal_id or TERMINALS["default"]
+    raw = json.dumps(body, separators=(",", ":"))
+    headers = make_headers(tid, raw)
+    return requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
 
 
-class TestInvalidSignature:
-    def _post_with_bad_signature(self, body: dict, bad_sig: str) -> requests.Response:
-        timestamp = str(int(time.time()))
+# ─────────────────────────────────────────────
+# ОТСУТСТВИЕ ОБЯЗАТЕЛЬНЫХ ПОЛЕЙ ВЕРХНЕГО УРОВНЯ
+# ─────────────────────────────────────────────
+@pytest.mark.parametrize("missing_field", [
+    "type",
+    "merchant_data",
+    "financial_data",
+    "flow_data",
+    "customer_data",
+    "transaction_data",
+])
+def test_missing_top_level_field(missing_field):
+    body = {k: v for k, v in VALID_PAYIN_BODY.items() if k != missing_field}
+    resp = post_raw(body)
+    assert_error(resp, 422)
+
+
+# ─────────────────────────────────────────────
+# НЕВАЛИДНЫЙ ТИП ТРАНЗАКЦИИ
+# ─────────────────────────────────────────────
+def test_invalid_transaction_type():
+    body = {**VALID_PAYIN_BODY, "type": "unknown_type"}
+    resp = post_raw(body)
+    assert_error(resp, 422)
+
+
+# ─────────────────────────────────────────────
+# ФИНАНСОВЫЕ ДАННЫЕ — невалидные значения
+# ─────────────────────────────────────────────
+def test_negative_amount():
+    body = {**VALID_PAYIN_BODY, "financial_data": {"amount": -100, "currency": "RUB"}}
+    resp = post_raw(body)
+    assert_error(resp, 422)
+
+
+def test_zero_amount():
+    body = {**VALID_PAYIN_BODY, "financial_data": {"amount": 0, "currency": "RUB"}}
+    resp = post_raw(body)
+    assert_error(resp, 422)
+
+
+def test_invalid_currency():
+    body = {**VALID_PAYIN_BODY, "financial_data": {"amount": 1000, "currency": "INVALID"}}
+    resp = post_raw(body)
+    assert_error(resp, 422)
+
+
+def test_missing_currency():
+    body = {**VALID_PAYIN_BODY, "financial_data": {"amount": 1000}}
+    resp = post_raw(body)
+    assert_error(resp, 422)
+
+
+# ─────────────────────────────────────────────
+# MERCHANT DATA — отсутствие обязательных полей
+# ─────────────────────────────────────────────
+@pytest.mark.parametrize("missing_field", ["order_id", "webhook_url"])
+def test_missing_merchant_field(missing_field):
+    merchant = {k: v for k, v in MERCHANT_DATA.items() if k != missing_field}
+    body = {**VALID_PAYIN_BODY, "merchant_data": merchant}
+    resp = post_raw(body)
+    assert_error(resp, 422)
+
+
+# ─────────────────────────────────────────────
+# ДАННЫЕ КАРТЫ — невалидные значения
+# ─────────────────────────────────────────────
+def test_invalid_card_pan():
+    details = {**CARD_DETAILS, "pan": "1234"}  # слишком короткий
+    body = {
+        **VALID_PAYIN_BODY,
+        "transaction_data": {"method": "card", "details": details},
+    }
+    resp = post_raw(body)
+    assert_error(resp, 422)
+
+
+def test_expired_card():
+    details = {**CARD_DETAILS, "expiry_year": "20", "expiry_month": "01"}
+    body = {
+        **VALID_PAYIN_BODY,
+        "transaction_data": {"method": "card", "details": details},
+    }
+    resp = post_raw(body)
+    assert_error(resp, 422)
+
+
+def test_missing_cvv():
+    details = {k: v for k, v in CARD_DETAILS.items() if k != "cvv"}
+    body = {
+        **VALID_PAYIN_BODY,
+        "transaction_data": {"method": "card", "details": details},
+    }
+    resp = post_raw(body)
+    assert_error(resp, 422)
+
+
+# ─────────────────────────────────────────────
+# АВТОРИЗАЦИЯ — неверная подпись
+# ─────────────────────────────────────────────
+def test_invalid_signature():
+    raw = json.dumps(VALID_PAYIN_BODY, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINALS["default"],
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       "0000000000000000000000000000000000000000000000000000000000000000",
+        "Api-Timestamp":       timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (401, 403), (
+        f"Expected 401 or 403 for bad signature, got {resp.status_code}"
+    )
+
+
+def test_missing_signature_header():
+    raw = json.dumps(VALID_PAYIN_BODY, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINALS["default"],
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Timestamp":       timestamp,
+        # Api-Signature намеренно отсутствует
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), (
+        f"Expected 4xx for missing signature, got {resp.status_code}"
+    )
+
+
+def test_missing_terminal_id_header():
+    raw = json.dumps(VALID_PAYIN_BODY, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    # Подпись считаем без terminal_id (невалидная)
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       "irrelevant",
+        "Api-Timestamp":       timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403)
+
+
+def test_unknown_terminal_id():
+    raw = json.dumps(VALID_PAYIN_BODY, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    # Считаем подпись с несуществующим terminal_id
+    message = f"POST\n99999\n{timestamp}\n{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     "99999",
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (401, 403, 404)
+
+
+# ─────────────────────────────────────────────
+# ДЕДУПЛИКАЦИЯ — повтор с тем же Idempotency-Key
+# ─────────────────────────────────────────────
+def test_idempotency_key_deduplication():
+    """Два запроса с одним Api-Idempotency-Key должны вернуть одинаковый transaction_id."""
+    import copy
+
+    body = copy.deepcopy(VALID_PAYIN_BODY)
+    raw = json.dumps(body, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    idempotency_key = str(uuid.uuid4())
+
+    def send(ts: str):
+        message = f"POST\n{TERMINALS['default']}\n{ts}\n{raw}"
+        sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
         headers = {
-            "Content-Type": "application/json",
-            "Api-Terminal-ID": TERMINAL_ID,
-            "Api-Timestamp": timestamp,
-            "Api-Signature": bad_sig,
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINALS["default"],
+            "Api-Idempotency-Key": idempotency_key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
         }
-        return requests.post(BASE_URL, json=body, headers=headers)
+        return requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
 
-    def test_wrong_signature(self, card_payin_payload):
-        response = self._post_with_bad_signature(card_payin_payload, "invalidsignature")
-        assert response.status_code in (401, 403)
+    resp1 = send(timestamp)
+    resp2 = send(str(int(time.time())))  # повтор через секунду, тот же ключ
 
-    def test_empty_signature(self, card_payin_payload):
-        response = self._post_with_bad_signature(card_payin_payload, "")
-        assert response.status_code in (400, 401, 403)
+    assert resp1.status_code == 201
+    assert resp2.status_code in (200, 201), "Idempotent repeat should succeed"
 
-    def test_missing_terminal_id(self, card_payin_payload):
-        timestamp = str(int(time.time()))
-        body_str = json.dumps(card_payin_payload, separators=(",", ":"))
-        headers = {
-            "Content-Type": "application/json",
-            "Api-Timestamp": timestamp,
-            "Api-Signature": "somesig",
-        }
-        response = requests.post(BASE_URL, json=card_payin_payload, headers=headers)
-        assert response.status_code in (400, 401, 403)
-
-    def test_missing_timestamp_header(self, card_payin_payload):
-        headers = {
-            "Content-Type": "application/json",
-            "Api-Terminal-ID": TERMINAL_ID,
-            "Api-Signature": "somesig",
-        }
-        response = requests.post(BASE_URL, json=card_payin_payload, headers=headers)
-        assert response.status_code in (400, 401, 403)
-
-    def test_tampered_body(self, card_payin_payload):
-        """Signature computed for original body but different body is sent."""
-        timestamp = str(int(time.time()))
-        original_body_str = json.dumps(card_payin_payload, separators=(",", ":"))
-        message = "\n".join(["POST", TERMINAL_ID, timestamp, original_body_str]).encode()
-        from conftest import SECRET_KEY
-        sig = hmac.new(SECRET_KEY, message, hashlib.sha256).hexdigest()
-
-        tampered = {**card_payin_payload, "amount": 99999}
-        headers = {
-            "Content-Type": "application/json",
-            "Api-Terminal-ID": TERMINAL_ID,
-            "Api-Timestamp": timestamp,
-            "Api-Signature": sig,
-        }
-        response = requests.post(BASE_URL, json=tampered, headers=headers)
-        assert response.status_code in (401, 403)
+    tid1 = resp1.json().get("transaction_id")
+    tid2 = resp2.json().get("transaction_id")
+    assert tid1 == tid2, f"Idempotency broken: got different IDs {tid1} vs {tid2}"
 
 
-class TestIdempotency:
-    def test_duplicate_order_id_rejected(self, card_payin_payload):
-        """Same order_id sent twice — second request must be deduplicated."""
-        first = post(body=card_payin_payload)
-        assert first.status_code == 200
+# ─────────────────────────────────────────────
+# НЕВАЛИДНЫЙ JSON В ТЕЛЕ
+# ─────────────────────────────────────────────
+def test_invalid_json_body():
+    timestamp = str(int(time.time()))
+    raw = "this is not json"
+    message = f"POST\n{TERMINALS['default']}\n{timestamp}\n{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINALS["default"],
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 422)
 
-        second = post(body=card_payin_payload)
-        assert second.status_code in (200, 409)
-        if second.status_code == 200:
-            first_id = first.json().get("transaction_id")
-            second_id = second.json().get("transaction_id")
-            assert first_id == second_id, "Duplicate order_id must return the same transaction"
 
-    def test_idempotency_different_amount_rejected(self, card_payin_payload):
-        """Same order_id but different amount — must be rejected."""
-        first = post(body=card_payin_payload)
-        assert first.status_code == 200
+# ─────────────────────────────────────────────
+# REFUND — несуществующий transaction_id
+# ─────────────────────────────────────────────
+def test_refund_nonexistent_transaction():
+    url = f"{BASE_URL}/nonexistent-id-000000/refund"
+    body = {
+        "merchant_data": {
+            "order_id": "order_9987",
+            "description": "Refund",
+            "webhook_url": "https://example.com/",
+        },
+        "financial_data": {"amount": 100, "currency": "RUB"},
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    headers = make_headers(TERMINALS["default"], raw)
+    resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (404, 422)
 
-        conflicting = {**card_payin_payload, "amount": card_payin_payload["amount"] + 1}
-        second = post(body=conflicting)
-        assert second.status_code in (400, 409, 422)
 
-    def test_unique_order_ids_both_accepted(self):
-        """Two requests with distinct order_ids — both must succeed."""
-        base = {
-            "type": "payin",
-            "method": "card",
-            "amount": 100,
-            "currency": "USD",
-            "card": {
-                "number": "4111111111111111",
-                "exp_month": "12",
-                "exp_year": "2030",
-                "cvv": "123",
-            },
-            "customer": {"name": "Test User", "email": "test@example.com"},
-        }
-        first = post(body={**base, "order_id": f"unique-{int(time.time())}-1"})
-        second = post(body={**base, "order_id": f"unique-{int(time.time())}-2"})
-        assert first.status_code == 200
-        assert second.status_code == 200
-        assert first.json().get("transaction_id") != second.json().get("transaction_id")
+def test_refund_amount_exceeds_original(payin_transaction_id):
+    url = f"{BASE_URL}/{payin_transaction_id}/refund"
+    body = {
+        "merchant_data": {
+            "order_id": "order_9987",
+            "description": "Refund",
+            "webhook_url": "https://example.com/",
+        },
+        "financial_data": {"amount": 99999999, "currency": "RUB"},
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    headers = make_headers(TERMINALS["default"], raw)
+    resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (422, 400)
