@@ -85,7 +85,7 @@ def test_payin_mobile():
     body = {
         "type": "payin",
         "merchant_data": MERCHANT_DATA,
-        "financial_data": {"amount": 10000, "currency": "CAD"},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
         "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
         "customer_data": CUSTOMER_DATA,
         "transaction_data": {"method": "mobile", "details": {"phone": "+345283494512"}},

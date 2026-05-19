@@ -109,9 +109,9 @@ def test_create_payment_link_minimal_customer_data():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
-def test_create_payment_link_usd():
-    """Создание платёжной ссылки в USD. Ожидается 201."""
-    body = {**_VALID_LINK_BODY, "financial_data": {"amount": 1000, "currency": "USD"}}
+def test_create_payment_link_rub():
+    """Создание платёжной ссылки с суммой 1000 RUB. Ожидается 201."""
+    body = {**_VALID_LINK_BODY, "financial_data": {"amount": 1000, "currency": "RUB"}}
     resp = post_payment_link(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
