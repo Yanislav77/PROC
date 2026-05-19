@@ -69,6 +69,20 @@ def test_payin_p2p():
     assert_success(resp, expected_type="payin")
 
 
+def test_payin_qr():
+    """Payin через QR-код (method=qr). Детали не передаются — только method=qr."""
+    body = {
+        "type": "payin",
+        "merchant_data": MERCHANT_DATA,
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "qr"},
+    }
+    resp = post_transaction(body)
+    assert_success(resp, expected_type="payin")
+
+
 def test_payin_mobile():
     """Payin через мобильный платёж. Передаётся номер телефона в transaction_data.details."""
     body = {

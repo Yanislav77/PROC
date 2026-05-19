@@ -24,6 +24,7 @@ from conftest import (
     THREED,
 )
 
+
 # ─────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────
@@ -317,3 +318,25 @@ def test_refund_amount_exceeds_original(payin_transaction_id):
     headers = make_headers(TERMINAL_ID, raw)
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (422, 400)
+
+
+# ─────────────────────────────────────────────
+# TIMESTAMP — устаревший запрос
+# ─────────────────────────────────────────────
+def test_timestamp_too_old():
+    """Запрос с Api-Timestamp более чем на 5 минут раньше текущего времени. Ожидается 401 или 403."""
+    raw = json.dumps(VALID_PAYIN_BODY, separators=(",", ":"))
+    old_timestamp = str(int(time.time()) - 400)  # ~6.5 минут назад
+    message = f"{old_timestamp}{TERMINAL_ID}{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       old_timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (401, 403), (
+        f"Expected 401 or 403 for old timestamp, got {resp.status_code}"
+    )
