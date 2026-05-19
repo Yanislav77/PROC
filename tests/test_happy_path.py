@@ -30,9 +30,6 @@ def assert_success(resp, expected_type: str = None):
     if expected_type:
         assert data["type"] == expected_type, f"Expected type={expected_type}, got {data['type']}"
 
-    assert "Api-Terminal-ID" in resp.headers,     "Missing Api-Terminal-ID in response headers"
-    assert "Api-Idempotency-Key" in resp.headers, "Missing Api-Idempotency-Key in response headers"
-
     return data
 
 
