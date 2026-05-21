@@ -450,6 +450,15 @@ def _status_phrase(code: int) -> str:
         return ""
 
 
+_INTER_TEST_DELAY = float(os.environ.get("TEST_DELAY", "3.0"))
+
+
+@pytest.fixture(autouse=True)
+def _inter_test_delay():
+    yield
+    time.sleep(_INTER_TEST_DELAY)
+
+
 @pytest.fixture(autouse=True)
 def _capture_tcid(request):
     marker = request.node.get_closest_marker("tcid")
