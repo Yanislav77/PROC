@@ -46,9 +46,9 @@ def _make_block_payin(order_id: str = "order_block_capture") -> str:
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CAP-001")
 def test_capture_full(payin_block_transaction_id):
-    """Полное списание по транзакции с capture_mode=manual. Ожидается 200 или 201."""
+    """Полное списание по транзакции с capture_mode=manual. Ожидается 200."""
     resp = post_operation(payin_block_transaction_id, "capture", _OP_BODY)
-    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     data = resp.json()
     assert_transaction_response(data)
     assert data["type"] == "payin"
@@ -56,27 +56,27 @@ def test_capture_full(payin_block_transaction_id):
 
 @pytest.mark.tcid("CAP-002")
 def test_capture_partial():
-    """Частичное списание (500 из 1000). Ожидается 200 или 201."""
+    """Частичное списание (500 из 1000). Ожидается 200."""
     tid = _make_block_payin("order_capture_partial")
     body = {
         "merchant_data": {"order_id": "order_capture_partial"},
         "financial_data": {"amount": 500, "currency": "RUB"},
     }
     resp = post_operation(tid, "capture", body)
-    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     assert_transaction_response(resp.json())
 
 
 @pytest.mark.tcid("CAP-003")
 def test_capture_without_webhook_url():
-    """Capture без необязательного webhook_url в merchant_data. Ожидается 200 или 201."""
+    """Capture без необязательного webhook_url в merchant_data. Ожидается 200."""
     tid = _make_block_payin("order_capture_no_wh")
     body = {
         "merchant_data": {"order_id": "order_capture_no_wh"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp = post_operation(tid, "capture", body)
-    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     assert_transaction_response(resp.json())
 
 

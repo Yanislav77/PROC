@@ -69,13 +69,12 @@ def _with_doc(**overrides) -> dict:
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CD-001")
 def test_browser_info_missing():
-    """browser_info не передан. Ожидается 400 (ip обязателен внутри browser_info)."""
+    """browser_info не передан. Ожидается 201 (browser_info опционален по спеке)."""
     import copy
     body = copy.deepcopy(_BASE)
     del body["customer_data"]["browser_info"]
     resp = post_transaction(body)
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("CD-002")
@@ -107,9 +106,10 @@ def test_ip_invalid_ipv4():
 
 @pytest.mark.tcid("CD-005")
 def test_ip_valid_ipv6():
-    """ip — валидный IPv6-адрес. Ожидается 201."""
+    """ip — IPv6-адрес (спека требует IPv4 format). Ожидается 400."""
     resp = post_transaction(_with_browser(ip="2001:db8::1"))
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("CD-006")
@@ -129,12 +129,13 @@ def test_ip_null():
 
 @pytest.mark.tcid("CD-008")
 def test_ip_missing():
-    """ip не передан. Ожидается 201."""
+    """ip не передан при наличии browser_info. Ожидается 400 (ip обязателен внутри browser_info)."""
     import copy
     body = copy.deepcopy(_BASE)
     del body["customer_data"]["browser_info"]["ip"]
     resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
