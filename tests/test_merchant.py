@@ -9,6 +9,7 @@ from conftest import (
     get_request,
     MERCHANT_BALANCE_URL,
     TERMINAL_ID,
+    assert_error_response,
 )
 
 
@@ -42,6 +43,7 @@ def test_get_merchant_balance_no_auth():
     """GET /merchant/balance без заголовков авторизации. Ожидается 400, 401 или 403."""
     resp = requests.get(MERCHANT_BALANCE_URL, timeout=30)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_get_merchant_balance_invalid_signature():
@@ -53,6 +55,7 @@ def test_get_merchant_balance_invalid_signature():
     }
     resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_get_merchant_balance_missing_terminal_id():
@@ -63,6 +66,7 @@ def test_get_merchant_balance_missing_terminal_id():
     }
     resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_get_merchant_balance_missing_timestamp():
@@ -73,6 +77,7 @@ def test_get_merchant_balance_missing_timestamp():
     }
     resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_get_merchant_balance_unknown_terminal():
@@ -90,3 +95,4 @@ def test_get_merchant_balance_unknown_terminal():
     }
     resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
     assert resp.status_code in (401, 403, 404), f"Expected 401/403/404, got {resp.status_code}"
+    assert_error_response(resp)

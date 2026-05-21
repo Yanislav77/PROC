@@ -11,6 +11,8 @@ from conftest import (
     BASE_URL,
     MERCHANT_DATA,
     TERMINAL_ID,
+    assert_transaction_response,
+    assert_error_response,
 )
 
 _REFUND_BODY = {
@@ -31,8 +33,9 @@ def test_refund_partial(payin_transaction_id):
     resp = post_operation(payin_transaction_id, "refund", _REFUND_BODY)
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
     data = resp.json()
-    assert "transaction_id" in data
-    assert "status" in data
+    assert_transaction_response(data)
+    assert data["type"] == "payin"
+    assert data["financial_data"]["currency"] == "RUB"
 
 
 # ─────────────────────────────────────────────
@@ -49,6 +52,7 @@ def test_refund_nonexistent_transaction():
     headers = make_headers(TERMINAL_ID, raw)
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (404, 422), f"Expected 404/422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_refund_amount_exceeds_original(payin_transaction_id):
@@ -59,6 +63,7 @@ def test_refund_amount_exceeds_original(payin_transaction_id):
     }
     resp = post_operation(payin_transaction_id, "refund", body)
     assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_refund_missing_merchant_data(payin_transaction_id):
@@ -66,6 +71,7 @@ def test_refund_missing_merchant_data(payin_transaction_id):
     body = {"financial_data": {"amount": 100, "currency": "RUB"}}
     resp = post_operation(payin_transaction_id, "refund", body)
     assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_refund_missing_financial_data(payin_transaction_id):
@@ -73,6 +79,7 @@ def test_refund_missing_financial_data(payin_transaction_id):
     body = {"merchant_data": {"order_id": "order_refund_test"}}
     resp = post_operation(payin_transaction_id, "refund", body)
     assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_refund_missing_order_id(payin_transaction_id):
@@ -83,6 +90,7 @@ def test_refund_missing_order_id(payin_transaction_id):
     }
     resp = post_operation(payin_transaction_id, "refund", body)
     assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_refund_missing_currency(payin_transaction_id):
@@ -93,6 +101,7 @@ def test_refund_missing_currency(payin_transaction_id):
     }
     resp = post_operation(payin_transaction_id, "refund", body)
     assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_refund_missing_amount(payin_transaction_id):
@@ -103,6 +112,7 @@ def test_refund_missing_amount(payin_transaction_id):
     }
     resp = post_operation(payin_transaction_id, "refund", body)
     assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_refund_zero_amount(payin_transaction_id):
@@ -113,6 +123,7 @@ def test_refund_zero_amount(payin_transaction_id):
     }
     resp = post_operation(payin_transaction_id, "refund", body)
     assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_refund_negative_amount(payin_transaction_id):
@@ -123,6 +134,7 @@ def test_refund_negative_amount(payin_transaction_id):
     }
     resp = post_operation(payin_transaction_id, "refund", body)
     assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_refund_invalid_currency(payin_transaction_id):
@@ -133,3 +145,4 @@ def test_refund_invalid_currency(payin_transaction_id):
     }
     resp = post_operation(payin_transaction_id, "refund", body)
     assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)

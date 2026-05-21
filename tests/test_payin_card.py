@@ -11,6 +11,8 @@ from conftest import (
     CUSTOMER_DATA,
     CARD_DETAILS,
     THREED,
+    assert_transaction_response,
+    assert_error_response,
 )
 
 _BASE = {
@@ -26,8 +28,7 @@ _BASE = {
 def _assert_payin_ok(resp):
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
     data = resp.json()
-    for field in ("transaction_id", "type", "status", "merchant_data", "financial_data", "created_at"):
-        assert field in data, f"Missing {field}"
+    assert_transaction_response(data)
     assert data["type"] == "payin"
     return data
 
@@ -104,12 +105,14 @@ def test_missing_top_level_field(missing_field):
     resp = post_transaction(body)
     assert resp.status_code == 422, \
         f"Expected 422 for missing {missing_field}, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_invalid_transaction_type():
     """Неизвестный тип транзакции. Ожидается 422."""
     resp = post_transaction({**_BASE, "type": "unknown_type"})
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -119,24 +122,28 @@ def test_negative_amount():
     """Отрицательная сумма. Ожидается 422."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": -100, "currency": "RUB"}})
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_zero_amount():
     """Нулевая сумма. Ожидается 422."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 0, "currency": "RUB"}})
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_invalid_currency():
     """Несуществующий код валюты. Ожидается 422."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 1000, "currency": "INVALID"}})
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_missing_currency():
     """Поле currency отсутствует в financial_data. Ожидается 422."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 1000}})
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -147,6 +154,7 @@ def test_missing_merchant_order_id():
     merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "order_id"}
     resp = post_transaction({**_BASE, "merchant_data": merchant})
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -159,6 +167,7 @@ def test_missing_card_required_field(missing_field):
     resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
     assert resp.status_code == 422, \
         f"Expected 422 for missing {missing_field}, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_card_pan_too_short():
@@ -166,6 +175,7 @@ def test_card_pan_too_short():
     details = {**CARD_DETAILS, "pan": "1234"}
     resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_card_expired():
@@ -173,3 +183,4 @@ def test_card_expired():
     details = {**CARD_DETAILS, "expiry_year": "20", "expiry_month": "01"}
     resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)

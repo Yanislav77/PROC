@@ -9,6 +9,8 @@ from conftest import (
     CUSTOMER_DATA,
     CARD_DETAILS,
     THREED,
+    assert_transaction_response,
+    assert_error_response,
 )
 
 
@@ -40,8 +42,8 @@ def test_cancel_authorized_transaction():
     resp = post_operation(tid, "cancel", body)
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
     data = resp.json()
-    assert "transaction_id" in data
-    assert "status" in data
+    assert_transaction_response(data)
+    assert data["type"] == "payin"
 
 
 def test_cancel_with_description():
@@ -53,6 +55,7 @@ def test_cancel_with_description():
     }
     resp = post_operation(tid, "cancel", body)
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+    assert_transaction_response(resp.json())
 
 
 # ─────────────────────────────────────────────
@@ -66,6 +69,7 @@ def test_cancel_nonexistent_transaction():
     }
     resp = post_operation("000000000000", "cancel", body)
     assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_cancel_missing_financial_data():
@@ -73,6 +77,7 @@ def test_cancel_missing_financial_data():
     body = {"merchant_data": {"order_id": "order_cancel_test"}}
     resp = post_operation("000000000000", "cancel", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_cancel_missing_merchant_data():
@@ -80,6 +85,7 @@ def test_cancel_missing_merchant_data():
     body = {"financial_data": {"amount": 1000, "currency": "RUB"}}
     resp = post_operation("000000000000", "cancel", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_cancel_missing_order_id():
@@ -90,3 +96,4 @@ def test_cancel_missing_order_id():
     }
     resp = post_operation("000000000000", "cancel", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)

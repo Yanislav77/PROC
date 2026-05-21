@@ -19,6 +19,8 @@ from conftest import (
     CUSTOMER_DATA,
     CARD_DETAILS,
     THREED,
+    assert_transaction_response,
+    assert_error_response,
 )
 
 _VALID_BODY = {
@@ -58,8 +60,11 @@ def test_idempotency_key_deduplication():
 
     assert resp1.status_code == 201
     assert resp2.status_code in (200, 201), "Idempotent repeat should succeed"
-    tid1 = resp1.json().get("transaction_id")
-    tid2 = resp2.json().get("transaction_id")
+    data1 = resp1.json()
+    data2 = resp2.json()
+    assert_transaction_response(data1)
+    tid1 = data1.get("transaction_id")
+    tid2 = data2.get("transaction_id")
     assert tid1 == tid2, f"Idempotency broken: {tid1} vs {tid2}"
 
 
@@ -78,6 +83,7 @@ def test_invalid_signature():
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_missing_signature_header():
@@ -91,6 +97,7 @@ def test_missing_signature_header():
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_missing_terminal_id_header():
@@ -104,6 +111,7 @@ def test_missing_terminal_id_header():
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_unknown_terminal_id():
@@ -121,6 +129,7 @@ def test_unknown_terminal_id():
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (401, 403, 404), f"Expected 401/403/404, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_timestamp_too_old():
@@ -138,6 +147,7 @@ def test_timestamp_too_old():
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_invalid_json_body():
@@ -155,3 +165,4 @@ def test_invalid_json_body():
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}"
+    assert_error_response(resp)

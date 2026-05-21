@@ -10,6 +10,8 @@ from conftest import (
     MERCHANT_DATA,
     CUSTOMER_DATA,
     THREED,
+    assert_transaction_response,
+    assert_error_response,
 )
 
 _BASE = {
@@ -24,9 +26,8 @@ _BASE = {
 def _assert_payout_ok(resp):
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
     data = resp.json()
-    assert "transaction_id" in data
+    assert_transaction_response(data)
     assert data["type"] == "payout"
-    assert "status" in data
     return data
 
 
@@ -158,6 +159,7 @@ def test_payout_card_missing_pan():
     body = {**_BASE, "transaction_data": {"method": "card", "details": {"holder": "JOHN DOE"}}}
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payout_card_missing_holder():
@@ -165,6 +167,7 @@ def test_payout_card_missing_holder():
     body = {**_BASE, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111"}}}
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payout_card_missing_details():
@@ -172,6 +175,7 @@ def test_payout_card_missing_details():
     body = {**_BASE, "transaction_data": {"method": "card"}}
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -182,6 +186,7 @@ def test_payout_mobile_missing_phone():
     body = {**_BASE, "transaction_data": {"method": "mobile", "details": {"provider": "Beeline"}}}
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payout_mobile_missing_details():
@@ -189,6 +194,7 @@ def test_payout_mobile_missing_details():
     body = {**_BASE, "transaction_data": {"method": "mobile"}}
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -199,6 +205,7 @@ def test_payout_wallet_missing_id():
     body = {**_BASE, "transaction_data": {"method": "wallet", "details": {"brand": "PayPal"}}}
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payout_wallet_missing_details():
@@ -206,6 +213,7 @@ def test_payout_wallet_missing_details():
     body = {**_BASE, "transaction_data": {"method": "wallet"}}
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -216,6 +224,7 @@ def test_payout_token_missing_token():
     body = {**_BASE, "transaction_data": {"method": "token", "details": {}}}
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payout_token_missing_details():
@@ -223,6 +232,7 @@ def test_payout_token_missing_details():
     body = {**_BASE, "transaction_data": {"method": "token"}}
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -233,6 +243,7 @@ def test_payout_unknown_method():
     body = {**_BASE, "transaction_data": {"method": "unknown_method"}}
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payout_negative_amount():
@@ -244,6 +255,7 @@ def test_payout_negative_amount():
     }
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payout_zero_amount():
@@ -255,6 +267,7 @@ def test_payout_zero_amount():
     }
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payout_invalid_currency():
@@ -266,3 +279,4 @@ def test_payout_invalid_currency():
     }
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)

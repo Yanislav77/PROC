@@ -4,7 +4,7 @@ POST /api/v1/transactions/{id}/confirm
 Типы: threed_secure, redirect, transfer_card, transfer_phone, transfer_qr, transfer_account, top_up_mobile.
 Happy path требует транзакцию в статусе waiting_action — покрыты только негативные сценарии.
 """
-from conftest import post_operation
+from conftest import post_operation, assert_error_response
 
 
 # ─────────────────────────────────────────────
@@ -22,6 +22,7 @@ def test_confirm_nonexistent_transaction():
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_confirm_missing_result():
@@ -32,6 +33,7 @@ def test_confirm_missing_result():
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_confirm_missing_financial_data():
@@ -42,6 +44,7 @@ def test_confirm_missing_financial_data():
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_confirm_missing_merchant_data():
@@ -52,6 +55,7 @@ def test_confirm_missing_merchant_data():
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_confirm_missing_order_id():
@@ -63,6 +67,7 @@ def test_confirm_missing_order_id():
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_confirm_invalid_result_type():
@@ -74,6 +79,7 @@ def test_confirm_invalid_result_type():
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_confirm_threed_secure_missing_pares():
@@ -88,6 +94,7 @@ def test_confirm_threed_secure_missing_pares():
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_confirm_threed_secure_missing_md():
@@ -102,6 +109,7 @@ def test_confirm_threed_secure_missing_md():
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_confirm_redirect_missing_confirmed():
@@ -113,3 +121,4 @@ def test_confirm_redirect_missing_confirmed():
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)

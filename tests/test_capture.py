@@ -10,6 +10,8 @@ from conftest import (
     CUSTOMER_DATA,
     CARD_DETAILS,
     THREED,
+    assert_transaction_response,
+    assert_error_response,
 )
 
 _OP_BODY = {
@@ -45,8 +47,8 @@ def test_capture_full(payin_block_transaction_id):
     resp = post_operation(payin_block_transaction_id, "capture", _OP_BODY)
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
     data = resp.json()
-    assert "transaction_id" in data
-    assert "status" in data
+    assert_transaction_response(data)
+    assert data["type"] == "payin"
 
 
 def test_capture_partial():
@@ -58,6 +60,7 @@ def test_capture_partial():
     }
     resp = post_operation(tid, "capture", body)
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+    assert_transaction_response(resp.json())
 
 
 def test_capture_without_webhook_url():
@@ -69,6 +72,7 @@ def test_capture_without_webhook_url():
     }
     resp = post_operation(tid, "capture", body)
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+    assert_transaction_response(resp.json())
 
 
 # ─────────────────────────────────────────────
@@ -78,6 +82,7 @@ def test_capture_nonexistent_transaction():
     """Capture по несуществующей транзакции. Ожидается 404."""
     resp = post_operation("000000000000", "capture", _OP_BODY)
     assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_capture_missing_financial_data():
@@ -85,6 +90,7 @@ def test_capture_missing_financial_data():
     body = {"merchant_data": {"order_id": "order_capture_test"}}
     resp = post_operation("000000000000", "capture", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_capture_missing_merchant_data():
@@ -92,6 +98,7 @@ def test_capture_missing_merchant_data():
     body = {"financial_data": {"amount": 1000, "currency": "RUB"}}
     resp = post_operation("000000000000", "capture", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_capture_missing_order_id():
@@ -102,6 +109,7 @@ def test_capture_missing_order_id():
     }
     resp = post_operation("000000000000", "capture", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_capture_missing_amount():
@@ -112,6 +120,7 @@ def test_capture_missing_amount():
     }
     resp = post_operation("000000000000", "capture", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_capture_missing_currency():
@@ -122,6 +131,7 @@ def test_capture_missing_currency():
     }
     resp = post_operation("000000000000", "capture", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_capture_invalid_currency():
@@ -132,6 +142,7 @@ def test_capture_invalid_currency():
     }
     resp = post_operation("000000000000", "capture", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_capture_zero_amount():
@@ -142,6 +153,7 @@ def test_capture_zero_amount():
     }
     resp = post_operation("000000000000", "capture", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_capture_negative_amount():
@@ -152,3 +164,4 @@ def test_capture_negative_amount():
     }
     resp = post_operation("000000000000", "capture", body)
     assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)

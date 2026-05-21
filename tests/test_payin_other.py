@@ -10,6 +10,8 @@ from conftest import (
     CUSTOMER_DATA,
     CARD_DETAILS,
     THREED,
+    assert_transaction_response,
+    assert_error_response,
 )
 
 _BASE = {
@@ -24,9 +26,8 @@ _BASE = {
 def _assert_payin_ok(resp):
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
     data = resp.json()
-    assert "transaction_id" in data
+    assert_transaction_response(data)
     assert data["type"] == "payin"
-    assert "status" in data
     return data
 
 
@@ -98,3 +99,4 @@ def test_payin_mobile_missing_phone():
     body = {**_BASE, "transaction_data": {"method": "mobile", "details": {}}}
     resp = post_transaction(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)

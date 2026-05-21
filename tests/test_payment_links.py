@@ -17,6 +17,7 @@ from conftest import (
     MERCHANT_DATA,
     CUSTOMER_DATA,
     THREED,
+    assert_error_response,
 )
 
 _VALID_LINK_BODY = {
@@ -125,6 +126,7 @@ def test_payment_link_missing_required_field(missing_field):
     body = {k: v for k, v in _VALID_LINK_BODY.items() if k != missing_field}
     resp = post_payment_link(body)
     assert resp.status_code == 422, f"Expected 422 for missing {missing_field}, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payment_link_missing_order_id():
@@ -133,6 +135,7 @@ def test_payment_link_missing_order_id():
     body = {**_VALID_LINK_BODY, "merchant_data": merchant}
     resp = post_payment_link(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -143,6 +146,7 @@ def test_payment_link_negative_amount():
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": -100, "currency": "RUB"}}
     resp = post_payment_link(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payment_link_zero_amount():
@@ -150,6 +154,7 @@ def test_payment_link_zero_amount():
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": 0, "currency": "RUB"}}
     resp = post_payment_link(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payment_link_invalid_currency():
@@ -157,6 +162,7 @@ def test_payment_link_invalid_currency():
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": 5000, "currency": "INVALID"}}
     resp = post_payment_link(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payment_link_missing_currency():
@@ -164,6 +170,7 @@ def test_payment_link_missing_currency():
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": 5000}}
     resp = post_payment_link(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payment_link_missing_amount():
@@ -171,6 +178,7 @@ def test_payment_link_missing_amount():
     body = {**_VALID_LINK_BODY, "financial_data": {"currency": "RUB"}}
     resp = post_payment_link(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_payment_link_invalid_capture_mode():
@@ -178,6 +186,7 @@ def test_payment_link_invalid_capture_mode():
     body = {**_VALID_LINK_BODY, "flow_data": {"capture_mode": "instant"}}
     resp = post_payment_link(body)
     assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -189,6 +198,7 @@ def test_payment_link_no_auth():
     resp = requests.post(PAYMENT_LINKS_URL, data=raw,
                          headers={"Content-Type": "application/json"}, timeout=30)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_payment_link_invalid_signature():
@@ -204,3 +214,4 @@ def test_payment_link_invalid_signature():
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
+    assert_error_response(resp)

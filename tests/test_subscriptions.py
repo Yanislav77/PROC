@@ -12,6 +12,7 @@ from conftest import (
     delete_request,
     SUBSCRIPTIONS_URL,
     TERMINAL_ID,
+    assert_error_response,
 )
 
 _NONEXISTENT_TOKEN = "00000000-0000-0000-0000-000000000000"
@@ -27,6 +28,7 @@ def test_cancel_nonexistent_subscription():
     url = f"{SUBSCRIPTIONS_URL}/{_NONEXISTENT_TOKEN}"
     resp = delete_request(url)
     assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 def test_cancel_subscription_invalid_token_format():
@@ -34,6 +36,7 @@ def test_cancel_subscription_invalid_token_format():
     url = f"{SUBSCRIPTIONS_URL}/{_INVALID_TOKEN}"
     resp = delete_request(url)
     assert resp.status_code in (400, 404, 422), f"Expected 400/404/422, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_cancel_subscription_no_auth():
@@ -41,6 +44,7 @@ def test_cancel_subscription_no_auth():
     url = f"{SUBSCRIPTIONS_URL}/{_NONEXISTENT_TOKEN}"
     resp = requests.delete(url, timeout=30)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_cancel_subscription_invalid_signature():
@@ -53,6 +57,7 @@ def test_cancel_subscription_invalid_signature():
     }
     resp = requests.delete(url, headers=headers, timeout=30)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_cancel_subscription_missing_terminal_id():
@@ -64,6 +69,7 @@ def test_cancel_subscription_missing_terminal_id():
     }
     resp = requests.delete(url, headers=headers, timeout=30)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
 
 
 def test_cancel_subscription_missing_timestamp():
@@ -75,3 +81,4 @@ def test_cancel_subscription_missing_timestamp():
     }
     resp = requests.delete(url, headers=headers, timeout=30)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
