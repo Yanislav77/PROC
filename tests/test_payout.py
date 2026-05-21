@@ -1017,3 +1017,48 @@ def test_payout_response_method():
     data = resp.json()
     method = data.get("transaction_data", {}).get("method")
     assert method == "sbp", f"Ожидался method='sbp', получен: {method}"
+
+
+# ─────────────────────────────────────────────
+# ДОПОЛНИТЕЛЬНЫЕ КЕЙСЫ
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-106")
+def test_payout_type_missing():
+    """type полностью отсутствует в теле запроса. Ожидается 400."""
+    body = {k: v for k, v in _VALID.items() if k != "type"}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-107")
+def test_payout_description_emoji():
+    """merchant_data.description = эмодзи. Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "description": "Выплата 🎉💳✅"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-108")
+def test_payout_webhook_url_localhost():
+    """merchant_data.webhook_url = localhost URL. Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "webhook_url": "http://localhost:8080/webhook"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-109")
+def test_payout_wallet_brand_neteller():
+    """wallet.brand = 'Neteller'. Ожидается 201."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "wallet", "details": {"id": "wallet_abc123", "brand": "Neteller"}}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-110")
+def test_payout_bank_account_no_account_number():
+    """bank_account.details без account_number — все поля необязательны. Ожидается 201."""
+    body = {**_VALID, "transaction_data": {"method": "bank_account", "details": {
+        "swift_code": "SABRRUMM",
+        "bank_name": "Sberbank",
+        "account_holder_name": "JOHN DOE",
+    }}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
