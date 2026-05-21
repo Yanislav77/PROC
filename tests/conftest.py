@@ -255,6 +255,9 @@ def _write_report_entry(nodeid: str, status: str, error, captures: list) -> None
         f.write('    <div class="section-label">Request</div>\n')
         f.write(f'    <p class="http-line"><span class="method">{_esc(prep.method)}</span>'
                 f' <span class="url">{_esc(prep.url)}</span></p>\n')
+        if prep.headers:
+            headers_text = "\n".join(f"{k}: {v}" for k, v in prep.headers.items())
+            f.write(f'    <pre class="headers">{_esc(headers_text)}</pre>\n')
         body_text = _fmt_body_plain(prep.body)
         if body_text:
             f.write(f'    <pre class="body">{_esc(body_text)}</pre>\n')
@@ -325,6 +328,9 @@ body{{font-family:'Segoe UI',system-ui,sans-serif;background:#1a1a2e;color:#e0e0
 pre.body{{background:#0d1117;border:1px solid #2a2a4a;border-radius:4px;padding:10px 12px;
   font-family:'Consolas',monospace;font-size:.82em;color:#cdd9e5;
   white-space:pre-wrap;word-break:break-all;max-height:340px;overflow-y:auto;margin:0}}
+pre.headers{{background:#0a0f1a;border:1px solid #1e2a3a;border-radius:4px;padding:8px 12px;
+  font-family:'Consolas',monospace;font-size:.78em;color:#7a9abf;
+  white-space:pre-wrap;word-break:break-all;max-height:160px;overflow-y:auto;margin:0 0 6px}}
 .error-block{{background:#1a0a0a;border-left:3px solid #f44336;border-radius:0 4px 4px 0;padding:12px;margin-top:8px}}
 .error-block pre{{color:#ff8a80;font-size:.82em;white-space:pre-wrap;word-break:break-all;
   max-height:400px;overflow-y:auto;margin:0}}
