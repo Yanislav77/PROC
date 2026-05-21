@@ -453,8 +453,8 @@ def test_phone_valid_without_plus():
 
 @pytest.mark.tcid("CD-048")
 def test_phone_too_short():
-    """phone из 2 символов (слишком короткий). Ожидается 400."""
-    resp = post_transaction(_with_contact(phone="12"))
+    """phone '+1' (слишком короткий, 2 символа включая +). Ожидается 400."""
+    resp = post_transaction(_with_contact(phone="+1"))
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
@@ -714,3 +714,1416 @@ def test_doc_issue_date_null():
     """document issue_date=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_doc(issue_date=None))
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+from datetime import date, timedelta
+
+
+def _with_payer(**overrides) -> dict:
+    """Добавляет/обновляет payer_info внутри customer_data."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"].setdefault("payer_info", {})
+    body["customer_data"]["payer_info"].update(overrides)
+    return body
+
+
+# ─────────────────────────────────────────────
+# CUSTOMER_DATA (30.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-080")
+def test_customer_data_missing():
+    """customer_data не передан. Ожидается 400."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body.pop("customer_data", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-081")
+def test_customer_data_empty_object():
+    """customer_data передан как пустой объект {}. Ожидается 400."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"] = {}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ACCEPT_HEADER (33.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-082")
+def test_accept_header_missing():
+    """accept_header не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["browser_info"].pop("accept_header", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# COLOR_DEPTH (34.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-083")
+def test_color_depth_empty_string():
+    """color_depth — пустая строка. Ожидается 400."""
+    resp = post_transaction(_with_browser(color_depth=""))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-084")
+def test_color_depth_missing():
+    """color_depth не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["browser_info"].pop("color_depth", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# JAVA_ENABLED (35.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-085")
+def test_java_enabled_empty_string():
+    """java_enabled — пустая строка. Ожидается 400."""
+    resp = post_transaction(_with_browser(java_enabled=""))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-086")
+def test_java_enabled_missing():
+    """java_enabled не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["browser_info"].pop("java_enabled", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# JAVA_SCRIPT_ENABLED (36.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-087")
+def test_java_script_enabled_int_zero_extra():
+    """java_script_enabled=0. Ожидается 201."""
+    resp = post_transaction(_with_browser(java_script_enabled=0))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-088")
+def test_java_script_enabled_empty_string():
+    """java_script_enabled — пустая строка. Ожидается 400."""
+    resp = post_transaction(_with_browser(java_script_enabled=""))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-089")
+def test_java_script_enabled_missing():
+    """java_script_enabled не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["browser_info"].pop("java_script_enabled", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# LANGUAGE (37.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-090")
+def test_language_multiple_values():
+    """language — несколько значений 'en,fr'. Ожидается 201 или 400."""
+    resp = post_transaction(_with_browser(language="en,fr"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-091")
+def test_language_lowercase():
+    """language — строчный код 'ru'. Ожидается 201 или 400."""
+    resp = post_transaction(_with_browser(language="ru"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-092")
+def test_language_missing():
+    """language не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["browser_info"].pop("language", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# SCREEN_HEIGHT (38.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-093")
+def test_screen_height_int():
+    """screen_height=1080 (целое число). Ожидается 201."""
+    resp = post_transaction(_with_browser(screen_height=1080))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-094")
+def test_screen_height_empty_string():
+    """screen_height — пустая строка. Ожидается 400."""
+    resp = post_transaction(_with_browser(screen_height=""))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-095")
+def test_screen_height_null():
+    """screen_height=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_browser(screen_height=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-096")
+def test_screen_height_missing():
+    """screen_height не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["browser_info"].pop("screen_height", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# SCREEN_WIDTH (39.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-097")
+def test_screen_width_int():
+    """screen_width=1920 (целое число). Ожидается 201."""
+    resp = post_transaction(_with_browser(screen_width=1920))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-098")
+def test_screen_width_empty_string():
+    """screen_width — пустая строка. Ожидается 400."""
+    resp = post_transaction(_with_browser(screen_width=""))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-099")
+def test_screen_width_null():
+    """screen_width=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_browser(screen_width=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-100")
+def test_screen_width_missing():
+    """screen_width не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["browser_info"].pop("screen_width", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# TIME_ZONE (40.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-101")
+def test_time_zone_positive_int():
+    """time_zone=180 (положительное целое). Ожидается 201."""
+    resp = post_transaction(_with_browser(time_zone=180))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-102")
+def test_time_zone_negative_int():
+    """time_zone=-180 (отрицательное целое). Ожидается 201."""
+    resp = post_transaction(_with_browser(time_zone=-180))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-103")
+def test_time_zone_sixty():
+    """time_zone=60. Ожидается 201."""
+    resp = post_transaction(_with_browser(time_zone=60))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-104")
+def test_time_zone_empty_string():
+    """time_zone — пустая строка. Ожидается 400."""
+    resp = post_transaction(_with_browser(time_zone=""))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-105")
+def test_time_zone_null():
+    """time_zone=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_browser(time_zone=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-106")
+def test_time_zone_missing():
+    """time_zone не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["browser_info"].pop("time_zone", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# USER_AGENT (41.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-107")
+def test_user_agent_valid_string():
+    """user_agent — реальная строка. Ожидается 201."""
+    resp = post_transaction(_with_browser(user_agent="Mozilla/5.0 (Windows NT 10.0)"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-108")
+def test_user_agent_empty_string():
+    """user_agent — пустая строка. Ожидается 201 или 400."""
+    resp = post_transaction(_with_browser(user_agent=""))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-109")
+def test_user_agent_null():
+    """user_agent=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_browser(user_agent=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-110")
+def test_user_agent_missing():
+    """user_agent не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["browser_info"].pop("user_agent", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# CITY (43.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-111")
+def test_city_any_string():
+    """city='Moscow' (любая строка). Ожидается 201."""
+    resp = post_transaction(_with_contact(city="Moscow"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-112")
+def test_city_latin():
+    """city='Berlin' (латиница). Ожидается 201."""
+    resp = post_transaction(_with_contact(city="Berlin"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-113")
+def test_city_latin_with_spaces():
+    """city='New York' (латиница с пробелами). Ожидается 201."""
+    resp = post_transaction(_with_contact(city="New York"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-114")
+def test_city_cyrillic():
+    """city='Москва' (кириллица). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(city="Москва"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-115")
+def test_city_cyrillic_with_spaces():
+    """city='Нью Йорк' (кириллица с пробелами). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(city="Нью Йорк"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-116")
+def test_city_letters_and_digits():
+    """city='City1' (буквы и цифры). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(city="City1"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-117")
+def test_city_letters_and_special_chars():
+    """city='City@!' (буквы и спецсимволы). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(city="City@!"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-118")
+def test_city_empty_string():
+    """city — пустая строка. Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(city=""))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-119")
+def test_city_null():
+    """city=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(city=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-120")
+def test_city_missing():
+    """city не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["contact_info"].pop("city", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# COUNTRY (44.x) — дополнительные
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-121")
+def test_country_cyrillic_two_chars():
+    """country='РФ' (кириллица 2 символа). Ожидается 400."""
+    resp = post_transaction(_with_contact(country="РФ"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-122")
+def test_country_missing():
+    """country не передан. Ожидается 201 или 400."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["contact_info"].pop("country", None)
+    resp = post_transaction(body)
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# EMAIL (45.x) — дополнительные
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-123")
+def test_email_invalid_special_chars():
+    """email с недопустимыми спецсимволами 'user!#$%@example.com'. Ожидается 400."""
+    resp = post_transaction(_with_contact(email="user!#$%@example.com"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-124")
+def test_email_without_at_sign_extra():
+    """email без символа @ 'userexample.com'. Ожидается 400."""
+    resp = post_transaction(_with_contact(email="userexample.com"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-125")
+def test_email_without_local_part():
+    """email без локальной части '@example.com'. Ожидается 400."""
+    resp = post_transaction(_with_contact(email="@example.com"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-126")
+def test_email_missing():
+    """email не передан. Ожидается 201 или 400."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["contact_info"].pop("email", None)
+    resp = post_transaction(body)
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-127")
+def test_email_as_array():
+    """email передан как массив. Ожидается 400."""
+    resp = post_transaction(_with_contact(email=["test@example.com"]))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# PHONE (46.x) — дополнительные
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-128")
+def test_phone_three_chars_with_plus():
+    """phone '+79' (3 символа включая +). Ожидается 400."""
+    resp = post_transaction(_with_contact(phone="+79"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-129")
+def test_phone_with_special_chars():
+    """phone со спецсимволами '+7999!23-45'. Ожидается 400."""
+    resp = post_transaction(_with_contact(phone="+7999!23-45"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-130")
+def test_phone_missing():
+    """phone не передан. Ожидается 201 или 400."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["contact_info"].pop("phone", None)
+    resp = post_transaction(body)
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# STATE (47.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-131")
+def test_state_latin():
+    """state='California' (латиница). Ожидается 201."""
+    resp = post_transaction(_with_contact(state="California"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-132")
+def test_state_latin_short():
+    """state='Texas' (латиница). Ожидается 201."""
+    resp = post_transaction(_with_contact(state="Texas"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-133")
+def test_state_latin_with_spaces():
+    """state='New Mexico' (латиница с пробелами). Ожидается 201."""
+    resp = post_transaction(_with_contact(state="New Mexico"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-134")
+def test_state_cyrillic():
+    """state='Москва' (кириллица). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(state="Москва"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-135")
+def test_state_cyrillic_with_spaces():
+    """state='Нью Йорк' (кириллица с пробелами). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(state="Нью Йорк"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-136")
+def test_state_letters_and_digits():
+    """state='State1' (буквы и цифры). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(state="State1"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-137")
+def test_state_letters_and_special_chars():
+    """state='State!' (буквы и спецсимволы). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(state="State!"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-138")
+def test_state_empty_string():
+    """state — пустая строка. Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(state=""))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-139")
+def test_state_null():
+    """state=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(state=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-140")
+def test_state_missing():
+    """state не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["contact_info"].pop("state", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# ZIP (48.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-141")
+def test_zip_digits_six():
+    """zip='101000' (6 цифр). Ожидается 201."""
+    resp = post_transaction(_with_contact(zip="101000"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-142")
+def test_zip_digits():
+    """zip='123456' (цифры). Ожидается 201."""
+    resp = post_transaction(_with_contact(zip="123456"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-143")
+def test_zip_latin_short():
+    """zip='W1A' (латиница). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(zip="W1A"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-144")
+def test_zip_latin_with_spaces():
+    """zip='W1A 1AA' (латиница с пробелами). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(zip="W1A 1AA"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-145")
+def test_zip_cyrillic():
+    """zip='Индекс' (кириллица). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(zip="Индекс"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-146")
+def test_zip_digits_and_special_chars():
+    """zip='1000-AB' (цифры и спецсимволы). Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(zip="1000-AB"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-147")
+def test_zip_empty_string():
+    """zip — пустая строка. Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(zip=""))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-148")
+def test_zip_null():
+    """zip=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_contact(zip=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-149")
+def test_zip_missing():
+    """zip не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["contact_info"].pop("zip", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# PAYER_INFO (49.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-150")
+def test_payer_info_missing():
+    """payer_info не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"].pop("payer_info", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-151")
+def test_payer_info_empty_object():
+    """payer_info передан как пустой объект {}. Ожидается 201."""
+    resp = post_transaction(_with_payer())
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# PAYER_ID (50.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-152")
+def test_payer_id_any_string():
+    """payer_id='payer_001' (любая строка). Ожидается 201."""
+    resp = post_transaction(_with_payer(payer_id="payer_001"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-153")
+def test_payer_id_latin():
+    """payer_id='payerABC' (латиница). Ожидается 201."""
+    resp = post_transaction(_with_payer(payer_id="payerABC"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-154")
+def test_payer_id_latin_with_spaces():
+    """payer_id='payer ABC' (латиница с пробелами). Ожидается 201 или 400."""
+    resp = post_transaction(_with_payer(payer_id="payer ABC"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-155")
+def test_payer_id_digits():
+    """payer_id='123456' (цифры). Ожидается 201."""
+    resp = post_transaction(_with_payer(payer_id="123456"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-156")
+def test_payer_id_cyrillic():
+    """payer_id='Плательщик' (кириллица). Ожидается 201 или 400."""
+    resp = post_transaction(_with_payer(payer_id="Плательщик"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-157")
+def test_payer_id_digits_and_special_chars():
+    """payer_id='pay#001' (цифры и спецсимволы). Ожидается 201 или 400."""
+    resp = post_transaction(_with_payer(payer_id="pay#001"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-158")
+def test_payer_id_empty_string():
+    """payer_id — пустая строка. Ожидается 201 или 400."""
+    resp = post_transaction(_with_payer(payer_id=""))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-159")
+def test_payer_id_null():
+    """payer_id=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_payer(payer_id=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# DATE_OF_BIRTH — дополнительные (52.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-160")
+def test_date_of_birth_non_date_string():
+    """date_of_birth — не дата. Ожидается 400."""
+    resp = post_transaction(_with_personal(date_of_birth="not-a-date"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-161")
+def test_date_of_birth_eighteen_not_today():
+    """date_of_birth — ровно 18 лет (день рождения не сегодня). Ожидается 201."""
+    dob = (date.today() - timedelta(days=18 * 365 + 30)).strftime("%Y-%m-%d")
+    resp = post_transaction(_with_personal(date_of_birth=dob))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-162")
+def test_date_of_birth_exactly_eighteen_today():
+    """date_of_birth — день рождения сегодня, ровно 18 лет. Ожидается 201."""
+    today = date.today()
+    try:
+        dob = today.replace(year=today.year - 18)
+    except ValueError:
+        dob = today.replace(year=today.year - 18, day=28)
+    resp = post_transaction(_with_personal(date_of_birth=dob.strftime("%Y-%m-%d")))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-163")
+def test_date_of_birth_over_eighteen():
+    """date_of_birth='1990-01-01' (более 18 лет). Ожидается 201."""
+    resp = post_transaction(_with_personal(date_of_birth="1990-01-01"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-164")
+def test_date_of_birth_over_hundred_years():
+    """date_of_birth='1900-01-01' (более 100 лет). Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(date_of_birth="1900-01-01"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-165")
+def test_date_of_birth_yy_mm_dd_format():
+    """date_of_birth в формате YY-MM-DD. Ожидается 400."""
+    resp = post_transaction(_with_personal(date_of_birth="90-06-15"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-166")
+def test_date_of_birth_leap_year():
+    """date_of_birth='2000-02-29' (дата в високосном году). Ожидается 201."""
+    resp = post_transaction(_with_personal(date_of_birth="2000-02-29"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-167")
+def test_date_of_birth_empty_string():
+    """date_of_birth — пустая строка. Ожидается 400."""
+    resp = post_transaction(_with_personal(date_of_birth=""))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-168")
+def test_date_of_birth_missing():
+    """date_of_birth не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"].pop("date_of_birth", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# DOCUMENT_TYPE missing (53.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-169")
+def test_document_type_missing():
+    """document_type не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"].pop("document_type", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# FIRST_NAME (54.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-170")
+def test_first_name_latin():
+    """first_name='John' (латиница). Ожидается 201."""
+    resp = post_transaction(_with_personal(first_name="John"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-171")
+def test_first_name_cyrillic():
+    """first_name='Иван' (кириллица). Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(first_name="Иван"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-172")
+def test_first_name_letters_and_special_chars():
+    """first_name='John-Jr.' (буквы и спецсимволы). Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(first_name="John-Jr."))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-173")
+def test_first_name_letters_and_digits():
+    """first_name='John2' (буквы и цифры). Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(first_name="John2"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-174")
+def test_first_name_one_char():
+    """first_name='J' (1 символ). Ожидается 201."""
+    resp = post_transaction(_with_personal(first_name="J"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-175")
+def test_first_name_empty_string():
+    """first_name — пустая строка. Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(first_name=""))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-176")
+def test_first_name_null():
+    """first_name=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(first_name=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-177")
+def test_first_name_missing():
+    """first_name не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"].pop("first_name", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# LAST_NAME (55.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-178")
+def test_last_name_latin():
+    """last_name='Doe' (латиница). Ожидается 201."""
+    resp = post_transaction(_with_personal(last_name="Doe"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-179")
+def test_last_name_cyrillic():
+    """last_name='Иванов' (кириллица). Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(last_name="Иванов"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-180")
+def test_last_name_letters_and_special_chars():
+    """last_name='Doe-Jr.' (буквы и спецсимволы). Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(last_name="Doe-Jr."))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-181")
+def test_last_name_letters_and_digits():
+    """last_name='Doe2' (буквы и цифры). Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(last_name="Doe2"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-182")
+def test_last_name_one_char():
+    """last_name='D' (1 символ). Ожидается 201."""
+    resp = post_transaction(_with_personal(last_name="D"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-183")
+def test_last_name_empty_string():
+    """last_name — пустая строка. Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(last_name=""))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-184")
+def test_last_name_null():
+    """last_name=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(last_name=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-185")
+def test_last_name_missing():
+    """last_name не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"].pop("last_name", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# NATIONALITY (56.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-186")
+def test_nationality_two_char_ru():
+    """nationality='RU' (2 символа). Ожидается 201."""
+    resp = post_transaction(_with_personal(nationality="RU"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-187")
+def test_nationality_two_char_us():
+    """nationality='US' (верхний регистр). Ожидается 201."""
+    resp = post_transaction(_with_personal(nationality="US"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-188")
+def test_nationality_lowercase():
+    """nationality='ru' (нижний регистр). Ожидается 400."""
+    resp = post_transaction(_with_personal(nationality="ru"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-189")
+def test_nationality_three_chars():
+    """nationality='RUS' (3 символа). Ожидается 400."""
+    resp = post_transaction(_with_personal(nationality="RUS"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-190")
+def test_nationality_one_char():
+    """nationality='R' (1 символ). Ожидается 400."""
+    resp = post_transaction(_with_personal(nationality="R"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-191")
+def test_nationality_cyrillic():
+    """nationality='РФ' (кириллица). Ожидается 400."""
+    resp = post_transaction(_with_personal(nationality="РФ"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-192")
+def test_nationality_digits():
+    """nationality='12' (цифры). Ожидается 400."""
+    resp = post_transaction(_with_personal(nationality="12"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-193")
+def test_nationality_empty_string():
+    """nationality — пустая строка. Ожидается 400."""
+    resp = post_transaction(_with_personal(nationality=""))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-194")
+def test_nationality_null():
+    """nationality=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_personal(nationality=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-195")
+def test_nationality_missing():
+    """nationality не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"].pop("nationality", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# DOCUMENT_DETAILS (57.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-196")
+def test_document_details_missing():
+    """document_details не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"].pop("document_details", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-197")
+def test_document_details_empty_object():
+    """document_details передан как пустой объект {}. Ожидается 201."""
+    resp = post_transaction(_with_personal(document_details={}))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# DEPARTMENT_CODE (58.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-198")
+def test_department_code_latin():
+    """department_code='ABC' (латиница). Ожидается 201."""
+    resp = post_transaction(_with_doc(department_code="ABC"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-199")
+def test_department_code_cyrillic():
+    """department_code='АБВ' (кириллица). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(department_code="АБВ"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-200")
+def test_department_code_digits():
+    """department_code='123' (цифры). Ожидается 201."""
+    resp = post_transaction(_with_doc(department_code="123"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-201")
+def test_department_code_special_chars():
+    """department_code='#@!' (спецсимволы). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(department_code="#@!"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-202")
+def test_department_code_one_char():
+    """department_code='A' (1 символ). Ожидается 201."""
+    resp = post_transaction(_with_doc(department_code="A"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-203")
+def test_department_code_empty_string():
+    """department_code — пустая строка. Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(department_code=""))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-204")
+def test_department_code_null():
+    """department_code=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(department_code=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-205")
+def test_department_code_missing():
+    """department_code не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"]["document_details"].pop("department_code", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# EXPIRY_DATE — дополнительные (59.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-206")
+def test_doc_expiry_date_non_date_string():
+    """document expiry_date — не дата. Ожидается 400."""
+    resp = post_transaction(_with_doc(expiry_date="not-a-date"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-207")
+def test_doc_expiry_date_today():
+    """document expiry_date — текущий день. Ожидается 201 или 400."""
+    today_str = date.today().strftime("%Y-%m-%d")
+    resp = post_transaction(_with_doc(expiry_date=today_str))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-208")
+def test_doc_expiry_date_nonexistent_month():
+    """document expiry_date='2030-13-01' (несуществующий месяц). Ожидается 400."""
+    resp = post_transaction(_with_doc(expiry_date="2030-13-01"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-209")
+def test_doc_expiry_date_leap_year():
+    """document expiry_date='2028-02-29' (высокосный год). Ожидается 201."""
+    resp = post_transaction(_with_doc(expiry_date="2028-02-29"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-210")
+def test_doc_expiry_date_empty_string():
+    """document expiry_date — пустая строка. Ожидается 400."""
+    resp = post_transaction(_with_doc(expiry_date=""))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-211")
+def test_doc_expiry_date_missing():
+    """document expiry_date не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"]["document_details"].pop("expiry_date", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# GENDER missing (60.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-212")
+def test_gender_missing():
+    """gender не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"]["document_details"].pop("gender", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# ISSUE_DATE — дополнительные (61.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-213")
+def test_doc_issue_date_non_date_string():
+    """document issue_date — не дата. Ожидается 400."""
+    resp = post_transaction(_with_doc(issue_date="not-a-date"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-214")
+def test_doc_issue_date_after_expiry():
+    """document issue_date > expiry_date. Ожидается 400."""
+    resp = post_transaction(_with_doc(issue_date="2040-01-01", expiry_date="2035-01-01"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-215")
+def test_doc_issue_date_wrong_format():
+    """document issue_date в формате DD-MM-YYYY. Ожидается 400."""
+    resp = post_transaction(_with_doc(issue_date="15-06-2015"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-216")
+def test_doc_issue_date_nonexistent_month():
+    """document issue_date='2015-13-01' (несуществующий месяц). Ожидается 400."""
+    resp = post_transaction(_with_doc(issue_date="2015-13-01"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-217")
+def test_doc_issue_date_leap_year():
+    """document issue_date='2000-02-29' (високосный год). Ожидается 201."""
+    resp = post_transaction(_with_doc(issue_date="2000-02-29"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-218")
+def test_doc_issue_date_empty_string():
+    """document issue_date — пустая строка. Ожидается 400."""
+    resp = post_transaction(_with_doc(issue_date=""))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CD-219")
+def test_doc_issue_date_missing():
+    """document issue_date не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"]["document_details"].pop("issue_date", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# ISSUER (62.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-220")
+def test_issuer_any_string():
+    """issuer='Ministry of Interior' (любая строка). Ожидается 201."""
+    resp = post_transaction(_with_doc(issuer="Ministry of Interior"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-221")
+def test_issuer_latin():
+    """issuer='Interior' (латиница). Ожидается 201."""
+    resp = post_transaction(_with_doc(issuer="Interior"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-222")
+def test_issuer_latin_with_spaces():
+    """issuer='Ministry of Justice' (латиница с пробелами). Ожидается 201."""
+    resp = post_transaction(_with_doc(issuer="Ministry of Justice"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-223")
+def test_issuer_cyrillic():
+    """issuer='МВД' (кириллица). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(issuer="МВД"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-224")
+def test_issuer_cyrillic_with_spaces():
+    """issuer='МВД России' (кириллица с пробелами). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(issuer="МВД России"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-225")
+def test_issuer_letters_and_digits():
+    """issuer='Interior1' (буквы и цифры). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(issuer="Interior1"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-226")
+def test_issuer_letters_and_special_chars():
+    """issuer='Interior!' (буквы и спецсимволы). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(issuer="Interior!"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-227")
+def test_issuer_empty_string():
+    """issuer — пустая строка. Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(issuer=""))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-228")
+def test_issuer_null():
+    """issuer=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(issuer=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-229")
+def test_issuer_missing():
+    """issuer не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"]["document_details"].pop("issuer", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# NUMBER (63.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-230")
+def test_doc_number_any_string():
+    """number='123456789' (любая строка). Ожидается 201."""
+    resp = post_transaction(_with_doc(number="123456789"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-231")
+def test_doc_number_digits():
+    """number='987654321' (цифры). Ожидается 201."""
+    resp = post_transaction(_with_doc(number="987654321"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-232")
+def test_doc_number_latin_and_digits():
+    """number='AB123456' (латиница и цифры). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(number="AB123456"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-233")
+def test_doc_number_letters_digits_special():
+    """number='AB#12345' (буквы, цифры, спецсимволы). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(number="AB#12345"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-234")
+def test_doc_number_cyrillic():
+    """number='АА123456' (кириллица). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(number="АА123456"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-235")
+def test_doc_number_empty_string():
+    """number — пустая строка. Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(number=""))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-236")
+def test_doc_number_null():
+    """number=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(number=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-237")
+def test_doc_number_missing():
+    """number не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"]["document_details"].pop("number", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# SERIES (64.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-238")
+def test_doc_series_any_string():
+    """series='IV' (любая строка). Ожидается 201."""
+    resp = post_transaction(_with_doc(series="IV"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-239")
+def test_doc_series_latin():
+    """series='AB' (латиница). Ожидается 201."""
+    resp = post_transaction(_with_doc(series="AB"))
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-240")
+def test_doc_series_latin_with_spaces():
+    """series='A B' (латиница с пробелами). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(series="A B"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-241")
+def test_doc_series_cyrillic():
+    """series='ИВ' (кириллица). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(series="ИВ"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-242")
+def test_doc_series_cyrillic_with_spaces():
+    """series='И В' (кириллица с пробелами). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(series="И В"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-243")
+def test_doc_series_letters_and_digits():
+    """series='A1' (буквы и цифры). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(series="A1"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-244")
+def test_doc_series_letters_and_special_chars():
+    """series='A!' (буквы и спецсимволы). Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(series="A!"))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-245")
+def test_doc_series_empty_string():
+    """series — пустая строка. Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(series=""))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-246")
+def test_doc_series_null():
+    """series=null. Ожидается 201 или 400."""
+    resp = post_transaction(_with_doc(series=None))
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-247")
+def test_doc_series_missing():
+    """series не передан. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["personal_info"]["document_details"].pop("series", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
