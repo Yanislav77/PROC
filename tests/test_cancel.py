@@ -73,27 +73,27 @@ def test_cancel_nonexistent_transaction():
 
 
 def test_cancel_missing_financial_data():
-    """Cancel без financial_data (обязательное). Ожидается 400 или 422."""
+    """Cancel без financial_data (обязательное). Ожидается 400."""
     body = {"merchant_data": {"order_id": "order_cancel_test"}}
     resp = post_operation("000000000000", "cancel", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_cancel_missing_merchant_data():
-    """Cancel без merchant_data (обязательное). Ожидается 400 или 422."""
+    """Cancel без merchant_data (обязательное). Ожидается 400."""
     body = {"financial_data": {"amount": 1000, "currency": "RUB"}}
     resp = post_operation("000000000000", "cancel", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_cancel_missing_order_id():
-    """Cancel с merchant_data без order_id. Ожидается 400 или 422."""
+    """Cancel с merchant_data без order_id. Ожидается 400."""
     body = {
         "merchant_data": {"description": "no order_id"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp = post_operation("000000000000", "cancel", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)

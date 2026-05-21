@@ -122,19 +122,19 @@ def test_create_payment_link_rub():
 # ─────────────────────────────────────────────
 @pytest.mark.parametrize("missing_field", ["merchant_data", "financial_data", "customer_data"])
 def test_payment_link_missing_required_field(missing_field):
-    """Отсутствие одного из трёх обязательных полей верхнего уровня. Ожидается 422."""
+    """Отсутствие одного из трёх обязательных полей верхнего уровня. Ожидается 400."""
     body = {k: v for k, v in _VALID_LINK_BODY.items() if k != missing_field}
     resp = post_payment_link(body)
-    assert resp.status_code == 422, f"Expected 422 for missing {missing_field}, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400 for missing {missing_field}, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payment_link_missing_order_id():
-    """Создание ссылки без order_id в merchant_data (обязательное). Ожидается 422."""
+    """Создание ссылки без order_id в merchant_data (обязательное). Ожидается 400."""
     merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "order_id"}
     body = {**_VALID_LINK_BODY, "merchant_data": merchant}
     resp = post_payment_link(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
@@ -142,50 +142,50 @@ def test_payment_link_missing_order_id():
 # НЕГАТИВНЫЕ СЦЕНАРИИ — финансовые данные
 # ─────────────────────────────────────────────
 def test_payment_link_negative_amount():
-    """Создание ссылки с отрицательной суммой. Ожидается 422."""
+    """Создание ссылки с отрицательной суммой. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": -100, "currency": "RUB"}}
     resp = post_payment_link(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payment_link_zero_amount():
-    """Создание ссылки с нулевой суммой. Ожидается 422."""
+    """Создание ссылки с нулевой суммой. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": 0, "currency": "RUB"}}
     resp = post_payment_link(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payment_link_invalid_currency():
-    """Создание ссылки с невалидным кодом валюты. Ожидается 422."""
+    """Создание ссылки с невалидным кодом валюты. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": 5000, "currency": "INVALID"}}
     resp = post_payment_link(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payment_link_missing_currency():
-    """Создание ссылки без поля currency в financial_data. Ожидается 422."""
+    """Создание ссылки без поля currency в financial_data. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": 5000}}
     resp = post_payment_link(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payment_link_missing_amount():
-    """Создание ссылки без поля amount в financial_data. Ожидается 422."""
+    """Создание ссылки без поля amount в financial_data. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "financial_data": {"currency": "RUB"}}
     resp = post_payment_link(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payment_link_invalid_capture_mode():
-    """Создание ссылки с невалидным capture_mode в flow_data. Ожидается 422."""
+    """Создание ссылки с невалидным capture_mode в flow_data. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "flow_data": {"capture_mode": "instant"}}
     resp = post_payment_link(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 

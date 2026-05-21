@@ -86,82 +86,82 @@ def test_capture_nonexistent_transaction():
 
 
 def test_capture_missing_financial_data():
-    """Capture без financial_data (обязательное). Ожидается 400 или 422."""
+    """Capture без financial_data (обязательное). Ожидается 400."""
     body = {"merchant_data": {"order_id": "order_capture_test"}}
     resp = post_operation("000000000000", "capture", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_capture_missing_merchant_data():
-    """Capture без merchant_data (обязательное). Ожидается 400 или 422."""
+    """Capture без merchant_data (обязательное). Ожидается 400."""
     body = {"financial_data": {"amount": 1000, "currency": "RUB"}}
     resp = post_operation("000000000000", "capture", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_capture_missing_order_id():
-    """Capture с merchant_data без order_id. Ожидается 400 или 422."""
+    """Capture с merchant_data без order_id. Ожидается 400."""
     body = {
         "merchant_data": {"description": "no order_id"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp = post_operation("000000000000", "capture", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_capture_missing_amount():
-    """Capture без поля amount в financial_data. Ожидается 400 или 422."""
+    """Capture без поля amount в financial_data. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_capture_test"},
         "financial_data": {"currency": "RUB"},
     }
     resp = post_operation("000000000000", "capture", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_capture_missing_currency():
-    """Capture без поля currency в financial_data. Ожидается 400 или 422."""
+    """Capture без поля currency в financial_data. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_capture_test"},
         "financial_data": {"amount": 1000},
     }
     resp = post_operation("000000000000", "capture", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_capture_invalid_currency():
-    """Capture с невалидным кодом валюты. Ожидается 400, 404 или 422."""
+    """Capture с невалидным кодом валюты. Ожидается 400 или 404."""
     body = {
         "merchant_data": {"order_id": "order_capture_test"},
         "financial_data": {"amount": 1000, "currency": "INVALID"},
     }
     resp = post_operation("000000000000", "capture", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_capture_zero_amount():
-    """Capture с нулевой суммой. Ожидается 400, 404 или 422."""
+    """Capture с нулевой суммой. Ожидается 400 или 404."""
     body = {
         "merchant_data": {"order_id": "order_capture_test"},
         "financial_data": {"amount": 0, "currency": "RUB"},
     }
     resp = post_operation("000000000000", "capture", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_capture_negative_amount():
-    """Capture с отрицательной суммой. Ожидается 400, 404 или 422."""
+    """Capture с отрицательной суммой. Ожидается 400 или 404."""
     body = {
         "merchant_data": {"order_id": "order_capture_test"},
         "financial_data": {"amount": -500, "currency": "RUB"},
     }
     resp = post_operation("000000000000", "capture", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)

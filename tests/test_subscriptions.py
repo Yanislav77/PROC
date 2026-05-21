@@ -32,10 +32,10 @@ def test_cancel_nonexistent_subscription():
 
 
 def test_cancel_subscription_invalid_token_format():
-    """DELETE по токену, не соответствующему формату UUID. Ожидается 400, 404 или 422."""
+    """DELETE по токену, не соответствующему формату UUID. Ожидается 400 или 404."""
     url = f"{SUBSCRIPTIONS_URL}/{_INVALID_TOKEN}"
     resp = delete_request(url)
-    assert resp.status_code in (400, 404, 422), f"Expected 400/404/422, got {resp.status_code}"
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}"
     assert_error_response(resp)
 
 

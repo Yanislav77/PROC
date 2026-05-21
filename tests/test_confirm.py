@@ -26,64 +26,64 @@ def test_confirm_nonexistent_transaction():
 
 
 def test_confirm_missing_result():
-    """Confirm без поля result (обязательное). Ожидается 400 или 422."""
+    """Confirm без поля result (обязательное). Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp = post_operation("000000000000", "confirm", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_confirm_missing_financial_data():
-    """Confirm без financial_data (обязательное). Ожидается 400 или 422."""
+    """Confirm без financial_data (обязательное). Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "result": {"type": "redirect", "details": {"confirmed": True}},
     }
     resp = post_operation("000000000000", "confirm", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_confirm_missing_merchant_data():
-    """Confirm без merchant_data (обязательное). Ожидается 400 или 422."""
+    """Confirm без merchant_data (обязательное). Ожидается 400."""
     body = {
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "result": {"type": "redirect", "details": {"confirmed": True}},
     }
     resp = post_operation("000000000000", "confirm", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_confirm_missing_order_id():
-    """Confirm с merchant_data без order_id. Ожидается 400 или 422."""
+    """Confirm с merchant_data без order_id. Ожидается 400."""
     body = {
         "merchant_data": {},
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "result": {"type": "redirect", "details": {"confirmed": True}},
     }
     resp = post_operation("000000000000", "confirm", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_confirm_invalid_result_type():
-    """Confirm с неизвестным типом result. Ожидается 400 или 422."""
+    """Confirm с неизвестным типом result. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "result": {"type": "unknown_action", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_confirm_threed_secure_missing_pares():
-    """Confirm 3DS без поля pares (обязательное). Ожидается 400 или 422."""
+    """Confirm 3DS без поля pares (обязательное). Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
@@ -93,12 +93,12 @@ def test_confirm_threed_secure_missing_pares():
         },
     }
     resp = post_operation("000000000000", "confirm", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_confirm_threed_secure_missing_md():
-    """Confirm 3DS без поля md (обязательное). Ожидается 400 или 422."""
+    """Confirm 3DS без поля md (обязательное). Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
@@ -108,17 +108,17 @@ def test_confirm_threed_secure_missing_md():
         },
     }
     resp = post_operation("000000000000", "confirm", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_confirm_redirect_missing_confirmed():
-    """Confirm redirect без поля confirmed (обязательное). Ожидается 400 или 422."""
+    """Confirm redirect без поля confirmed (обязательное). Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "result": {"type": "redirect", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
-    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)

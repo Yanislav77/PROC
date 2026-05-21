@@ -69,9 +69,9 @@ def test_get_by_order_id_not_found():
 
 
 def test_get_by_order_id_missing_param():
-    """GET /transactions без параметра order_id. Ожидается 400 или 422."""
+    """GET /transactions без параметра order_id. Ожидается 400."""
     resp = get_request(BASE_URL)
-    assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 

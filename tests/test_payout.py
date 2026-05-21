@@ -155,26 +155,26 @@ def test_payout_bank_account_minimal():
 # НЕГАТИВНЫЕ — card
 # ─────────────────────────────────────────────
 def test_payout_card_missing_pan():
-    """Выплата на карту без pan (обязательное). Ожидается 422."""
+    """Выплата на карту без pan (обязательное). Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "card", "details": {"holder": "JOHN DOE"}}}
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payout_card_missing_holder():
-    """Выплата на карту без holder (обязательное). Ожидается 422."""
+    """Выплата на карту без holder (обязательное). Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111"}}}
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payout_card_missing_details():
-    """Выплата на карту без details. Ожидается 422."""
+    """Выплата на карту без details. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "card"}}
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
@@ -182,18 +182,18 @@ def test_payout_card_missing_details():
 # НЕГАТИВНЫЕ — mobile
 # ─────────────────────────────────────────────
 def test_payout_mobile_missing_phone():
-    """Выплата mobile без phone (обязательное). Ожидается 422."""
+    """Выплата mobile без phone (обязательное). Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "mobile", "details": {"provider": "Beeline"}}}
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payout_mobile_missing_details():
-    """Выплата mobile без details. Ожидается 422."""
+    """Выплата mobile без details. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "mobile"}}
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
@@ -201,18 +201,18 @@ def test_payout_mobile_missing_details():
 # НЕГАТИВНЫЕ — wallet
 # ─────────────────────────────────────────────
 def test_payout_wallet_missing_id():
-    """Выплата wallet без id (обязательное). Ожидается 422."""
+    """Выплата wallet без id (обязательное). Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "wallet", "details": {"brand": "PayPal"}}}
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payout_wallet_missing_details():
-    """Выплата wallet без details. Ожидается 422."""
+    """Выплата wallet без details. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "wallet"}}
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
@@ -220,18 +220,18 @@ def test_payout_wallet_missing_details():
 # НЕГАТИВНЫЕ — token
 # ─────────────────────────────────────────────
 def test_payout_token_missing_token():
-    """Выплата по токену без поля token. Ожидается 422."""
+    """Выплата по токену без поля token. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "token", "details": {}}}
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payout_token_missing_details():
-    """Выплата по токену без details. Ожидается 422."""
+    """Выплата по токену без details. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "token"}}
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
@@ -239,44 +239,44 @@ def test_payout_token_missing_details():
 # НЕГАТИВНЫЕ — общие
 # ─────────────────────────────────────────────
 def test_payout_unknown_method():
-    """Неизвестный метод выплаты. Ожидается 422."""
+    """Неизвестный метод выплаты. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "unknown_method"}}
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payout_negative_amount():
-    """Выплата с отрицательной суммой. Ожидается 422."""
+    """Выплата с отрицательной суммой. Ожидается 400."""
     body = {
         **_BASE,
         "financial_data": {"amount": -1000, "currency": "RUB"},
         "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
     }
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payout_zero_amount():
-    """Выплата с нулевой суммой. Ожидается 422."""
+    """Выплата с нулевой суммой. Ожидается 400."""
     body = {
         **_BASE,
         "financial_data": {"amount": 0, "currency": "RUB"},
         "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
     }
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 def test_payout_invalid_currency():
-    """Выплата с невалидным кодом валюты. Ожидается 422."""
+    """Выплата с невалидным кодом валюты. Ожидается 400."""
     body = {
         **_BASE,
         "financial_data": {"amount": 1000, "currency": "INVALID"},
         "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
     }
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)

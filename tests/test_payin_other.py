@@ -95,8 +95,8 @@ def test_payin_token_rebill_manual_capture(payin_transaction_id):
 # НЕГАТИВНЫЕ — mobile
 # ─────────────────────────────────────────────
 def test_payin_mobile_missing_phone():
-    """Payin mobile без поля phone (обязательное). Ожидается 422."""
+    """Payin mobile без поля phone (обязательное). Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "mobile", "details": {}}}
     resp = post_transaction(body)
-    assert resp.status_code == 422, f"Expected 422, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)

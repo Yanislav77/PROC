@@ -151,7 +151,7 @@ def test_timestamp_too_old():
 
 
 def test_invalid_json_body():
-    """Тело запроса — невалидный JSON. Ожидается 400 или 422."""
+    """Тело запроса — невалидный JSON. Ожидается 400."""
     raw = "this is not json"
     timestamp = str(int(time.time()))
     message = f"{timestamp}{TERMINAL_ID}{raw}"
@@ -164,5 +164,5 @@ def test_invalid_json_body():
         "Api-Timestamp":       timestamp,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
-    assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
