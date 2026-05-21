@@ -484,7 +484,7 @@ _VALID_STATUSES = frozenset({
 def assert_transaction_response(data: dict) -> None:
     """Validates ResponseBase schema per PROCESSING_API.yml spec."""
     assert isinstance(data.get("transaction_id"), int), \
-        f"transaction_id must be a string, got {data.get('transaction_id')!r}"
+        f"transaction_id must be a int, got {data.get('transaction_id')!r}"
     assert data.get("status") in _VALID_STATUSES, \
         f"status must be one of {sorted(_VALID_STATUSES)}, got {data.get('status')!r}"
     assert data.get("type") in ("payin", "payout"), \
