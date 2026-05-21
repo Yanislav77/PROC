@@ -210,7 +210,6 @@ def _esc(text) -> str:
 
 
 def _fmt_body_plain(raw) -> str:
-    """Форматирует тело запроса/ответа как текст (без отступа) для HTML <pre>."""
     if not raw:
         return ""
     if isinstance(raw, bytes):
@@ -237,16 +236,13 @@ def _write_report_entry(nodeid: str, status: str, error, captures: list) -> None
 
     css = "passed" if status == "PASSED" else "failed"
     badge = "✓ PASSED" if status == "PASSED" else "✗ FAILED"
-    open_attr = " open" if status != "PASSED" else ""
-    icon = "▲" if open_attr else "▼"
 
-    f.write(f'<div class="test {css}">\n')
-    f.write(f'  <div class="test-header" onclick="toggle({idx})">\n')
+    f.write(f'<div class="panel {css}" id="p{idx}" data-name="{_esc(nodeid)}" data-status="{css}">\n')
+    f.write(f'  <div class="panel-header">\n')
     f.write(f'    <span class="badge">{badge}</span>\n')
-    f.write(f'    <span class="test-name">{_esc(nodeid)}</span>\n')
-    f.write(f'    <span class="icon" id="i{idx}">{icon}</span>\n')
+    f.write(f'    <span class="panel-name">{_esc(nodeid)}</span>\n')
     f.write(f'  </div>\n')
-    f.write(f'  <div class="test-body{open_attr}" id="b{idx}">\n')
+    f.write(f'  <div class="panel-body">\n')
 
     if error:
         f.write('    <div class="section-label">Error</div>\n')
@@ -290,27 +286,35 @@ def pytest_configure(config):
 <title>Report — {_esc(suffix)}</title>
 <style>
 *{{box-sizing:border-box;margin:0;padding:0}}
-body{{font-family:'Segoe UI',system-ui,sans-serif;background:#1a1a2e;color:#e0e0e0;padding:24px;line-height:1.5}}
-h1{{color:#fff;font-size:1.4em;margin-bottom:6px}}
-.meta{{color:#888;font-size:.85em;margin-bottom:20px}}
-#summary{{display:flex;gap:20px;margin-bottom:24px;font-size:1em;align-items:center}}
+body{{font-family:'Segoe UI',system-ui,sans-serif;background:#1a1a2e;color:#e0e0e0;display:flex;flex-direction:column;height:100vh;overflow:hidden}}
+.top-bar{{background:#12122a;border-bottom:1px solid #2a2a4a;padding:10px 20px;flex-shrink:0;display:flex;align-items:center;gap:16px}}
+.top-bar h1{{color:#fff;font-size:1.1em;white-space:nowrap}}
+.top-bar .meta{{color:#666;font-size:.8em}}
+#summary{{display:flex;gap:14px;font-size:.88em;margin-left:auto;align-items:center;white-space:nowrap}}
 .sum-p{{color:#4caf50;font-weight:bold}}
 .sum-f{{color:#f44336;font-weight:bold}}
-.sum-t{{color:#aaa}}
-.test{{border-radius:6px;margin-bottom:8px;overflow:hidden;border:1px solid transparent}}
-.test.passed{{border-color:#2d4a2d}}
-.test.failed{{border-color:#4a2020}}
-.test-header{{display:flex;align-items:center;gap:12px;padding:10px 14px;cursor:pointer;user-select:none}}
-.test.passed .test-header{{background:#1b3a1b}}
-.test.failed .test-header{{background:#3a1b1b}}
-.test-header:hover{{filter:brightness(1.2)}}
+.sum-t{{color:#777}}
+.layout{{display:flex;flex:1;overflow:hidden}}
+.sidebar{{width:290px;background:#12122a;border-right:1px solid #2a2a4a;overflow-y:auto;flex-shrink:0;padding:6px 0}}
+.nav-item{{padding:7px 12px 7px 14px;cursor:pointer;border-left:3px solid transparent;font-family:'Consolas',monospace;font-size:.76em;color:#999;line-height:1.4;word-break:break-all;user-select:none;display:flex;align-items:flex-start;gap:6px}}
+.nav-item:hover{{background:#1a1a38;color:#ddd}}
+.nav-item.active{{background:#1e1e3a;color:#fff;border-left-color:#5c7aaa}}
+.nav-badge{{flex-shrink:0;margin-top:1px}}
+.nav-item.passed .nav-badge{{color:#4caf50}}
+.nav-item.failed .nav-badge{{color:#f44336}}
+.main{{flex:1;overflow-y:auto;padding:20px}}
+.panel{{display:none}}
+.panel.active{{display:block}}
+.panel-header{{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:6px 6px 0 0}}
+.panel.passed .panel-header{{background:#1b3a1b;border:1px solid #2d4a2d;border-bottom:none}}
+.panel.failed .panel-header{{background:#3a1b1b;border:1px solid #4a2020;border-bottom:none}}
 .badge{{font-size:.75em;font-weight:bold;padding:2px 8px;border-radius:10px;flex-shrink:0}}
-.test.passed .badge{{background:#2e7d32;color:#a5d6a7}}
-.test.failed .badge{{background:#b71c1c;color:#ffcdd2}}
-.test-name{{font-family:'Consolas',monospace;font-size:.88em;color:#ddd;word-break:break-all}}
-.icon{{margin-left:auto;color:#666;font-size:.8em;flex-shrink:0}}
-.test-body{{display:none;padding:14px 16px;background:#16213e;border-top:1px solid #2a2a4a}}
-.test-body.open{{display:block}}
+.panel.passed .badge{{background:#2e7d32;color:#a5d6a7}}
+.panel.failed .badge{{background:#b71c1c;color:#ffcdd2}}
+.panel-name{{font-family:'Consolas',monospace;font-size:.88em;color:#ddd;word-break:break-all}}
+.panel-body{{padding:14px 16px;background:#16213e;border-radius:0 0 6px 6px}}
+.panel.passed .panel-body{{border:1px solid #2d4a2d;border-top:none}}
+.panel.failed .panel-body{{border:1px solid #4a2020;border-top:none}}
 .section-label{{font-size:.72em;font-weight:bold;letter-spacing:.08em;color:#5c7aaa;text-transform:uppercase;margin:12px 0 6px}}
 .section-label:first-child{{margin-top:0}}
 .http-line{{font-family:monospace;font-size:.85em;margin-bottom:6px}}
@@ -320,31 +324,21 @@ h1{{color:#fff;font-size:1.4em;margin-bottom:6px}}
 .s2xx{{color:#4caf50}}.s4xx{{color:#ff9800}}.s5xx{{color:#f44336}}
 pre.body{{background:#0d1117;border:1px solid #2a2a4a;border-radius:4px;padding:10px 12px;
   font-family:'Consolas',monospace;font-size:.82em;color:#cdd9e5;
-  white-space:pre-wrap;word-break:break-all;max-height:320px;overflow-y:auto;margin:0}}
+  white-space:pre-wrap;word-break:break-all;max-height:340px;overflow-y:auto;margin:0}}
 .error-block{{background:#1a0a0a;border-left:3px solid #f44336;border-radius:0 4px 4px 0;padding:12px;margin-top:8px}}
 .error-block pre{{color:#ff8a80;font-size:.82em;white-space:pre-wrap;word-break:break-all;
   max-height:400px;overflow-y:auto;margin:0}}
 </style>
-<script>
-function toggle(id){{
-  var b=document.getElementById('b'+id),i=document.getElementById('i'+id);
-  b.classList.toggle('open');
-  i.textContent=b.classList.contains('open')?'▲':'▼';
-}}
-window.onload=function(){{
-  var p=document.querySelectorAll('.test.passed').length;
-  var f=document.querySelectorAll('.test.failed').length;
-  document.getElementById('summary').innerHTML=
-    '<span class="sum-p">✓ '+p+' passed</span>'+
-    (f?'<span class="sum-f">&nbsp;&nbsp;✗ '+f+' failed</span>':'')+
-    '<span class="sum-t">&nbsp;&nbsp;/ '+(p+f)+' total</span>';
-}};
-</script>
 </head>
 <body>
-<h1>Test Report</h1>
-<div class="meta">Suite: <b>{_esc(suffix)}</b> &nbsp;|&nbsp; Started: {started}</div>
-<div id="summary"></div>
+<div class="top-bar">
+  <h1>Test Report</h1>
+  <span class="meta">Suite: <b>{_esc(suffix)}</b> &nbsp;|&nbsp; {started}</span>
+  <div id="summary"></div>
+</div>
+<div class="layout">
+  <div class="sidebar" id="sidebar"></div>
+  <div class="main" id="main">
 """)
     _report_file.flush()
 
@@ -353,11 +347,48 @@ def pytest_unconfigure(config):
     global _report_file
     if _report_file:
         finished = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        _report_file.write(
-            f'<div class="meta" style="margin-top:24px;border-top:1px solid #333;padding-top:12px;">'
-            f'Finished: {finished}</div>\n'
-        )
-        _report_file.write("</body>\n</html>\n")
+        _report_file.write(f"""
+  </div>
+</div>
+<script>
+(function(){{
+  var panels=document.querySelectorAll('.panel');
+  var sidebar=document.getElementById('sidebar');
+  var passed=0,failed=0,firstFailed=null,navItems=[];
+  panels.forEach(function(p,i){{
+    var st=p.dataset.status,nm=p.dataset.name;
+    if(st==='passed')passed++;else{{failed++;if(!firstFailed)firstFailed=p;}}
+    var item=document.createElement('div');
+    item.className='nav-item '+st;
+    item.innerHTML='<span class="nav-badge">'+(st==='passed'?'✓':'✗')+'</span><span>'+nm+'</span>';
+    (function(panel,navItem){{
+      navItem.onclick=function(){{
+        panels.forEach(function(x){{x.classList.remove('active');}});
+        navItems.forEach(function(x){{x.classList.remove('active');}});
+        panel.classList.add('active');
+        navItem.classList.add('active');
+      }};
+    }})(p,item);
+    sidebar.appendChild(item);
+    navItems.push(item);
+  }});
+  var toShow=firstFailed||panels[0];
+  if(toShow){{
+    toShow.classList.add('active');
+    navItems[Array.from(panels).indexOf(toShow)].classList.add('active');
+  }}
+  var total=passed+failed;
+  document.getElementById('summary').innerHTML=
+    '<span class="sum-p">✓ '+passed+' passed</span>'+
+    (failed?'<span class="sum-f">&nbsp;&nbsp;✗ '+failed+' failed</span>':'')+
+    '<span class="sum-t">&nbsp;&nbsp;/ '+total+' total</span>';
+  document.querySelector('.meta').innerHTML+=
+    '&nbsp;|&nbsp; Finished: {finished}';
+}})();
+</script>
+</body>
+</html>
+""")
         _report_file.close()
         _report_file = None
 
