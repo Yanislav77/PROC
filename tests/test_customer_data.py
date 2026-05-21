@@ -69,20 +69,22 @@ def _with_doc(**overrides) -> dict:
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CD-001")
 def test_browser_info_missing():
-    """browser_info не передан. Ожидается 201 (необязательный объект)."""
+    """browser_info не передан. Ожидается 400 (ip обязателен внутри browser_info)."""
     import copy
     body = copy.deepcopy(_BASE)
     del body["customer_data"]["browser_info"]
     resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("CD-002")
 def test_browser_info_empty_object():
-    """browser_info передан как пустой объект {}. Ожидается 201."""
+    """browser_info передан как пустой объект {}. Ожидается 400 (ip обязателен)."""
     body = _with_customer(browser_info={})
     resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -195,18 +197,16 @@ def test_java_enabled_false():
 
 @pytest.mark.tcid("CD-016")
 def test_java_enabled_int_one():
-    """java_enabled=1 (не boolean). Ожидается 400."""
+    """java_enabled=1 (корректное значение для boolean). Ожидается 201."""
     resp = post_transaction(_with_browser(java_enabled=1))
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("CD-017")
 def test_java_enabled_int_zero():
-    """java_enabled=0 (не boolean). Ожидается 400."""
+    """java_enabled=0 (корректное значение для boolean). Ожидается 201."""
     resp = post_transaction(_with_browser(java_enabled=0))
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("CD-018")
@@ -243,10 +243,9 @@ def test_java_script_enabled_false():
 
 @pytest.mark.tcid("CD-022")
 def test_java_script_enabled_int():
-    """java_script_enabled=1 (не boolean). Ожидается 400."""
+    """java_script_enabled=1 (корректное значение для boolean). Ожидается 201."""
     resp = post_transaction(_with_browser(java_script_enabled=1))
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("CD-023")
