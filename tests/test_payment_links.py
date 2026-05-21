@@ -7,6 +7,7 @@ POST /api/v1/payment-links
 """
 import json
 import time
+import uuid
 import requests
 import pytest
 
@@ -222,7 +223,6 @@ def test_payment_link_no_auth():
 @pytest.mark.tcid("PL-019")
 def test_payment_link_invalid_signature():
     """Создание ссылки с невалидной подписью. Ожидается 401 или 403."""
-    import uuid
     raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
     headers = {
         "Content-Type":        "application/json",
@@ -234,3 +234,142 @@ def test_payment_link_invalid_signature():
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
     assert_error_response(resp)
+
+
+@pytest.mark.tcid("PL-020")
+def test_payment_link_missing_terminal_id():
+    """Создание ссылки без Api-Terminal-ID. Ожидается 400, 401 или 403."""
+    raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       "0" * 64,
+        "Api-Timestamp":       str(int(time.time())),
+    }
+    resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PL-021")
+def test_payment_link_missing_timestamp():
+    """Создание ссылки без Api-Timestamp. Ожидается 400, 401 или 403."""
+    raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       "0" * 64,
+    }
+    resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ГРАНИЧНЫЕ СЛУЧАИ — ФИНАНСОВЫЕ ДАННЫЕ
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-022")
+def test_payment_link_amount_as_string():
+    """Создание ссылки с суммой как строкой. Ожидается 400."""
+    body = {**_VALID_LINK_BODY, "financial_data": {"amount": "5000", "currency": "RUB"}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PL-023")
+def test_payment_link_amount_as_float():
+    """Создание ссылки с суммой как вещественным числом. Ожидается 400."""
+    body = {**_VALID_LINK_BODY, "financial_data": {"amount": 99.99, "currency": "RUB"}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PL-024")
+def test_payment_link_currency_usd():
+    """Создание ссылки с валютой USD. Ожидается 201 или 400 (зависит от настроек терминала)."""
+    body = {**_VALID_LINK_BODY, "financial_data": {"amount": 5000, "currency": "USD"}}
+    resp = post_payment_link(body)
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# ГРАНИЧНЫЕ СЛУЧАИ — MERCHANT_DATA
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-025")
+def test_payment_link_order_id_null():
+    """Создание ссылки с order_id = null. Ожидается 400."""
+    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": None}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PL-026")
+def test_payment_link_order_id_empty():
+    """Создание ссылки с пустым order_id. Ожидается 400."""
+    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": ""}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PL-027")
+def test_payment_link_order_id_257_chars():
+    """Создание ссылки с order_id длиной 257 символов (превышение лимита). Ожидается 400."""
+    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": "x" * 257}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PL-028")
+def test_payment_link_webhook_url_invalid():
+    """Создание ссылки с невалидным webhook_url. Ожидается 400."""
+    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "webhook_url": "not_a_url"}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ГРАНИЧНЫЕ СЛУЧАИ — FLOW_DATA
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-029")
+def test_payment_link_invalid_threed_window_size():
+    """Создание ссылки с невалидным challenge_window_size в threed_secure. Ожидается 400."""
+    body = {
+        **_VALID_LINK_BODY,
+        "flow_data": {
+            "capture_mode": "auto",
+            "threed_secure": {"challenge_window_size": "99"},
+        },
+    }
+    resp = post_payment_link(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ПРОВЕРКА ПОЛЕЙ ОТВЕТА
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-030")
+def test_payment_link_response_order_id_matches():
+    """В ответе merchant_data.order_id совпадает с отправленным значением."""
+    merchant = {**MERCHANT_DATA, "order_id": "order_link_resp_check"}
+    body = {**_VALID_LINK_BODY, "merchant_data": merchant}
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert data.get("merchant_data", {}).get("order_id") == "order_link_resp_check"
+
+
+@pytest.mark.tcid("PL-031")
+def test_payment_link_return_url_with_query_params():
+    """Создание ссылки с return_url, содержащим query-параметры. Ожидается 201."""
+    merchant = {**MERCHANT_DATA, "return_url": "https://example.com/return?order=abc&status=ok"}
+    body = {**_VALID_LINK_BODY, "merchant_data": merchant}
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"

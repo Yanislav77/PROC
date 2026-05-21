@@ -106,3 +106,223 @@ def test_payin_mobile_missing_phone():
     resp = post_transaction(body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# НЕГАТИВНЫЕ — p2p
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PO-007")
+def test_payin_p2p_missing_transaction_data():
+    """Payin p2p без transaction_data. Ожидается 400."""
+    body = {k: v for k, v in _BASE.items() if k != "transaction_data"}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-008")
+def test_payin_p2p_manual_capture():
+    """Payin p2p с capture_mode=manual. Ожидается 201."""
+    body = {
+        **_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": "order_p2p_manual"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
+        "transaction_data": {"method": "p2p"},
+    }
+    _assert_payin_ok(post_transaction(body))
+
+
+@pytest.mark.tcid("PO-009")
+def test_payin_p2p_with_description():
+    """Payin p2p с опциональным description. Ожидается 201."""
+    body = {
+        **_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": "order_p2p_desc", "description": "P2P test"},
+        "transaction_data": {"method": "p2p"},
+    }
+    _assert_payin_ok(post_transaction(body))
+
+
+# ─────────────────────────────────────────────
+# НЕГАТИВНЫЕ — qr
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PO-010")
+def test_payin_qr_missing_transaction_data():
+    """Payin qr без transaction_data. Ожидается 400."""
+    body = {k: v for k, v in _BASE.items() if k != "transaction_data"}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-011")
+def test_payin_qr_is_recurrent():
+    """Payin qr с is_recurrent=True. Ожидается 201."""
+    body = {
+        **_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": "order_qr_recurrent"},
+        "flow_data": {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
+        "transaction_data": {"method": "qr"},
+    }
+    _assert_payin_ok(post_transaction(body))
+
+
+# ─────────────────────────────────────────────
+# НЕГАТИВНЫЕ — mobile (дополнительные)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PO-012")
+def test_payin_mobile_invalid_phone_format():
+    """Payin mobile с телефоном не в формате E.164. Ожидается 400."""
+    body = {**_BASE, "transaction_data": {"method": "mobile", "details": {"phone": "89991234567"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-013")
+def test_payin_mobile_phone_too_short():
+    """Payin mobile с телефоном '+7' (слишком короткий). Ожидается 400."""
+    body = {**_BASE, "transaction_data": {"method": "mobile", "details": {"phone": "+7"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-014")
+def test_payin_mobile_phone_with_spaces():
+    """Payin mobile с пробелами в номере телефона. Ожидается 400."""
+    body = {**_BASE, "transaction_data": {"method": "mobile", "details": {"phone": "+7 999 123 45 67"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-015")
+def test_payin_mobile_with_provider():
+    """Payin mobile с необязательным полем provider. Ожидается 201."""
+    body = {
+        **_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": "order_mobile_provider"},
+        "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567", "provider": "MTS"}},
+    }
+    _assert_payin_ok(post_transaction(body))
+
+
+# ─────────────────────────────────────────────
+# НЕГАТИВНЫЕ — token (дополнительные)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PO-016")
+def test_payin_token_missing_token_field():
+    """Payin token без поля token в details. Ожидается 400."""
+    body = {
+        **_BASE,
+        "transaction_data": {
+            "method": "token",
+            "details": {},
+            "parent_transaction_id": "000000000000",
+        },
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-017")
+def test_payin_token_invalid_uuid_format():
+    """Payin token с токеном в невалидном формате (не UUID). Ожидается 400."""
+    body = {
+        **_BASE,
+        "transaction_data": {
+            "method": "token",
+            "details": {"token": "not-a-valid-uuid"},
+            "parent_transaction_id": "000000000000",
+        },
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-018")
+def test_payin_token_nonexistent_uuid():
+    """Payin token с несуществующим UUID (нулевой). Ожидается 400 или 404."""
+    body = {
+        **_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": "order_token_nonexist"},
+        "transaction_data": {
+            "method": "token",
+            "details": {"token": "00000000-0000-0000-0000-000000000000"},
+            "parent_transaction_id": "000000000000",
+        },
+    }
+    resp = post_transaction(body)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-019")
+def test_payin_token_empty_string():
+    """Payin token с пустой строкой в качестве токена. Ожидается 400."""
+    body = {
+        **_BASE,
+        "transaction_data": {
+            "method": "token",
+            "details": {"token": ""},
+            "parent_transaction_id": "000000000000",
+        },
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ОБЩИЕ ГРАНИЧНЫЕ СЛУЧАИ
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PO-020")
+def test_payin_unknown_method():
+    """Payin с неизвестным методом. Ожидается 400."""
+    body = {**_BASE, "transaction_data": {"method": "unknown_method"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-021")
+def test_payin_missing_transaction_data():
+    """Payin без transaction_data. Ожидается 400."""
+    body = {k: v for k, v in _BASE.items() if k != "transaction_data"}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-022")
+def test_payin_qr_response_fields():
+    """Payin qr — ответ содержит все обязательные поля согласно спецификации."""
+    body = {
+        **_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": "order_qr_resp"},
+        "transaction_data": {"method": "qr"},
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert_transaction_response(data)
+    assert data["type"] == "payin"
+    assert data["financial_data"]["currency"] == "RUB"
+
+
+@pytest.mark.tcid("PO-023")
+def test_payin_p2p_response_fields():
+    """Payin p2p — ответ содержит transaction_id, status, type, created_at."""
+    body = {
+        **_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": "order_p2p_resp"},
+        "transaction_data": {"method": "p2p"},
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert_transaction_response(data)
+    assert data["type"] == "payin"
