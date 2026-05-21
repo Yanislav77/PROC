@@ -2127,3 +2127,42 @@ def test_doc_series_missing():
     body["customer_data"]["personal_info"]["document_details"].pop("series", None)
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# PAYER_ID missing (50.9)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-248")
+def test_payer_id_missing():
+    """50.9 payer_id не передан в payer_info. Ожидается 201."""
+    import copy
+    body = copy.deepcopy(_BASE)
+    body["customer_data"]["payer_info"].pop("payer_id", None)
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# ISSUE_DATE формат YY-MM-DD (61.6)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-249")
+def test_doc_issue_date_yy_mm_dd_format():
+    """61.6 document issue_date в формате YY-MM-DD. Ожидается 400."""
+    resp = post_transaction(_with_doc(issue_date="15-06-15"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# POST запрос без тела (65)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-250")
+def test_post_without_body():
+    """65 POST /transactions без тела запроса. Ожидается 400."""
+    import requests
+    import conftest
+    headers = conftest.make_headers(conftest.TERMINAL_ID, raw_body="", method="POST")
+    headers.pop("Content-Type", None)
+    resp = requests.post(conftest.BASE_URL, headers=headers, timeout=30)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)

@@ -1167,3 +1167,250 @@ def test_customer_data_empty_object():
     """customer_data передан как пустой объект {} (все поля необязательны). Ожидается 201."""
     resp = post_transaction({**_BASE, "customer_data": {}})
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# ORDER_ID — содержимое строки (8.1, 8.2, 8.7–8.11)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-123")
+def test_order_id_valid_string():
+    """8.1 order_id = любое строковое значение. Ожидается 201."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": "valid_order_string"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-124")
+def test_order_id_duplicate():
+    """8.2 order_id = дублирующееся значение (такое же, как в 8.1). Ожидается 201 или 409."""
+    order_id = "valid_order_string"
+    body = {**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": order_id}}
+    resp = post_transaction(body)
+    assert resp.status_code in (201, 409), f"Expected 201 or 409, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-125")
+def test_order_id_latin_only():
+    """8.7 order_id состоит только из латинских букв. Ожидается 201."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": "latinonly"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-126")
+def test_order_id_digits_only():
+    """8.8 order_id состоит только из цифр. Ожидается 201."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": "98765432"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-127")
+def test_order_id_latin_and_digits():
+    """8.9 order_id состоит из латинских букв и цифр. Ожидается 201."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": "order8899"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-128")
+def test_order_id_cyrillic_only():
+    """8.10 order_id состоит только из кириллицы. Ожидается 201 или 400."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": "ЗАКАЗ12345"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-129")
+def test_order_id_latin_and_special_chars():
+    """8.11 order_id состоит из латинских букв и спецсимволов. Ожидается 201 или 400."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": "ORDER#@$%^&*()"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# DESCRIPTION — содержимое строки (9.1, 9.2, 9.6–9.11)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-130")
+def test_description_valid_string():
+    """9.1 description = валидная строка. Ожидается 201."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": "Valid description text"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-131")
+def test_description_same_as_order_id_value():
+    """9.2 description = строка аналогичного формата, как order_id в кейсе 8.1. Ожидается 201."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": "valid_order_string"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-132")
+def test_description_missing():
+    """9.6 description не передан в запросе. Ожидается 201 (поле необязательно)."""
+    merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "description"}
+    resp = post_transaction({**_BASE, "merchant_data": merchant})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-133")
+def test_description_latin_only():
+    """9.7 description состоит только из латинских букв. Ожидается 201."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": "descriptiononly"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-134")
+def test_description_digits_only():
+    """9.8 description состоит только из цифр. Ожидается 201."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": "12345678"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-135")
+def test_description_latin_and_digits():
+    """9.9 description состоит из латинских букв и цифр. Ожидается 201."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": "order123description"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-136")
+def test_description_cyrillic_only():
+    """9.10 description состоит только из кириллицы. Ожидается 201 или 400."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": "Описание заказа"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-137")
+def test_description_latin_and_special_chars():
+    """9.11 description состоит из латинских букв и спецсимволов. Ожидается 201."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": "Order#@$%^&*()"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# RETURN_URL — отсутствие поля (11.6)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-138")
+def test_return_url_missing():
+    """11.6 return_url не передан в запросе. Ожидается 201 (поле необязательно)."""
+    merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "return_url"}
+    resp = post_transaction({**_BASE, "merchant_data": merchant})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# AMOUNT — пустое значение и отсутствие (13.8, 13.9)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-139")
+def test_amount_empty_string():
+    """13.8 amount = пустая строка. Ожидается 400."""
+    resp = post_transaction({**_BASE, "financial_data": {"amount": "", "currency": "RUB"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PC-140")
+def test_amount_missing():
+    """13.9 amount не передан в financial_data. Ожидается 400."""
+    resp = post_transaction({**_BASE, "financial_data": {"currency": "RUB"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# CURRENCY — валидный код сервиса (14.2)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-141")
+def test_currency_rub_valid():
+    """14.2 currency = 'RUB' — 3-значный буквенный код, совпадающий с валютой сервиса. Ожидается 201."""
+    resp = post_transaction({**_BASE, "financial_data": {"amount": 10000, "currency": "RUB"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# IS_RECURRENT — false и отсутствие (16.2, 16.8)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-142")
+def test_is_recurrent_false():
+    """16.2 is_recurrent = false. Ожидается 201."""
+    body = {**_BASE, "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-143")
+def test_is_recurrent_missing():
+    """16.8 is_recurrent не передан в flow_data. Ожидается 201 или 400."""
+    flow = {k: v for k, v in _BASE["flow_data"].items() if k != "is_recurrent"}
+    resp = post_transaction({**_BASE, "flow_data": flow})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# THREED_SECURE — отсутствие объекта (18.1)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-144")
+def test_threed_secure_missing():
+    """18.1 threed_secure не передан в flow_data. Ожидается 201."""
+    body = {**_BASE, "flow_data": {"is_recurrent": False, "capture_mode": "auto"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# TRANSACTION_DATA — пустой объект (20.2)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-145")
+def test_transaction_data_empty_object_20_2():
+    """20.2 transaction_data передан как пустой объект {}. Ожидается 400."""
+    resp = post_transaction({**_BASE, "transaction_data": {}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# METHOD — значение "card" и отсутствие (21.1, 21.5)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-146")
+def test_method_card_explicit():
+    """21.1 method = 'card'. Ожидается 201."""
+    resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": CARD_DETAILS}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PC-147")
+def test_method_missing():
+    """21.5 method не передан в transaction_data. Ожидается 400."""
+    resp = post_transaction({**_BASE, "transaction_data": {"details": CARD_DETAILS}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# DETAILS — отсутствие объекта (22.1)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-148")
+def test_details_missing():
+    """22.1 details не передан в transaction_data. Ожидается 400."""
+    resp = post_transaction({**_BASE, "transaction_data": {"method": "card"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# EXPIRY_MONTH — отсутствие поля (24.9)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-149")
+def test_expiry_month_missing():
+    """24.9 expiry_month не передан в details. Ожидается 400."""
+    details = {k: v for k, v in CARD_DETAILS.items() if k != "expiry_month"}
+    resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# PIN — отсутствие поля (29.8)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-150")
+def test_pin_missing():
+    """29.8 pin не передан в details. Ожидается 201 (поле необязательно)."""
+    details = {k: v for k, v in CARD_DETAILS.items() if k != "pin"}
+    resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
