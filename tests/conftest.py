@@ -4,7 +4,9 @@ import json
 import os
 import time
 import uuid
+from datetime import datetime
 from http import HTTPStatus
+from pathlib import Path
 
 import pytest
 import requests
@@ -178,6 +180,88 @@ THREED = {"challenge_window_size": "05"}
 
 
 # ─────────────────────────────────────────────
+# REPORT FILE
+# ─────────────────────────────────────────────
+_report_file = None
+_http_captures: dict = {}  # nodeid -> list[(PreparedRequest, Response)]
+_call_reports: dict = {}   # nodeid -> CallReport (stored until teardown phase)
+
+_REPORTS_DIR = Path(__file__).parent.parent / "reports"
+
+
+def _make_report_suffix(config) -> str:
+    args = [a for a in config.args if not a.startswith("-")]
+    if not args:
+        return "all"
+    raw = args[0].replace("\\", "/")
+    if "::" in raw:
+        file_part, test_part = raw.split("::", 1)
+        stem = Path(file_part).stem
+        test_clean = test_part.replace("[", "_").replace("]", "")
+        return f"{stem}__{test_clean}"
+    stem = Path(raw).stem
+    return "all" if stem in ("tests", "test", ".") or not stem else stem
+
+
+def _write_report_entry(nodeid: str, status: str, error, captures: list) -> None:
+    f = _report_file
+    eq = "═" * 70
+    dash = "─" * 70
+    f.write(f"\n{eq}\n")
+    f.write(f"TEST:   {nodeid}\n")
+    f.write(f"STATUS: {status}\n")
+    if error:
+        f.write(f"{dash}\n")
+        f.write(f"ERROR:\n{error}\n")
+    if captures:
+        f.write(f"{dash}\n")
+        for prep, resp in captures:
+            phrase = _status_phrase(resp.status_code)
+            f.write(f"{prep.method} {prep.url}\n")
+            f.write(f"  ── Request ──\n{_fmt_body(prep.body)}\n")
+            f.write(f"  ── Response: {resp.status_code} {phrase} ──\n{_fmt_body(resp.text)}\n")
+    f.write(f"{eq}\n")
+    f.flush()
+
+
+def pytest_configure(config):
+    global _report_file
+    _REPORTS_DIR.mkdir(exist_ok=True)
+    suffix = _make_report_suffix(config)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    path = _REPORTS_DIR / f"{timestamp}_{suffix}.log"
+    _report_file = path.open("w", encoding="utf-8")
+    _report_file.write(f"Run started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+    _report_file.write(f"Suite:       {suffix}\n")
+    _report_file.flush()
+
+
+def pytest_unconfigure(config):
+    global _report_file
+    if _report_file:
+        _report_file.write(f"\nRun finished: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        _report_file.close()
+        _report_file = None
+
+
+def pytest_runtest_logreport(report):
+    if _report_file is None:
+        return
+    if report.when == "setup" and report.failed:
+        _write_report_entry(report.nodeid, "ERROR (setup failed)", str(report.longrepr), [])
+    elif report.when == "call":
+        _call_reports[report.nodeid] = report
+    elif report.when == "teardown":
+        call = _call_reports.pop(report.nodeid, None)
+        if call is None:
+            return
+        captures = _http_captures.pop(report.nodeid, [])
+        status = "PASSED" if call.passed else "FAILED"
+        error = str(call.longrepr) if call.failed else None
+        _write_report_entry(report.nodeid, status, error, captures)
+
+
+# ─────────────────────────────────────────────
 # FIXTURES
 # ─────────────────────────────────────────────
 # ─────────────────────────────────────────────
@@ -203,8 +287,8 @@ def _status_phrase(code: int) -> str:
 
 
 @pytest.fixture(autouse=True)
-def log_http_calls():
-    """Перехватывает HTTP-вызовы теста и печатает запрос/ответ после его завершения."""
+def log_http_calls(request):
+    """Перехватывает HTTP-вызовы теста, печатает в stdout и сохраняет для файлового репорта."""
     captures = []
     orig = requests.Session.send
 
@@ -216,6 +300,8 @@ def log_http_calls():
     requests.Session.send = _patched
     yield
     requests.Session.send = orig
+
+    _http_captures[request.node.nodeid] = captures
 
     bar = "━" * 64
     for prep, resp in captures:
