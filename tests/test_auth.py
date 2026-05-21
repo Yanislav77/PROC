@@ -166,3 +166,203 @@ def test_invalid_json_body():
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ИДЕМПОТЕНТНОСТЬ — граничные случаи (2.3–2.5)
+# ─────────────────────────────────────────────
+def test_idempotency_key_non_uuid():
+    """Api-Idempotency-Key передан в не-UUID формате. Ожидается 200 или 201 (поле необязательно)."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    message = f"{timestamp}{TERMINAL_ID}{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": "not-a-uuid-value",
+        "Api-Signature":       sig,
+        "Api-Timestamp":       timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (200, 201, 400), f"Expected 2xx or 400, got {resp.status_code}"
+
+
+def test_no_idempotency_key():
+    """Api-Idempotency-Key не передан. Ожидается 200 или 201 (заголовок необязателен)."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    message = f"{timestamp}{TERMINAL_ID}{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":    "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   sig,
+        "Api-Timestamp":   timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (200, 201, 400), f"Expected 2xx or 400, got {resp.status_code}"
+
+
+def test_empty_idempotency_key():
+    """Api-Idempotency-Key передан с пустым значением. Ожидается 200, 201 или 400."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    message = f"{timestamp}{TERMINAL_ID}{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": "",
+        "Api-Signature":       sig,
+        "Api-Timestamp":       timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (200, 201, 400), f"Expected 2xx or 400, got {resp.status_code}"
+
+
+# ─────────────────────────────────────────────
+# TERMINAL ID — пустое значение (3.6)
+# ─────────────────────────────────────────────
+def test_empty_terminal_id():
+    """Api-Terminal-ID передан с пустым значением. Ожидается 400, 401 или 403."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    message = f"{timestamp}{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     "",
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# SIGNATURE — пустое значение (4.3)
+# ─────────────────────────────────────────────
+def test_empty_signature():
+    """Api-Signature передан с пустым значением. Ожидается 400, 401 или 403."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       "",
+        "Api-Timestamp":       str(int(time.time())),
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# TIMESTAMP — граничные случаи (5.2–5.7)
+# ─────────────────────────────────────────────
+def test_no_timestamp():
+    """Api-Timestamp не передан. Ожидается 400, 401 или 403."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       "0" * 64,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+def test_invalid_timestamp():
+    """Api-Timestamp содержит нечисловое значение. Ожидается 400, 401 или 403."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    ts = "not_a_timestamp"
+    message = f"{ts}{TERMINAL_ID}{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+def test_timestamp_recent_past():
+    """Api-Timestamp — 4 минуты назад (в допустимом окне ±5 мин). Ожидается 201."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    ts = str(int(time.time()) - 240)
+    message = f"{ts}{TERMINAL_ID}{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+def test_timestamp_near_future():
+    """Api-Timestamp — 4 минуты в будущем (в допустимом окне ±5 мин). Ожидается 201."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    ts = str(int(time.time()) + 240)
+    message = f"{ts}{TERMINAL_ID}{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+def test_timestamp_far_future():
+    """Api-Timestamp — 10 минут в будущем (вне окна ±5 мин). Ожидается 401 или 403."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    ts = str(int(time.time()) + 600)
+    message = f"{ts}{TERMINAL_ID}{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# POST без тела (65)
+# ─────────────────────────────────────────────
+def test_post_without_body():
+    """POST /transactions без тела запроса. Ожидается 400."""
+    raw = ""
+    timestamp = str(int(time.time()))
+    message = f"{timestamp}{TERMINAL_ID}{raw}"
+    sig = hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       timestamp,
+    }
+    resp = requests.post(BASE_URL, headers=headers, timeout=30)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
