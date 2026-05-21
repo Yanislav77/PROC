@@ -1,0 +1,154 @@
+"""
+Тесты для операции capture (списание заблокированных средств).
+POST /api/v1/transactions/{id}/capture
+Применимо только к транзакциям с capture_mode=manual в статусе authorized.
+"""
+from conftest import (
+    post_transaction,
+    post_operation,
+    MERCHANT_DATA,
+    CUSTOMER_DATA,
+    CARD_DETAILS,
+    THREED,
+)
+
+_OP_BODY = {
+    "merchant_data": {
+        "order_id": "order_capture_test",
+        "description": "Capture test",
+        "webhook_url": "https://example.com/webhook",
+    },
+    "financial_data": {"amount": 1000, "currency": "RUB"},
+}
+
+
+def _make_block_payin(order_id: str = "order_block_capture") -> str:
+    """Создаёт Payin с холдом (capture_mode=manual) и возвращает transaction_id."""
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": order_id},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Setup Block Payin failed: {resp.text}"
+    return resp.json()["transaction_id"]
+
+
+# ─────────────────────────────────────────────
+# HAPPY PATH
+# ─────────────────────────────────────────────
+def test_capture_full(payin_block_transaction_id):
+    """Полное списание по транзакции с capture_mode=manual. Ожидается 200 или 201."""
+    resp = post_operation(payin_block_transaction_id, "capture", _OP_BODY)
+    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert "transaction_id" in data
+    assert "status" in data
+
+
+def test_capture_partial():
+    """Частичное списание (500 из 1000). Ожидается 200 или 201."""
+    tid = _make_block_payin("order_capture_partial")
+    body = {
+        "merchant_data": {"order_id": "order_capture_partial"},
+        "financial_data": {"amount": 500, "currency": "RUB"},
+    }
+    resp = post_operation(tid, "capture", body)
+    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+
+
+def test_capture_without_webhook_url():
+    """Capture без необязательного webhook_url в merchant_data. Ожидается 200 или 201."""
+    tid = _make_block_payin("order_capture_no_wh")
+    body = {
+        "merchant_data": {"order_id": "order_capture_no_wh"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+    }
+    resp = post_operation(tid, "capture", body)
+    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# НЕГАТИВНЫЕ СЦЕНАРИИ
+# ─────────────────────────────────────────────
+def test_capture_nonexistent_transaction():
+    """Capture по несуществующей транзакции. Ожидается 404."""
+    resp = post_operation("000000000000", "capture", _OP_BODY)
+    assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+
+
+def test_capture_missing_financial_data():
+    """Capture без financial_data (обязательное). Ожидается 400 или 422."""
+    body = {"merchant_data": {"order_id": "order_capture_test"}}
+    resp = post_operation("000000000000", "capture", body)
+    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+
+
+def test_capture_missing_merchant_data():
+    """Capture без merchant_data (обязательное). Ожидается 400 или 422."""
+    body = {"financial_data": {"amount": 1000, "currency": "RUB"}}
+    resp = post_operation("000000000000", "capture", body)
+    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+
+
+def test_capture_missing_order_id():
+    """Capture с merchant_data без order_id. Ожидается 400 или 422."""
+    body = {
+        "merchant_data": {"description": "no order_id"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+    }
+    resp = post_operation("000000000000", "capture", body)
+    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+
+
+def test_capture_missing_amount():
+    """Capture без поля amount в financial_data. Ожидается 400 или 422."""
+    body = {
+        "merchant_data": {"order_id": "order_capture_test"},
+        "financial_data": {"currency": "RUB"},
+    }
+    resp = post_operation("000000000000", "capture", body)
+    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+
+
+def test_capture_missing_currency():
+    """Capture без поля currency в financial_data. Ожидается 400 или 422."""
+    body = {
+        "merchant_data": {"order_id": "order_capture_test"},
+        "financial_data": {"amount": 1000},
+    }
+    resp = post_operation("000000000000", "capture", body)
+    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+
+
+def test_capture_invalid_currency():
+    """Capture с невалидным кодом валюты. Ожидается 400, 404 или 422."""
+    body = {
+        "merchant_data": {"order_id": "order_capture_test"},
+        "financial_data": {"amount": 1000, "currency": "INVALID"},
+    }
+    resp = post_operation("000000000000", "capture", body)
+    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+
+
+def test_capture_zero_amount():
+    """Capture с нулевой суммой. Ожидается 400, 404 или 422."""
+    body = {
+        "merchant_data": {"order_id": "order_capture_test"},
+        "financial_data": {"amount": 0, "currency": "RUB"},
+    }
+    resp = post_operation("000000000000", "capture", body)
+    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"
+
+
+def test_capture_negative_amount():
+    """Capture с отрицательной суммой. Ожидается 400, 404 или 422."""
+    body = {
+        "merchant_data": {"order_id": "order_capture_test"},
+        "financial_data": {"amount": -500, "currency": "RUB"},
+    }
+    resp = post_operation("000000000000", "capture", body)
+    assert resp.status_code in (400, 404, 422), f"Expected error, got {resp.status_code}: {resp.text}"

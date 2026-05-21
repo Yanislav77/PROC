@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="Happy Path" type="PythonTestRunnerRunConfigurationType" factoryName="py.test">
+  <configuration default="false" name="Payin Card" type="PythonTestRunnerRunConfigurationType" factoryName="py.test">
     <option name="INTERPRETER_OPTIONS" value="" />
     <option name="PARENT_ENVS" value="true" />
     <option name="SDK_HOME" value="" />
@@ -10,7 +10,7 @@
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="RUNNER" value="py.test" />
     <option name="TEST_TYPE" value="TEST_SCRIPT" />
-    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tests/test_happy_path.py" />
+    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tests/test_payin_card.py" />
     <option name="ADDITIONAL_ARGS" value="-v --tb=short" />
     <method v="2" />
   </configuration>
