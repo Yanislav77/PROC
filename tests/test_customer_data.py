@@ -67,6 +67,7 @@ def _with_doc(**overrides) -> dict:
 # ─────────────────────────────────────────────
 # BROWSER_INFO (31.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-001")
 def test_browser_info_missing():
     """browser_info не передан. Ожидается 201 (необязательный объект)."""
     import copy
@@ -76,6 +77,7 @@ def test_browser_info_missing():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-002")
 def test_browser_info_empty_object():
     """browser_info передан как пустой объект {}. Ожидается 201."""
     body = _with_customer(browser_info={})
@@ -86,12 +88,14 @@ def test_browser_info_empty_object():
 # ─────────────────────────────────────────────
 # IP (32.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-003")
 def test_ip_valid_ipv4():
     """ip — валидный IPv4-адрес. Ожидается 201."""
     resp = post_transaction(_with_browser(ip="192.168.0.1"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-004")
 def test_ip_invalid_ipv4():
     """ip — невалидный IPv4-адрес. Ожидается 400."""
     resp = post_transaction(_with_browser(ip="999.999.999.999"))
@@ -99,12 +103,14 @@ def test_ip_invalid_ipv4():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-005")
 def test_ip_valid_ipv6():
     """ip — валидный IPv6-адрес. Ожидается 201."""
     resp = post_transaction(_with_browser(ip="2001:db8::1"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-006")
 def test_ip_empty():
     """ip передан как пустая строка. Ожидается 400."""
     resp = post_transaction(_with_browser(ip=""))
@@ -112,12 +118,14 @@ def test_ip_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-007")
 def test_ip_null():
     """ip передан как null. Ожидается 201 (необязательное поле)."""
     resp = post_transaction(_with_browser(ip=None))
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-008")
 def test_ip_missing():
     """ip не передан. Ожидается 201."""
     import copy
@@ -130,18 +138,21 @@ def test_ip_missing():
 # ─────────────────────────────────────────────
 # ACCEPT_HEADER (33.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-009")
 def test_accept_header_valid():
     """accept_header — строка. Ожидается 201."""
     resp = post_transaction(_with_browser(accept_header="text/html,application/json"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-010")
 def test_accept_header_empty():
     """accept_header — пустая строка. Ожидается 400 или 201."""
     resp = post_transaction(_with_browser(accept_header=""))
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-011")
 def test_accept_header_null():
     """accept_header — null. Ожидается 201."""
     resp = post_transaction(_with_browser(accept_header=None))
@@ -151,12 +162,14 @@ def test_accept_header_null():
 # ─────────────────────────────────────────────
 # COLOR_DEPTH (34.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-012")
 def test_color_depth_valid():
     """color_depth — целое число. Ожидается 201."""
     resp = post_transaction(_with_browser(color_depth=32))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-013")
 def test_color_depth_null():
     """color_depth — null. Ожидается 201."""
     resp = post_transaction(_with_browser(color_depth=None))
@@ -166,18 +179,21 @@ def test_color_depth_null():
 # ─────────────────────────────────────────────
 # JAVA_ENABLED (35.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-014")
 def test_java_enabled_true():
     """java_enabled=true. Ожидается 201."""
     resp = post_transaction(_with_browser(java_enabled=True))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-015")
 def test_java_enabled_false():
     """java_enabled=false. Ожидается 201."""
     resp = post_transaction(_with_browser(java_enabled=False))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-016")
 def test_java_enabled_int_one():
     """java_enabled=1 (не boolean). Ожидается 400."""
     resp = post_transaction(_with_browser(java_enabled=1))
@@ -185,6 +201,7 @@ def test_java_enabled_int_one():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-017")
 def test_java_enabled_int_zero():
     """java_enabled=0 (не boolean). Ожидается 400."""
     resp = post_transaction(_with_browser(java_enabled=0))
@@ -192,6 +209,7 @@ def test_java_enabled_int_zero():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-018")
 def test_java_enabled_string():
     """java_enabled — строка. Ожидается 400."""
     resp = post_transaction(_with_browser(java_enabled="true"))
@@ -199,6 +217,7 @@ def test_java_enabled_string():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-019")
 def test_java_enabled_null():
     """java_enabled=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_browser(java_enabled=None))
@@ -208,18 +227,21 @@ def test_java_enabled_null():
 # ─────────────────────────────────────────────
 # JAVA_SCRIPT_ENABLED (36.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-020")
 def test_java_script_enabled_true():
     """java_script_enabled=true. Ожидается 201."""
     resp = post_transaction(_with_browser(java_script_enabled=True))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-021")
 def test_java_script_enabled_false():
     """java_script_enabled=false. Ожидается 201."""
     resp = post_transaction(_with_browser(java_script_enabled=False))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-022")
 def test_java_script_enabled_int():
     """java_script_enabled=1 (не boolean). Ожидается 400."""
     resp = post_transaction(_with_browser(java_script_enabled=1))
@@ -227,6 +249,7 @@ def test_java_script_enabled_int():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-023")
 def test_java_script_enabled_string():
     """java_script_enabled — строка. Ожидается 400."""
     resp = post_transaction(_with_browser(java_script_enabled="false"))
@@ -234,6 +257,7 @@ def test_java_script_enabled_string():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-024")
 def test_java_script_enabled_null():
     """java_script_enabled=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_browser(java_script_enabled=None))
@@ -243,30 +267,35 @@ def test_java_script_enabled_null():
 # ─────────────────────────────────────────────
 # LANGUAGE (37.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-025")
 def test_language_two_char():
     """language — двухсимвольный код. Ожидается 201."""
     resp = post_transaction(_with_browser(language="en"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-026")
 def test_language_with_region():
     """language — код с регионом (en-US). Ожидается 201."""
     resp = post_transaction(_with_browser(language="en-US"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-027")
 def test_language_uppercase():
     """language в верхнем регистре. Ожидается 201."""
     resp = post_transaction(_with_browser(language="RU"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-028")
 def test_language_empty():
     """language — пустая строка. Ожидается 400 или 201."""
     resp = post_transaction(_with_browser(language=""))
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-029")
 def test_language_null():
     """language=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_browser(language=None))
@@ -276,6 +305,7 @@ def test_language_null():
 # ─────────────────────────────────────────────
 # CONTACT_INFO (42.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-030")
 def test_contact_info_missing():
     """contact_info не передан. Ожидается 201 (необязательный объект)."""
     import copy
@@ -285,6 +315,7 @@ def test_contact_info_missing():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-031")
 def test_contact_info_empty_object():
     """contact_info передан как пустой объект {}. Ожидается 201."""
     body = _with_customer(contact_info={})
@@ -295,12 +326,14 @@ def test_contact_info_empty_object():
 # ─────────────────────────────────────────────
 # COUNTRY (44.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-032")
 def test_country_valid_two_char():
     """country — двухсимвольный код ISO 3166. Ожидается 201."""
     resp = post_transaction(_with_contact(country="DE"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-033")
 def test_country_one_char():
     """country — односимвольный код. Ожидается 400."""
     resp = post_transaction(_with_contact(country="D"))
@@ -308,6 +341,7 @@ def test_country_one_char():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-034")
 def test_country_three_chars():
     """country — трёхсимвольный код. Ожидается 400."""
     resp = post_transaction(_with_contact(country="DEU"))
@@ -315,6 +349,7 @@ def test_country_three_chars():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-035")
 def test_country_numeric():
     """country — числовое значение. Ожидается 400."""
     resp = post_transaction(_with_contact(country="12"))
@@ -322,6 +357,7 @@ def test_country_numeric():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-036")
 def test_country_nonexistent_code():
     """country — несуществующий двухсимвольный код. Ожидается 400."""
     resp = post_transaction(_with_contact(country="XX"))
@@ -329,6 +365,7 @@ def test_country_nonexistent_code():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-037")
 def test_country_empty():
     """country — пустая строка. Ожидается 400."""
     resp = post_transaction(_with_contact(country=""))
@@ -336,6 +373,7 @@ def test_country_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-038")
 def test_country_null():
     """country=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_contact(country=None))
@@ -345,18 +383,21 @@ def test_country_null():
 # ─────────────────────────────────────────────
 # EMAIL (45.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-039")
 def test_email_valid():
     """email — валидный адрес. Ожидается 201."""
     resp = post_transaction(_with_contact(email="test@example.com"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-040")
 def test_email_with_numbers():
     """email — с цифрами в имени. Ожидается 201."""
     resp = post_transaction(_with_contact(email="user123@example.com"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-041")
 def test_email_no_at_sign():
     """email без символа @. Ожидается 400."""
     resp = post_transaction(_with_contact(email="userexample.com"))
@@ -364,6 +405,7 @@ def test_email_no_at_sign():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-042")
 def test_email_no_domain():
     """email без доменной части. Ожидается 400."""
     resp = post_transaction(_with_contact(email="user@"))
@@ -371,12 +413,14 @@ def test_email_no_domain():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-043")
 def test_email_multilevel_domain():
     """email с несколькими уровнями домена. Ожидается 201."""
     resp = post_transaction(_with_contact(email="user@mail.example.com"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-044")
 def test_email_empty():
     """email — пустая строка. Ожидается 400."""
     resp = post_transaction(_with_contact(email=""))
@@ -384,6 +428,7 @@ def test_email_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-045")
 def test_email_null():
     """email=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_contact(email=None))
@@ -393,18 +438,21 @@ def test_email_null():
 # ─────────────────────────────────────────────
 # PHONE (46.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-046")
 def test_phone_valid_with_plus():
     """phone с символом +. Ожидается 201."""
     resp = post_transaction(_with_contact(phone="+79991234567"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-047")
 def test_phone_valid_without_plus():
     """phone без символа +. Ожидается 201."""
     resp = post_transaction(_with_contact(phone="79991234567"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-048")
 def test_phone_too_short():
     """phone из 2 символов (слишком короткий). Ожидается 400."""
     resp = post_transaction(_with_contact(phone="12"))
@@ -412,12 +460,14 @@ def test_phone_too_short():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-049")
 def test_phone_16_chars():
     """phone из 16 символов (граничное валидное). Ожидается 201."""
     resp = post_transaction(_with_contact(phone="+123456789012345"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-050")
 def test_phone_17_chars():
     """phone из 17 символов (сверх лимита). Ожидается 400."""
     resp = post_transaction(_with_contact(phone="+1234567890123456"))
@@ -425,6 +475,7 @@ def test_phone_17_chars():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-051")
 def test_phone_with_letters():
     """phone содержит буквы. Ожидается 400."""
     resp = post_transaction(_with_contact(phone="+7999ABC4567"))
@@ -432,6 +483,7 @@ def test_phone_with_letters():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-052")
 def test_phone_empty():
     """phone — пустая строка. Ожидается 400."""
     resp = post_transaction(_with_contact(phone=""))
@@ -439,6 +491,7 @@ def test_phone_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-053")
 def test_phone_null():
     """phone=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_contact(phone=None))
@@ -448,6 +501,7 @@ def test_phone_null():
 # ─────────────────────────────────────────────
 # PERSONAL_INFO (51.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-054")
 def test_personal_info_missing():
     """personal_info не передан. Ожидается 201."""
     import copy
@@ -457,6 +511,7 @@ def test_personal_info_missing():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-055")
 def test_personal_info_empty_object():
     """personal_info передан как пустой объект {}. Ожидается 201."""
     body = _with_customer(personal_info={})
@@ -467,12 +522,14 @@ def test_personal_info_empty_object():
 # ─────────────────────────────────────────────
 # DATE_OF_BIRTH (52.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-056")
 def test_date_of_birth_valid_format():
     """date_of_birth в формате YYYY-MM-DD. Ожидается 201."""
     resp = post_transaction(_with_personal(date_of_birth="1990-06-15"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-057")
 def test_date_of_birth_wrong_format():
     """date_of_birth в формате DD-MM-YYYY. Ожидается 400."""
     resp = post_transaction(_with_personal(date_of_birth="15-06-1990"))
@@ -480,6 +537,7 @@ def test_date_of_birth_wrong_format():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-058")
 def test_date_of_birth_under_18():
     """date_of_birth, при которой возраст < 18 лет. Ожидается 400."""
     from datetime import datetime, timedelta
@@ -489,6 +547,7 @@ def test_date_of_birth_under_18():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-059")
 def test_date_of_birth_future():
     """date_of_birth в будущем. Ожидается 400."""
     resp = post_transaction(_with_personal(date_of_birth="2099-01-01"))
@@ -496,6 +555,7 @@ def test_date_of_birth_future():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-060")
 def test_date_of_birth_nonexistent_date():
     """date_of_birth — несуществующая дата. Ожидается 400."""
     resp = post_transaction(_with_personal(date_of_birth="1990-02-30"))
@@ -503,6 +563,7 @@ def test_date_of_birth_nonexistent_date():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-061")
 def test_date_of_birth_null():
     """date_of_birth=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_personal(date_of_birth=None))
@@ -512,12 +573,14 @@ def test_date_of_birth_null():
 # ─────────────────────────────────────────────
 # DOCUMENT_TYPE (53.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-062")
 def test_document_type_passport():
     """document_type='passport'. Ожидается 201."""
     resp = post_transaction(_with_personal(document_type="passport"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-063")
 def test_document_type_invalid():
     """document_type='passport1' (невалидное). Ожидается 400."""
     resp = post_transaction(_with_personal(document_type="passport1"))
@@ -525,6 +588,7 @@ def test_document_type_invalid():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-064")
 def test_document_type_empty():
     """document_type — пустая строка. Ожидается 400."""
     resp = post_transaction(_with_personal(document_type=""))
@@ -532,6 +596,7 @@ def test_document_type_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-065")
 def test_document_type_null():
     """document_type=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_personal(document_type=None))
@@ -541,18 +606,21 @@ def test_document_type_null():
 # ─────────────────────────────────────────────
 # GENDER (60.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-066")
 def test_gender_male():
     """gender='M'. Ожидается 201."""
     resp = post_transaction(_with_doc(gender="M"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-067")
 def test_gender_female():
     """gender='F'. Ожидается 201."""
     resp = post_transaction(_with_doc(gender="F"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-068")
 def test_gender_invalid():
     """gender='MF' (невалидное значение). Ожидается 400."""
     resp = post_transaction(_with_doc(gender="MF"))
@@ -560,6 +628,7 @@ def test_gender_invalid():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-069")
 def test_gender_empty():
     """gender — пустая строка. Ожидается 400."""
     resp = post_transaction(_with_doc(gender=""))
@@ -567,6 +636,7 @@ def test_gender_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-070")
 def test_gender_null():
     """gender=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_doc(gender=None))
@@ -576,12 +646,14 @@ def test_gender_null():
 # ─────────────────────────────────────────────
 # EXPIRY_DATE (59.x) — document expiry date
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-071")
 def test_doc_expiry_date_valid_future():
     """document expiry_date в будущем, формат YYYY-MM-DD. Ожидается 201."""
     resp = post_transaction(_with_doc(expiry_date="2035-12-31"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-072")
 def test_doc_expiry_date_past():
     """document expiry_date в прошлом. Ожидается 400."""
     resp = post_transaction(_with_doc(expiry_date="2010-01-01"))
@@ -589,6 +661,7 @@ def test_doc_expiry_date_past():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-073")
 def test_doc_expiry_date_wrong_format():
     """document expiry_date в формате DD-MM-YYYY. Ожидается 400."""
     resp = post_transaction(_with_doc(expiry_date="31-12-2035"))
@@ -596,6 +669,7 @@ def test_doc_expiry_date_wrong_format():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-074")
 def test_doc_expiry_date_nonexistent():
     """document expiry_date — несуществующая дата. Ожидается 400."""
     resp = post_transaction(_with_doc(expiry_date="2030-13-01"))
@@ -603,6 +677,7 @@ def test_doc_expiry_date_nonexistent():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-075")
 def test_doc_expiry_date_null():
     """document expiry_date=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_doc(expiry_date=None))
@@ -612,12 +687,14 @@ def test_doc_expiry_date_null():
 # ─────────────────────────────────────────────
 # ISSUE_DATE (61.x) — document issue date
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CD-076")
 def test_doc_issue_date_valid():
     """document issue_date в формате YYYY-MM-DD, в прошлом. Ожидается 201."""
     resp = post_transaction(_with_doc(issue_date="2015-06-01"))
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("CD-077")
 def test_doc_issue_date_future():
     """document issue_date в будущем. Ожидается 400."""
     resp = post_transaction(_with_doc(issue_date="2099-01-01"))
@@ -625,6 +702,7 @@ def test_doc_issue_date_future():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-078")
 def test_doc_issue_date_wrong_format():
     """document issue_date в формате DD-MM-YYYY. Ожидается 400."""
     resp = post_transaction(_with_doc(issue_date="01-06-2015"))
@@ -632,6 +710,7 @@ def test_doc_issue_date_wrong_format():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CD-079")
 def test_doc_issue_date_null():
     """document issue_date=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_doc(issue_date=None))

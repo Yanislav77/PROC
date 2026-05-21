@@ -36,6 +36,7 @@ _VALID_BODY = {
 # ─────────────────────────────────────────────
 # HAPPY PATH
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("A-001")
 def test_idempotency_key_deduplication():
     """Два запроса с одним Api-Idempotency-Key возвращают одинаковый transaction_id."""
     body = copy.deepcopy(_VALID_BODY)
@@ -71,6 +72,7 @@ def test_idempotency_key_deduplication():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ — заголовки подписи
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("A-002")
 def test_invalid_signature():
     """Api-Signature заменена на строку из нулей. Ожидается 401 или 403."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -86,6 +88,7 @@ def test_invalid_signature():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("A-003")
 def test_missing_signature_header():
     """Заголовок Api-Signature отсутствует. Ожидается 400, 401 или 403."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -100,6 +103,7 @@ def test_missing_signature_header():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("A-004")
 def test_missing_terminal_id_header():
     """Заголовок Api-Terminal-ID отсутствует. Ожидается 400, 401 или 403."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -114,6 +118,7 @@ def test_missing_terminal_id_header():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("A-005")
 def test_unknown_terminal_id():
     """Подпись посчитана для несуществующего терминала 99999. Ожидается 401, 403 или 404."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -132,6 +137,7 @@ def test_unknown_terminal_id():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("A-006")
 def test_timestamp_too_old():
     """Api-Timestamp более чем на 5 минут в прошлом. Ожидается 401 или 403."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -150,6 +156,7 @@ def test_timestamp_too_old():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("A-007")
 def test_invalid_json_body():
     """Тело запроса — невалидный JSON. Ожидается 400."""
     raw = "this is not json"
@@ -171,6 +178,7 @@ def test_invalid_json_body():
 # ─────────────────────────────────────────────
 # ИДЕМПОТЕНТНОСТЬ — граничные случаи (2.3–2.5)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("A-008")
 def test_idempotency_key_non_uuid():
     """Api-Idempotency-Key передан в не-UUID формате. Ожидается 200 или 201 (поле необязательно)."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -188,6 +196,7 @@ def test_idempotency_key_non_uuid():
     assert resp.status_code in (200, 201, 400), f"Expected 2xx or 400, got {resp.status_code}"
 
 
+@pytest.mark.tcid("A-009")
 def test_no_idempotency_key():
     """Api-Idempotency-Key не передан. Ожидается 200 или 201 (заголовок необязателен)."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -204,6 +213,7 @@ def test_no_idempotency_key():
     assert resp.status_code in (200, 201, 400), f"Expected 2xx or 400, got {resp.status_code}"
 
 
+@pytest.mark.tcid("A-010")
 def test_empty_idempotency_key():
     """Api-Idempotency-Key передан с пустым значением. Ожидается 200, 201 или 400."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -224,6 +234,7 @@ def test_empty_idempotency_key():
 # ─────────────────────────────────────────────
 # TERMINAL ID — пустое значение (3.6)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("A-011")
 def test_empty_terminal_id():
     """Api-Terminal-ID передан с пустым значением. Ожидается 400, 401 или 403."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -245,6 +256,7 @@ def test_empty_terminal_id():
 # ─────────────────────────────────────────────
 # SIGNATURE — пустое значение (4.3)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("A-012")
 def test_empty_signature():
     """Api-Signature передан с пустым значением. Ожидается 400, 401 или 403."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -263,6 +275,7 @@ def test_empty_signature():
 # ─────────────────────────────────────────────
 # TIMESTAMP — граничные случаи (5.2–5.7)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("A-013")
 def test_no_timestamp():
     """Api-Timestamp не передан. Ожидается 400, 401 или 403."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -277,6 +290,7 @@ def test_no_timestamp():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("A-014")
 def test_invalid_timestamp():
     """Api-Timestamp содержит нечисловое значение. Ожидается 400, 401 или 403."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -295,6 +309,7 @@ def test_invalid_timestamp():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("A-015")
 def test_timestamp_recent_past():
     """Api-Timestamp — 4 минуты назад (в допустимом окне ±5 мин). Ожидается 201."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -312,6 +327,7 @@ def test_timestamp_recent_past():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("A-016")
 def test_timestamp_near_future():
     """Api-Timestamp — 4 минуты в будущем (в допустимом окне ±5 мин). Ожидается 201."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -329,6 +345,7 @@ def test_timestamp_near_future():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("A-017")
 def test_timestamp_far_future():
     """Api-Timestamp — 10 минут в будущем (вне окна ±5 мин). Ожидается 401 или 403."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
@@ -350,6 +367,7 @@ def test_timestamp_far_future():
 # ─────────────────────────────────────────────
 # POST без тела (65)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("A-018")
 def test_post_without_body():
     """POST /transactions без тела запроса. Ожидается 400."""
     raw = ""

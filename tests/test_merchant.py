@@ -16,6 +16,7 @@ from conftest import (
 # ─────────────────────────────────────────────
 # HAPPY PATH
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("MB-001")
 def test_get_merchant_balance():
     """Получение баланса мерчанта. Ожидается 200 с полями amount и currency."""
     resp = get_request(MERCHANT_BALANCE_URL)
@@ -27,6 +28,7 @@ def test_get_merchant_balance():
     assert isinstance(data["financial_data"]["amount"], int), "amount must be an integer"
 
 
+@pytest.mark.tcid("MB-002")
 def test_get_merchant_balance_currency_format():
     """Баланс мерчанта — currency содержит 3-символьный ISO 4217 код."""
     resp = get_request(MERCHANT_BALANCE_URL)
@@ -39,6 +41,7 @@ def test_get_merchant_balance_currency_format():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ СЦЕНАРИИ — авторизация
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("MB-003")
 def test_get_merchant_balance_no_auth():
     """GET /merchant/balance без заголовков авторизации. Ожидается 400, 401 или 403."""
     resp = requests.get(MERCHANT_BALANCE_URL, timeout=30)
@@ -46,6 +49,7 @@ def test_get_merchant_balance_no_auth():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("MB-004")
 def test_get_merchant_balance_invalid_signature():
     """GET /merchant/balance с подписью из нулей. Ожидается 401 или 403."""
     headers = {
@@ -58,6 +62,7 @@ def test_get_merchant_balance_invalid_signature():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("MB-005")
 def test_get_merchant_balance_missing_terminal_id():
     """GET /merchant/balance без Api-Terminal-ID. Ожидается 400, 401 или 403."""
     headers = {
@@ -69,6 +74,7 @@ def test_get_merchant_balance_missing_terminal_id():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("MB-006")
 def test_get_merchant_balance_missing_timestamp():
     """GET /merchant/balance без Api-Timestamp. Ожидается 400, 401 или 403."""
     headers = {
@@ -80,6 +86,7 @@ def test_get_merchant_balance_missing_timestamp():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("MB-007")
 def test_get_merchant_balance_unknown_terminal():
     """GET /merchant/balance с несуществующим терминалом. Ожидается 401, 403 или 404."""
     import hashlib

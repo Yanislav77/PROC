@@ -10,6 +10,7 @@ from conftest import post_operation, assert_error_response
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ СЦЕНАРИИ
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-001")
 def test_confirm_nonexistent_transaction():
     """Confirm по несуществующей транзакции. Ожидается 404."""
     body = {
@@ -25,6 +26,7 @@ def test_confirm_nonexistent_transaction():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CON-002")
 def test_confirm_missing_result():
     """Confirm без поля result (обязательное). Ожидается 400."""
     body = {
@@ -36,6 +38,7 @@ def test_confirm_missing_result():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CON-003")
 def test_confirm_missing_financial_data():
     """Confirm без financial_data (обязательное). Ожидается 400."""
     body = {
@@ -47,6 +50,7 @@ def test_confirm_missing_financial_data():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CON-004")
 def test_confirm_missing_merchant_data():
     """Confirm без merchant_data (обязательное). Ожидается 400."""
     body = {
@@ -58,6 +62,7 @@ def test_confirm_missing_merchant_data():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CON-005")
 def test_confirm_missing_order_id():
     """Confirm с merchant_data без order_id. Ожидается 400."""
     body = {
@@ -70,6 +75,7 @@ def test_confirm_missing_order_id():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CON-006")
 def test_confirm_invalid_result_type():
     """Confirm с неизвестным типом result. Ожидается 400."""
     body = {
@@ -82,6 +88,7 @@ def test_confirm_invalid_result_type():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CON-007")
 def test_confirm_threed_secure_missing_pares():
     """Confirm 3DS без поля pares (обязательное). Ожидается 400."""
     body = {
@@ -97,6 +104,7 @@ def test_confirm_threed_secure_missing_pares():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CON-008")
 def test_confirm_threed_secure_missing_md():
     """Confirm 3DS без поля md (обязательное). Ожидается 400."""
     body = {
@@ -112,6 +120,7 @@ def test_confirm_threed_secure_missing_md():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CON-009")
 def test_confirm_redirect_missing_confirmed():
     """Confirm redirect без поля confirmed (обязательное). Ожидается 400."""
     body = {

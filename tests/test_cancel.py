@@ -32,6 +32,7 @@ def _make_block_payin(order_id: str = "order_block_cancel") -> str:
 # ─────────────────────────────────────────────
 # HAPPY PATH
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CAN-001")
 def test_cancel_authorized_transaction():
     """Отмена authorized транзакции (capture_mode=manual). Ожидается 200 или 201."""
     tid = _make_block_payin("order_cancel_auth")
@@ -46,6 +47,7 @@ def test_cancel_authorized_transaction():
     assert data["type"] == "payin"
 
 
+@pytest.mark.tcid("CAN-002")
 def test_cancel_with_description():
     """Отмена с опциональным полем description в merchant_data. Ожидается 200 или 201."""
     tid = _make_block_payin("order_cancel_desc")
@@ -61,6 +63,7 @@ def test_cancel_with_description():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ СЦЕНАРИИ
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CAN-003")
 def test_cancel_nonexistent_transaction():
     """Cancel по несуществующей транзакции. Ожидается 404."""
     body = {
@@ -72,6 +75,7 @@ def test_cancel_nonexistent_transaction():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CAN-004")
 def test_cancel_missing_financial_data():
     """Cancel без financial_data (обязательное). Ожидается 400."""
     body = {"merchant_data": {"order_id": "order_cancel_test"}}
@@ -80,6 +84,7 @@ def test_cancel_missing_financial_data():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CAN-005")
 def test_cancel_missing_merchant_data():
     """Cancel без merchant_data (обязательное). Ожидается 400."""
     body = {"financial_data": {"amount": 1000, "currency": "RUB"}}
@@ -88,6 +93,7 @@ def test_cancel_missing_merchant_data():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CAN-006")
 def test_cancel_missing_order_id():
     """Cancel с merchant_data без order_id. Ожидается 400."""
     body = {

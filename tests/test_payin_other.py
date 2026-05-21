@@ -34,6 +34,7 @@ def _assert_payin_ok(resp):
 # ─────────────────────────────────────────────
 # HAPPY PATH — p2p
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PO-001")
 def test_payin_p2p():
     """Payin через P2P-перевод — method=p2p, детали карты не требуются."""
     _assert_payin_ok(post_transaction({**_BASE, "transaction_data": {"method": "p2p"}}))
@@ -42,6 +43,7 @@ def test_payin_p2p():
 # ─────────────────────────────────────────────
 # HAPPY PATH — qr
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PO-002")
 def test_payin_qr():
     """Payin через QR-код — method=qr."""
     _assert_payin_ok(post_transaction({**_BASE, "transaction_data": {"method": "qr"}}))
@@ -50,6 +52,7 @@ def test_payin_qr():
 # ─────────────────────────────────────────────
 # HAPPY PATH — mobile
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PO-003")
 def test_payin_mobile():
     """Payin через мобильный платёж — phone обязателен."""
     body = {**_BASE, "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567"}}}
@@ -59,6 +62,7 @@ def test_payin_mobile():
 # ─────────────────────────────────────────────
 # HAPPY PATH — token (rebill)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PO-004")
 def test_payin_token_rebill(payin_transaction_id):
     """Ребилл по сохранённому токену карты (method=token), capture=auto."""
     body = {
@@ -75,6 +79,7 @@ def test_payin_token_rebill(payin_transaction_id):
     _assert_payin_ok(post_transaction(body))
 
 
+@pytest.mark.tcid("PO-005")
 def test_payin_token_rebill_manual_capture(payin_transaction_id):
     """Ребилл по токену с блокировкой средств (capture=manual)."""
     body = {
@@ -94,6 +99,7 @@ def test_payin_token_rebill_manual_capture(payin_transaction_id):
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ — mobile
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PO-006")
 def test_payin_mobile_missing_phone():
     """Payin mobile без поля phone (обязательное). Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "mobile", "details": {}}}

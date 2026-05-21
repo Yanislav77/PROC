@@ -23,6 +23,7 @@ _INVALID_TOKEN     = "not-a-valid-uuid-format"
 # НЕГАТИВНЫЕ СЦЕНАРИИ
 # (happy path требует реальный recurrent_token из Payin с is_recurrent=True)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("SB-001")
 def test_cancel_nonexistent_subscription():
     """DELETE по несуществующему UUID-токену. Ожидается 404."""
     url = f"{SUBSCRIPTIONS_URL}/{_NONEXISTENT_TOKEN}"
@@ -31,6 +32,7 @@ def test_cancel_nonexistent_subscription():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("SB-002")
 def test_cancel_subscription_invalid_token_format():
     """DELETE по токену, не соответствующему формату UUID. Ожидается 400 или 404."""
     url = f"{SUBSCRIPTIONS_URL}/{_INVALID_TOKEN}"
@@ -39,6 +41,7 @@ def test_cancel_subscription_invalid_token_format():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("SB-003")
 def test_cancel_subscription_no_auth():
     """DELETE /subscriptions/{token} без заголовков авторизации. Ожидается 400, 401 или 403."""
     url = f"{SUBSCRIPTIONS_URL}/{_NONEXISTENT_TOKEN}"
@@ -47,6 +50,7 @@ def test_cancel_subscription_no_auth():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("SB-004")
 def test_cancel_subscription_invalid_signature():
     """DELETE /subscriptions/{token} с подписью из нулей. Ожидается 401 или 403."""
     url = f"{SUBSCRIPTIONS_URL}/{_NONEXISTENT_TOKEN}"
@@ -60,6 +64,7 @@ def test_cancel_subscription_invalid_signature():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("SB-005")
 def test_cancel_subscription_missing_terminal_id():
     """DELETE /subscriptions/{token} без Api-Terminal-ID. Ожидается 400, 401 или 403."""
     url = f"{SUBSCRIPTIONS_URL}/{_NONEXISTENT_TOKEN}"
@@ -72,6 +77,7 @@ def test_cancel_subscription_missing_terminal_id():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("SB-006")
 def test_cancel_subscription_missing_timestamp():
     """DELETE /subscriptions/{token} без Api-Timestamp. Ожидается 400, 401 или 403."""
     url = f"{SUBSCRIPTIONS_URL}/{_NONEXISTENT_TOKEN}"

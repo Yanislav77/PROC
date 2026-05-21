@@ -21,6 +21,7 @@ from conftest import (
 # ─────────────────────────────────────────────
 # HAPPY PATH
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("GT-001")
 def test_get_transaction_by_id(payin_transaction_id):
     """GET /{id} по реальному transaction_id. Ожидается 200 со всеми обязательными полями ответа."""
     url = f"{BASE_URL}/{payin_transaction_id}"
@@ -31,6 +32,7 @@ def test_get_transaction_by_id(payin_transaction_id):
     assert data["transaction_id"] == payin_transaction_id, "transaction_id mismatch"
 
 
+@pytest.mark.tcid("GT-002")
 def test_get_transaction_fields(payin_transaction_id):
     """GET /{id} — проверка типов и формата всех полей ответа по спецификации."""
     url = f"{BASE_URL}/{payin_transaction_id}"
@@ -39,6 +41,7 @@ def test_get_transaction_fields(payin_transaction_id):
     assert_transaction_response(resp.json())
 
 
+@pytest.mark.tcid("GT-003")
 def test_get_transactions_by_order_id(payin_transaction_id):
     """GET ?order_id= по реальному order_id мерчанта. Ожидается 200 и массив транзакций."""
     resp = get_request(BASE_URL, params={"order_id": MERCHANT_DATA["order_id"]})
@@ -53,6 +56,7 @@ def test_get_transactions_by_order_id(payin_transaction_id):
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ СЦЕНАРИИ
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("GT-004")
 def test_get_transaction_not_found():
     """GET по несуществующему числовому transaction_id. Ожидается 404."""
     url = f"{BASE_URL}/000000000000"
@@ -61,6 +65,7 @@ def test_get_transaction_not_found():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("GT-005")
 def test_get_by_order_id_not_found():
     """GET ?order_id= с несуществующим order_id. Ожидается 404."""
     resp = get_request(BASE_URL, params={"order_id": "nonexistent_order_xyz_000"})
@@ -68,6 +73,7 @@ def test_get_by_order_id_not_found():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("GT-006")
 def test_get_by_order_id_missing_param():
     """GET /transactions без параметра order_id. Ожидается 400."""
     resp = get_request(BASE_URL)
@@ -75,6 +81,7 @@ def test_get_by_order_id_missing_param():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("GT-007")
 def test_get_transaction_no_auth():
     """GET /{id} без заголовков авторизации. Ожидается 400, 401 или 403."""
     url = f"{BASE_URL}/000000000000"
@@ -83,6 +90,7 @@ def test_get_transaction_no_auth():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("GT-008")
 def test_get_transaction_invalid_signature():
     """GET /{id} с подписью из нулей. Ожидается 401 или 403."""
     url = f"{BASE_URL}/000000000000"
@@ -96,6 +104,7 @@ def test_get_transaction_invalid_signature():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("GT-009")
 def test_get_transaction_missing_terminal_id():
     """GET /{id} без заголовка Api-Terminal-ID. Ожидается 400, 401 или 403."""
     url = f"{BASE_URL}/000000000000"
@@ -108,6 +117,7 @@ def test_get_transaction_missing_terminal_id():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("GT-010")
 def test_get_transaction_missing_timestamp():
     """GET /{id} без заголовка Api-Timestamp. Ожидается 400, 401 или 403."""
     url = f"{BASE_URL}/000000000000"

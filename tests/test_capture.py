@@ -42,6 +42,7 @@ def _make_block_payin(order_id: str = "order_block_capture") -> str:
 # ─────────────────────────────────────────────
 # HAPPY PATH
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CAP-001")
 def test_capture_full(payin_block_transaction_id):
     """Полное списание по транзакции с capture_mode=manual. Ожидается 200 или 201."""
     resp = post_operation(payin_block_transaction_id, "capture", _OP_BODY)
@@ -51,6 +52,7 @@ def test_capture_full(payin_block_transaction_id):
     assert data["type"] == "payin"
 
 
+@pytest.mark.tcid("CAP-002")
 def test_capture_partial():
     """Частичное списание (500 из 1000). Ожидается 200 или 201."""
     tid = _make_block_payin("order_capture_partial")
@@ -63,6 +65,7 @@ def test_capture_partial():
     assert_transaction_response(resp.json())
 
 
+@pytest.mark.tcid("CAP-003")
 def test_capture_without_webhook_url():
     """Capture без необязательного webhook_url в merchant_data. Ожидается 200 или 201."""
     tid = _make_block_payin("order_capture_no_wh")
@@ -78,6 +81,7 @@ def test_capture_without_webhook_url():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ СЦЕНАРИИ
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("CAP-004")
 def test_capture_nonexistent_transaction():
     """Capture по несуществующей транзакции. Ожидается 404."""
     resp = post_operation("000000000000", "capture", _OP_BODY)
@@ -85,6 +89,7 @@ def test_capture_nonexistent_transaction():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CAP-005")
 def test_capture_missing_financial_data():
     """Capture без financial_data (обязательное). Ожидается 400."""
     body = {"merchant_data": {"order_id": "order_capture_test"}}
@@ -93,6 +98,7 @@ def test_capture_missing_financial_data():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CAP-006")
 def test_capture_missing_merchant_data():
     """Capture без merchant_data (обязательное). Ожидается 400."""
     body = {"financial_data": {"amount": 1000, "currency": "RUB"}}
@@ -101,6 +107,7 @@ def test_capture_missing_merchant_data():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CAP-007")
 def test_capture_missing_order_id():
     """Capture с merchant_data без order_id. Ожидается 400."""
     body = {
@@ -112,6 +119,7 @@ def test_capture_missing_order_id():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CAP-008")
 def test_capture_missing_amount():
     """Capture без поля amount в financial_data. Ожидается 400."""
     body = {
@@ -123,6 +131,7 @@ def test_capture_missing_amount():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CAP-009")
 def test_capture_missing_currency():
     """Capture без поля currency в financial_data. Ожидается 400."""
     body = {
@@ -134,6 +143,7 @@ def test_capture_missing_currency():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CAP-010")
 def test_capture_invalid_currency():
     """Capture с невалидным кодом валюты. Ожидается 400 или 404."""
     body = {
@@ -145,6 +155,7 @@ def test_capture_invalid_currency():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CAP-011")
 def test_capture_zero_amount():
     """Capture с нулевой суммой. Ожидается 400 или 404."""
     body = {
@@ -156,6 +167,7 @@ def test_capture_zero_amount():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("CAP-012")
 def test_capture_negative_amount():
     """Capture с отрицательной суммой. Ожидается 400 или 404."""
     body = {

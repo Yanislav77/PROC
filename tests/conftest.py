@@ -186,6 +186,7 @@ THREED = {"challenge_window_size": "05"}
 _report_file = None
 _http_captures: dict = {}  # nodeid -> list[(PreparedRequest, Response)]
 _call_reports:  dict = {}  # nodeid -> report (stored until teardown phase)
+_tc_ids:        dict = {}  # nodeid -> tcid string (from @pytest.mark.tcid)
 _test_counter = 0
 
 _REPORTS_DIR = Path(__file__).parent.parent / "reports"
@@ -228,7 +229,7 @@ def _sc_class(code: int) -> str:
     return "s5xx"
 
 
-def _write_report_entry(nodeid: str, status: str, error, captures: list) -> None:
+def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: str = "") -> None:
     global _test_counter
     _test_counter += 1
     idx = _test_counter
@@ -237,9 +238,11 @@ def _write_report_entry(nodeid: str, status: str, error, captures: list) -> None
     css = "passed" if status == "PASSED" else "failed"
     badge = "✓ PASSED" if status == "PASSED" else "✗ FAILED"
 
-    f.write(f'<div class="panel {css}" id="p{idx}" data-name="{_esc(nodeid)}" data-status="{css}">\n')
+    f.write(f'<div class="panel {css}" id="p{idx}" data-name="{_esc(nodeid)}" data-status="{css}" data-tcid="{_esc(tc_id)}">\n')
     f.write(f'  <div class="panel-header">\n')
     f.write(f'    <span class="badge">{badge}</span>\n')
+    if tc_id:
+        f.write(f'    <span class="tc-id">{_esc(tc_id)}</span>\n')
     f.write(f'    <span class="panel-name">{_esc(nodeid)}</span>\n')
     f.write(f'  </div>\n')
     f.write(f'  <div class="panel-body">\n')
@@ -276,6 +279,7 @@ def _write_report_entry(nodeid: str, status: str, error, captures: list) -> None
 def pytest_configure(config):
     global _report_file, _test_counter
     _test_counter = 0
+    config.addinivalue_line("markers", "tcid(id): test case identifier shown in HTML report")
     _REPORTS_DIR.mkdir(exist_ok=True)
     suffix = _make_report_suffix(config)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -325,6 +329,8 @@ body{{font-family:'Segoe UI',system-ui,sans-serif;background:#1a1a2e;color:#e0e0
 .url{{color:#c3e88d}}
 .status-code{{font-family:monospace;font-weight:bold;font-size:.85em}}
 .s2xx{{color:#4caf50}}.s4xx{{color:#ff9800}}.s5xx{{color:#f44336}}
+.tc-id{{font-family:'Consolas',monospace;font-size:.72em;font-weight:bold;color:#e0b060;background:#2a1f00;border:1px solid #4a3800;padding:1px 7px;border-radius:4px;flex-shrink:0}}
+.nav-tcid{{font-family:'Consolas',monospace;font-size:.72em;color:#c9963a;flex-shrink:0;white-space:nowrap}}
 pre.body{{background:#0d1117;border:1px solid #2a2a4a;border-radius:4px;padding:10px 12px;
   font-family:'Consolas',monospace;font-size:.82em;color:#cdd9e5;
   white-space:pre-wrap;word-break:break-all;max-height:340px;overflow-y:auto;margin:0}}
@@ -364,9 +370,10 @@ def pytest_unconfigure(config):
   panels.forEach(function(p,i){{
     var st=p.dataset.status,nm=p.dataset.name;
     if(st==='passed')passed++;else{{failed++;if(!firstFailed)firstFailed=p;}}
+    var tcid=p.dataset.tcid;
     var item=document.createElement('div');
     item.className='nav-item '+st;
-    item.innerHTML='<span class="nav-badge">'+(st==='passed'?'✓':'✗')+'</span><span>'+nm+'</span>';
+    item.innerHTML='<span class="nav-badge">'+(st==='passed'?'✓':'✗')+'</span>'+(tcid?'<span class="nav-tcid">['+tcid+']</span> ':'')+nm;
     (function(panel,navItem){{
       navItem.onclick=function(){{
         panels.forEach(function(x){{x.classList.remove('active');}});
@@ -403,7 +410,8 @@ def pytest_runtest_logreport(report):
     if _report_file is None:
         return
     if report.when == "setup" and report.failed:
-        _write_report_entry(report.nodeid, "ERROR (setup failed)", str(report.longrepr), [])
+        tc_id = _tc_ids.get(report.nodeid, "")
+        _write_report_entry(report.nodeid, "ERROR (setup failed)", str(report.longrepr), [], tc_id)
     elif report.when == "call":
         _call_reports[report.nodeid] = report
     elif report.when == "teardown":
@@ -413,7 +421,8 @@ def pytest_runtest_logreport(report):
         captures = _http_captures.pop(report.nodeid, [])
         status = "PASSED" if call.passed else "FAILED"
         error = str(call.longrepr) if call.failed else None
-        _write_report_entry(report.nodeid, status, error, captures)
+        tc_id = _tc_ids.get(report.nodeid, "")
+        _write_report_entry(report.nodeid, status, error, captures, tc_id)
 
 
 # ─────────────────────────────────────────────
@@ -439,6 +448,13 @@ def _status_phrase(code: int) -> str:
         return HTTPStatus(code).phrase
     except ValueError:
         return ""
+
+
+@pytest.fixture(autouse=True)
+def _capture_tcid(request):
+    marker = request.node.get_closest_marker("tcid")
+    if marker:
+        _tc_ids[request.node.nodeid] = marker.args[0]
 
 
 @pytest.fixture(autouse=True)

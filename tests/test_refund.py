@@ -28,6 +28,7 @@ _REFUND_BODY = {
 # ─────────────────────────────────────────────
 # HAPPY PATH
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("RF-001")
 def test_refund_partial(payin_transaction_id):
     """Частичный возврат (1000 из 10000) по существующей транзакции. Ожидается 200 или 201."""
     resp = post_operation(payin_transaction_id, "refund", _REFUND_BODY)
@@ -41,6 +42,7 @@ def test_refund_partial(payin_transaction_id):
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ СЦЕНАРИИ
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("RF-002")
 def test_refund_nonexistent_transaction():
     """Возврат по несуществующей транзакции. Ожидается 404."""
     url = f"{BASE_URL}/nonexistent-id-000000/refund"
@@ -55,6 +57,7 @@ def test_refund_nonexistent_transaction():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("RF-003")
 def test_refund_amount_exceeds_original(payin_transaction_id):
     """Сумма возврата (99999999) превышает оригинальную сумму транзакции. Ожидается 400."""
     body = {
@@ -66,6 +69,7 @@ def test_refund_amount_exceeds_original(payin_transaction_id):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("RF-004")
 def test_refund_missing_merchant_data(payin_transaction_id):
     """Возврат без merchant_data (обязательное). Ожидается 400."""
     body = {"financial_data": {"amount": 100, "currency": "RUB"}}
@@ -74,6 +78,7 @@ def test_refund_missing_merchant_data(payin_transaction_id):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("RF-005")
 def test_refund_missing_financial_data(payin_transaction_id):
     """Возврат без financial_data (обязательное). Ожидается 400."""
     body = {"merchant_data": {"order_id": "order_refund_test"}}
@@ -82,6 +87,7 @@ def test_refund_missing_financial_data(payin_transaction_id):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("RF-006")
 def test_refund_missing_order_id(payin_transaction_id):
     """Возврат с merchant_data без order_id. Ожидается 400."""
     body = {
@@ -93,6 +99,7 @@ def test_refund_missing_order_id(payin_transaction_id):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("RF-007")
 def test_refund_missing_currency(payin_transaction_id):
     """Возврат без поля currency в financial_data. Ожидается 400."""
     body = {
@@ -104,6 +111,7 @@ def test_refund_missing_currency(payin_transaction_id):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("RF-008")
 def test_refund_missing_amount(payin_transaction_id):
     """Возврат без поля amount в financial_data. Ожидается 400."""
     body = {
@@ -115,6 +123,7 @@ def test_refund_missing_amount(payin_transaction_id):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("RF-009")
 def test_refund_zero_amount(payin_transaction_id):
     """Возврат с нулевой суммой. Ожидается 400."""
     body = {
@@ -126,6 +135,7 @@ def test_refund_zero_amount(payin_transaction_id):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("RF-010")
 def test_refund_negative_amount(payin_transaction_id):
     """Возврат с отрицательной суммой. Ожидается 400."""
     body = {
@@ -137,6 +147,7 @@ def test_refund_negative_amount(payin_transaction_id):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("RF-011")
 def test_refund_invalid_currency(payin_transaction_id):
     """Возврат с невалидным кодом валюты. Ожидается 400."""
     body = {

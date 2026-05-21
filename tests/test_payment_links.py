@@ -36,6 +36,7 @@ def post_payment_link(body: dict) -> requests.Response:
 # ─────────────────────────────────────────────
 # HAPPY PATH
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-001")
 def test_create_payment_link():
     """Создание платёжной ссылки со всеми обязательными полями. Ожидается 201."""
     resp = post_payment_link(_VALID_LINK_BODY)
@@ -47,6 +48,7 @@ def test_create_payment_link():
     assert "url" in data["link_data"],           "Missing url in link_data"
 
 
+@pytest.mark.tcid("PL-002")
 def test_create_payment_link_response_fields():
     """Проверка типов обязательных полей в ответе на создание ссылки."""
     resp = post_payment_link(_VALID_LINK_BODY)
@@ -57,6 +59,7 @@ def test_create_payment_link_response_fields():
     assert data["link_data"]["url"].startswith("http"), "url must be a valid URL"
 
 
+@pytest.mark.tcid("PL-003")
 def test_create_payment_link_with_flow_data():
     """Создание ссылки с необязательным flow_data. Ожидается 201."""
     body = {
@@ -67,6 +70,7 @@ def test_create_payment_link_with_flow_data():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PL-004")
 def test_create_payment_link_with_recurrent_flow():
     """Создание ссылки с is_recurrent=True. Ожидается 201."""
     body = {
@@ -77,6 +81,7 @@ def test_create_payment_link_with_recurrent_flow():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PL-005")
 def test_create_payment_link_with_manual_capture():
     """Создание ссылки с capture_mode=manual. Ожидается 201."""
     body = {
@@ -87,6 +92,7 @@ def test_create_payment_link_with_manual_capture():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PL-006")
 def test_create_payment_link_without_webhook_url():
     """Создание ссылки без необязательного webhook_url в merchant_data. Ожидается 201."""
     merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "webhook_url"}
@@ -95,6 +101,7 @@ def test_create_payment_link_without_webhook_url():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PL-007")
 def test_create_payment_link_without_return_url():
     """Создание ссылки без необязательного return_url в merchant_data. Ожидается 201."""
     merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "return_url"}
@@ -103,6 +110,7 @@ def test_create_payment_link_without_return_url():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PL-008")
 def test_create_payment_link_minimal_customer_data():
     """Создание ссылки с пустым customer_data — все поля CustomerData необязательны."""
     body = {**_VALID_LINK_BODY, "customer_data": {}}
@@ -110,6 +118,7 @@ def test_create_payment_link_minimal_customer_data():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PL-009")
 def test_create_payment_link_rub():
     """Создание платёжной ссылки с суммой 1000 RUB. Ожидается 201."""
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": 1000, "currency": "RUB"}}
@@ -121,6 +130,7 @@ def test_create_payment_link_rub():
 # НЕГАТИВНЫЕ СЦЕНАРИИ — обязательные поля верхнего уровня
 # ─────────────────────────────────────────────
 @pytest.mark.parametrize("missing_field", ["merchant_data", "financial_data", "customer_data"])
+@pytest.mark.tcid("PL-010")
 def test_payment_link_missing_required_field(missing_field):
     """Отсутствие одного из трёх обязательных полей верхнего уровня. Ожидается 400."""
     body = {k: v for k, v in _VALID_LINK_BODY.items() if k != missing_field}
@@ -129,6 +139,7 @@ def test_payment_link_missing_required_field(missing_field):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PL-011")
 def test_payment_link_missing_order_id():
     """Создание ссылки без order_id в merchant_data (обязательное). Ожидается 400."""
     merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "order_id"}
@@ -141,6 +152,7 @@ def test_payment_link_missing_order_id():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ СЦЕНАРИИ — финансовые данные
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-012")
 def test_payment_link_negative_amount():
     """Создание ссылки с отрицательной суммой. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": -100, "currency": "RUB"}}
@@ -149,6 +161,7 @@ def test_payment_link_negative_amount():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PL-013")
 def test_payment_link_zero_amount():
     """Создание ссылки с нулевой суммой. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": 0, "currency": "RUB"}}
@@ -157,6 +170,7 @@ def test_payment_link_zero_amount():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PL-014")
 def test_payment_link_invalid_currency():
     """Создание ссылки с невалидным кодом валюты. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": 5000, "currency": "INVALID"}}
@@ -165,6 +179,7 @@ def test_payment_link_invalid_currency():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PL-015")
 def test_payment_link_missing_currency():
     """Создание ссылки без поля currency в financial_data. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": 5000}}
@@ -173,6 +188,7 @@ def test_payment_link_missing_currency():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PL-016")
 def test_payment_link_missing_amount():
     """Создание ссылки без поля amount в financial_data. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "financial_data": {"currency": "RUB"}}
@@ -181,6 +197,7 @@ def test_payment_link_missing_amount():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PL-017")
 def test_payment_link_invalid_capture_mode():
     """Создание ссылки с невалидным capture_mode в flow_data. Ожидается 400."""
     body = {**_VALID_LINK_BODY, "flow_data": {"capture_mode": "instant"}}
@@ -192,6 +209,7 @@ def test_payment_link_invalid_capture_mode():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ СЦЕНАРИИ — авторизация
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-018")
 def test_payment_link_no_auth():
     """Создание ссылки без заголовков авторизации. Ожидается 400, 401 или 403."""
     raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
@@ -201,6 +219,7 @@ def test_payment_link_no_auth():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PL-019")
 def test_payment_link_invalid_signature():
     """Создание ссылки с невалидной подписью. Ожидается 401 или 403."""
     import uuid

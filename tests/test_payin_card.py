@@ -57,6 +57,7 @@ def _assert_payin_ok(resp):
 # ─────────────────────────────────────────────
 # HAPPY PATH
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-001")
 def test_payin_card_auto_capture():
     """Успешная оплата картой — auto capture, is_recurrent=True. Проверяет обязательные поля ответа."""
     data = _assert_payin_ok(post_transaction(_BASE))
@@ -64,6 +65,7 @@ def test_payin_card_auto_capture():
     assert data["financial_data"]["currency"] == "RUB"
 
 
+@pytest.mark.tcid("PC-002")
 def test_payin_card_manual_capture():
     """Оплата картой — manual capture (холд средств). Ожидаемый статус: authorized или processing."""
     body = {
@@ -76,6 +78,7 @@ def test_payin_card_manual_capture():
     assert data["status"] in ("processing", "authorized", "pending", "waiting_action")
 
 
+@pytest.mark.tcid("PC-003")
 def test_payin_card_recurrent(payin_transaction_id):
     """Рекуррентный платёж по parent_transaction_id (method:card)."""
     body = {
@@ -91,6 +94,7 @@ def test_payin_card_recurrent(payin_transaction_id):
     _assert_payin_ok(post_transaction(body))
 
 
+@pytest.mark.tcid("PC-004")
 def test_payin_card_without_flow_data():
     """flow_data необязателен — запрос без него должен вернуть 201."""
     body = {
@@ -103,6 +107,7 @@ def test_payin_card_without_flow_data():
     _assert_payin_ok(post_transaction(body))
 
 
+@pytest.mark.tcid("PC-005")
 def test_payin_card_without_webhook_url():
     """merchant_data.webhook_url необязателен (может быть задан на уровне терминала)."""
     merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "webhook_url"}
@@ -120,6 +125,7 @@ def test_payin_card_without_webhook_url():
 @pytest.mark.parametrize("missing_field", [
     "type", "merchant_data", "financial_data", "customer_data", "transaction_data",
 ])
+@pytest.mark.tcid("PC-006")
 def test_missing_top_level_field(missing_field):
     """Отсутствие одного из 5 обязательных полей верхнего уровня. Ожидается 400."""
     body = {k: v for k, v in _BASE.items() if k != missing_field}
@@ -129,6 +135,7 @@ def test_missing_top_level_field(missing_field):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-007")
 def test_invalid_transaction_type():
     """Неизвестный тип транзакции. Ожидается 400."""
     resp = post_transaction({**_BASE, "type": "unknown_type"})
@@ -139,6 +146,7 @@ def test_invalid_transaction_type():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ — финансовые данные
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-008")
 def test_negative_amount():
     """Отрицательная сумма. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": -100, "currency": "RUB"}})
@@ -146,6 +154,7 @@ def test_negative_amount():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-009")
 def test_zero_amount():
     """Нулевая сумма. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 0, "currency": "RUB"}})
@@ -153,6 +162,7 @@ def test_zero_amount():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-010")
 def test_invalid_currency():
     """Несуществующий код валюты. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 1000, "currency": "INVALID"}})
@@ -160,6 +170,7 @@ def test_invalid_currency():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-011")
 def test_missing_currency():
     """Поле currency отсутствует в financial_data. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 1000}})
@@ -170,6 +181,7 @@ def test_missing_currency():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ — merchant_data
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-012")
 def test_missing_merchant_order_id():
     """Поле order_id отсутствует в merchant_data. Ожидается 400."""
     merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "order_id"}
@@ -182,6 +194,7 @@ def test_missing_merchant_order_id():
 # НЕГАТИВНЫЕ — данные карты
 # ─────────────────────────────────────────────
 @pytest.mark.parametrize("missing_field", ["pan", "holder", "expiry_month", "expiry_year", "cvv"])
+@pytest.mark.tcid("PC-013")
 def test_missing_card_required_field(missing_field):
     """Каждое из 5 обязательных полей карты удаляется. Ожидается 400."""
     details = {k: v for k, v in CARD_DETAILS.items() if k != missing_field}
@@ -191,6 +204,7 @@ def test_missing_card_required_field(missing_field):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-014")
 def test_card_pan_too_short():
     """PAN из 4 цифр — меньше минимума (13 цифр). Ожидается 400."""
     details = {**CARD_DETAILS, "pan": "1234"}
@@ -199,6 +213,7 @@ def test_card_pan_too_short():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-015")
 def test_card_expired():
     """Истёкший срок действия карты (год 2020). Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_year": "20", "expiry_month": "01"}
@@ -210,6 +225,7 @@ def test_card_expired():
 # ─────────────────────────────────────────────
 # TYPE — граничные случаи (6.3, 6.4)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-016")
 def test_type_empty():
     """type передан как пустая строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "type": ""})
@@ -217,6 +233,7 @@ def test_type_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-017")
 def test_type_null():
     """type передан как null. Ожидается 400."""
     resp = post_transaction({**_BASE, "type": None})
@@ -227,6 +244,7 @@ def test_type_null():
 # ─────────────────────────────────────────────
 # MERCHANT_DATA — граничные случаи (7.2, 8.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-018")
 def test_merchant_data_empty_object():
     """merchant_data передан как пустой объект {}. Ожидается 400 (нет order_id)."""
     resp = post_transaction({**_BASE, "merchant_data": {}})
@@ -234,6 +252,7 @@ def test_merchant_data_empty_object():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-019")
 def test_order_id_as_int():
     """order_id передан как число (int). Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": 12345}})
@@ -241,6 +260,7 @@ def test_order_id_as_int():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-020")
 def test_order_id_empty():
     """order_id передан как пустая строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": ""}})
@@ -248,6 +268,7 @@ def test_order_id_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-021")
 def test_order_id_null():
     """order_id передан как null. Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": None}})
@@ -255,12 +276,14 @@ def test_order_id_null():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-022")
 def test_order_id_100_chars():
     """order_id длиной ровно 100 символов. Ожидается 201."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": "x" * 100}})
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-023")
 def test_order_id_over_100_chars():
     """order_id длиной 101 символ (выше лимита). Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": "x" * 101}})
@@ -271,6 +294,7 @@ def test_order_id_over_100_chars():
 # ─────────────────────────────────────────────
 # DESCRIPTION — граничные случаи (9.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-024")
 def test_description_as_int():
     """description передан как число. Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": 123}})
@@ -278,24 +302,28 @@ def test_description_as_int():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-025")
 def test_description_empty():
     """description передан как пустая строка. Ожидается 201 (поле необязательно)."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": ""}})
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-026")
 def test_description_null():
     """description передан как null. Ожидается 201 (необязательное поле)."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": None}})
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-027")
 def test_description_250_chars():
     """description длиной ровно 250 символов. Ожидается 201."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": "x" * 250}})
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-028")
 def test_description_over_250_chars():
     """description длиной 251 символ (выше лимита). Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "description": "x" * 251}})
@@ -306,6 +334,7 @@ def test_description_over_250_chars():
 # ─────────────────────────────────────────────
 # WEBHOOK_URL / RETURN_URL — граничные случаи (10.x, 11.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-029")
 def test_webhook_url_non_url_string():
     """webhook_url передан как произвольная строка, не ссылка. Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "webhook_url": "not_a_url"}})
@@ -313,6 +342,7 @@ def test_webhook_url_non_url_string():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-030")
 def test_webhook_url_as_int():
     """webhook_url передан как число. Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "webhook_url": 12345}})
@@ -320,6 +350,7 @@ def test_webhook_url_as_int():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-031")
 def test_webhook_url_empty():
     """webhook_url передан как пустая строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "webhook_url": ""}})
@@ -327,12 +358,14 @@ def test_webhook_url_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-032")
 def test_webhook_url_null():
     """webhook_url передан как null. Ожидается 201 (необязательное поле)."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "webhook_url": None}})
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-033")
 def test_return_url_non_url_string():
     """return_url передан как произвольная строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "return_url": "not_a_url"}})
@@ -340,6 +373,7 @@ def test_return_url_non_url_string():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-034")
 def test_return_url_as_int():
     """return_url передан как число. Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "return_url": 12345}})
@@ -347,6 +381,7 @@ def test_return_url_as_int():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-035")
 def test_return_url_empty():
     """return_url передан как пустая строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "return_url": ""}})
@@ -354,6 +389,7 @@ def test_return_url_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-036")
 def test_return_url_null():
     """return_url передан как null. Ожидается 201 (необязательное поле)."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "return_url": None}})
@@ -363,6 +399,7 @@ def test_return_url_null():
 # ─────────────────────────────────────────────
 # FINANCIAL_DATA — граничные случаи (12.x, 13.x, 14.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-037")
 def test_financial_data_empty_object():
     """financial_data передан как пустой объект {}. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {}})
@@ -370,6 +407,7 @@ def test_financial_data_empty_object():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-038")
 def test_amount_as_string():
     """amount передан как строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": "1000", "currency": "RUB"}})
@@ -377,18 +415,21 @@ def test_amount_as_string():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-039")
 def test_amount_min_value():
     """amount равен 1 (минимально допустимое). Ожидается 201."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 1, "currency": "RUB"}})
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-040")
 def test_amount_max_boundary():
     """amount равен 10000000000000 (граничное максимальное). Ожидается 201 или 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 10000000000000, "currency": "RUB"}})
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-041")
 def test_amount_over_max():
     """amount больше 10000000000000. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 10000000000001, "currency": "RUB"}})
@@ -396,6 +437,7 @@ def test_amount_over_max():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-042")
 def test_amount_null():
     """amount передан как null. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": None, "currency": "RUB"}})
@@ -403,6 +445,7 @@ def test_amount_null():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-043")
 def test_amount_float():
     """amount передан как дробное число. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 100.50, "currency": "RUB"}})
@@ -410,6 +453,7 @@ def test_amount_float():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-044")
 def test_currency_numeric_string():
     """currency передан как 3-значный числовой код (например '643'). Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 1000, "currency": "643"}})
@@ -417,6 +461,7 @@ def test_currency_numeric_string():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-045")
 def test_currency_two_chars():
     """currency из 2 символов. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 1000, "currency": "RU"}})
@@ -424,6 +469,7 @@ def test_currency_two_chars():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-046")
 def test_currency_four_chars():
     """currency из 4 символов. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 1000, "currency": "RUBX"}})
@@ -431,6 +477,7 @@ def test_currency_four_chars():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-047")
 def test_currency_empty():
     """currency передан как пустая строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 1000, "currency": ""}})
@@ -438,6 +485,7 @@ def test_currency_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-048")
 def test_currency_null():
     """currency передан как null. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": {"amount": 1000, "currency": None}})
@@ -448,12 +496,14 @@ def test_currency_null():
 # ─────────────────────────────────────────────
 # FLOW_DATA — граничные случаи (15.x–19.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-049")
 def test_flow_data_empty_object():
     """flow_data передан как пустой объект {}. Ожидается 201 или 400."""
     resp = post_transaction({**_BASE, "flow_data": {}})
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-050")
 def test_is_recurrent_as_int_one():
     """is_recurrent передан как 1 (не boolean). Ожидается 400."""
     resp = post_transaction({**_BASE, "flow_data": {"is_recurrent": 1, "capture_mode": "auto"}})
@@ -461,6 +511,7 @@ def test_is_recurrent_as_int_one():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-051")
 def test_is_recurrent_as_int_zero():
     """is_recurrent передан как 0 (не boolean). Ожидается 400."""
     resp = post_transaction({**_BASE, "flow_data": {"is_recurrent": 0, "capture_mode": "auto"}})
@@ -468,6 +519,7 @@ def test_is_recurrent_as_int_zero():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-052")
 def test_is_recurrent_as_string():
     """is_recurrent передан как строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "flow_data": {"is_recurrent": "true", "capture_mode": "auto"}})
@@ -475,6 +527,7 @@ def test_is_recurrent_as_string():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-053")
 def test_is_recurrent_empty():
     """is_recurrent передан как пустая строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "flow_data": {"is_recurrent": "", "capture_mode": "auto"}})
@@ -482,12 +535,14 @@ def test_is_recurrent_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-054")
 def test_is_recurrent_null():
     """is_recurrent передан как null. Ожидается 400 или 201."""
     resp = post_transaction({**_BASE, "flow_data": {"is_recurrent": None, "capture_mode": "auto"}})
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-055")
 def test_capture_mode_invalid_value():
     """capture_mode передан с недопустимым значением '123'. Ожидается 400."""
     resp = post_transaction({**_BASE, "flow_data": {"is_recurrent": False, "capture_mode": "123"}})
@@ -495,6 +550,7 @@ def test_capture_mode_invalid_value():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-056")
 def test_capture_mode_empty():
     """capture_mode передан как пустая строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "flow_data": {"is_recurrent": False, "capture_mode": ""}})
@@ -502,18 +558,21 @@ def test_capture_mode_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-057")
 def test_capture_mode_null():
     """capture_mode передан как null. Ожидается 400 или 201."""
     resp = post_transaction({**_BASE, "flow_data": {"is_recurrent": False, "capture_mode": None}})
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-058")
 def test_capture_mode_missing():
     """capture_mode не передан в flow_data. Ожидается 201 или 400."""
     resp = post_transaction({**_BASE, "flow_data": {"is_recurrent": False}})
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-059")
 def test_threed_secure_empty_object():
     """threed_secure передан как пустой объект {}. Ожидается 201."""
     body = {**_BASE, "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": {}}}
@@ -522,6 +581,7 @@ def test_threed_secure_empty_object():
 
 
 @pytest.mark.parametrize("window_size", ["01", "02", "03", "04", "05"])
+@pytest.mark.tcid("PC-060")
 def test_challenge_window_size_valid(window_size):
     """challenge_window_size — все допустимые значения '01'-'05'. Ожидается 201."""
     body = {**_BASE, "flow_data": {"is_recurrent": False, "capture_mode": "auto",
@@ -530,6 +590,7 @@ def test_challenge_window_size_valid(window_size):
     assert resp.status_code == 201, f"Expected 201 for {window_size}, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-061")
 def test_challenge_window_size_invalid():
     """challenge_window_size='06' (вне допустимого диапазона). Ожидается 400."""
     body = {**_BASE, "flow_data": {"is_recurrent": False, "capture_mode": "auto",
@@ -539,6 +600,7 @@ def test_challenge_window_size_invalid():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-062")
 def test_challenge_window_size_empty():
     """challenge_window_size передан как пустая строка. Ожидается 400."""
     body = {**_BASE, "flow_data": {"is_recurrent": False, "capture_mode": "auto",
@@ -548,6 +610,7 @@ def test_challenge_window_size_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-063")
 def test_challenge_window_size_null():
     """challenge_window_size передан как null. Ожидается 400 или 201."""
     body = {**_BASE, "flow_data": {"is_recurrent": False, "capture_mode": "auto",
@@ -559,6 +622,7 @@ def test_challenge_window_size_null():
 # ─────────────────────────────────────────────
 # TRANSACTION_DATA — граничные случаи (20.x–22.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-064")
 def test_transaction_data_empty_object():
     """transaction_data передан как пустой объект {}. Ожидается 400."""
     resp = post_transaction({**_BASE, "transaction_data": {}})
@@ -566,6 +630,7 @@ def test_transaction_data_empty_object():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-065")
 def test_method_invalid_value():
     """method передан как 'card1' (недопустимое значение). Ожидается 400."""
     resp = post_transaction({**_BASE, "transaction_data": {"method": "card1", "details": CARD_DETAILS}})
@@ -573,6 +638,7 @@ def test_method_invalid_value():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-066")
 def test_method_empty():
     """method передан как пустая строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "transaction_data": {"method": "", "details": CARD_DETAILS}})
@@ -580,6 +646,7 @@ def test_method_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-067")
 def test_method_null():
     """method передан как null. Ожидается 400."""
     resp = post_transaction({**_BASE, "transaction_data": {"method": None, "details": CARD_DETAILS}})
@@ -587,6 +654,7 @@ def test_method_null():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-068")
 def test_details_empty_object():
     """details передан как пустой объект {}. Ожидается 400 (нет обязательных полей карты)."""
     resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": {}}})
@@ -597,6 +665,7 @@ def test_details_empty_object():
 # ─────────────────────────────────────────────
 # CVV — граничные случаи (23.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-069")
 def test_cvv_as_int():
     """cvv передан как число (int). Ожидается 400."""
     details = {**CARD_DETAILS, "cvv": 666}
@@ -605,6 +674,7 @@ def test_cvv_as_int():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-070")
 def test_cvv_too_short():
     """cvv из 2 символов (короче минимума). Ожидается 400."""
     details = {**CARD_DETAILS, "cvv": "66"}
@@ -613,6 +683,7 @@ def test_cvv_too_short():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-071")
 def test_cvv_too_long():
     """cvv из 4 символов (длиннее максимума). Ожидается 400."""
     details = {**CARD_DETAILS, "cvv": "6666"}
@@ -621,6 +692,7 @@ def test_cvv_too_long():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-072")
 def test_cvv_alpha():
     """cvv состоит из букв. Ожидается 400."""
     details = {**CARD_DETAILS, "cvv": "ABC"}
@@ -629,6 +701,7 @@ def test_cvv_alpha():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-073")
 def test_cvv_mixed_alpha_digit():
     """cvv состоит из цифр и букв. Ожидается 400."""
     details = {**CARD_DETAILS, "cvv": "66A"}
@@ -637,6 +710,7 @@ def test_cvv_mixed_alpha_digit():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-074")
 def test_cvv_mixed_digit_special():
     """cvv состоит из цифр и спецсимволов. Ожидается 400."""
     details = {**CARD_DETAILS, "cvv": "66!"}
@@ -645,6 +719,7 @@ def test_cvv_mixed_digit_special():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-075")
 def test_cvv_empty():
     """cvv передан как пустая строка. Ожидается 400."""
     details = {**CARD_DETAILS, "cvv": ""}
@@ -653,6 +728,7 @@ def test_cvv_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-076")
 def test_cvv_null():
     """cvv передан как null. Ожидается 400."""
     details = {**CARD_DETAILS, "cvv": None}
@@ -664,6 +740,7 @@ def test_cvv_null():
 # ─────────────────────────────────────────────
 # EXPIRY_MONTH — граничные случаи (24.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-077")
 def test_expiry_month_as_int():
     """expiry_month передан как число. Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_month": 5}
@@ -672,6 +749,7 @@ def test_expiry_month_as_int():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-078")
 def test_expiry_month_one_char():
     """expiry_month из 1 символа (нет ведущего нуля). Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_month": "5"}
@@ -680,6 +758,7 @@ def test_expiry_month_one_char():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-079")
 def test_expiry_month_three_chars():
     """expiry_month из 3 символов ('005'). Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_month": "005"}
@@ -688,6 +767,7 @@ def test_expiry_month_three_chars():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-080")
 def test_expiry_month_invalid_value():
     """expiry_month='13' (несуществующий месяц). Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_month": "13"}
@@ -696,6 +776,7 @@ def test_expiry_month_invalid_value():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-081")
 def test_expiry_month_alpha():
     """expiry_month состоит из букв. Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_month": "AB"}
@@ -704,6 +785,7 @@ def test_expiry_month_alpha():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-082")
 def test_expiry_month_empty():
     """expiry_month передан как пустая строка. Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_month": ""}
@@ -712,6 +794,7 @@ def test_expiry_month_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-083")
 def test_expiry_month_null():
     """expiry_month передан как null. Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_month": None}
@@ -721,6 +804,7 @@ def test_expiry_month_null():
 
 
 @pytest.mark.parametrize("month", ["01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"])
+@pytest.mark.tcid("PC-084")
 def test_expiry_month_all_valid(month):
     """Проверка всех допустимых значений месяца (01-12). Ожидается 201."""
     details = {**CARD_DETAILS, "expiry_month": month, "expiry_year": "99"}
@@ -731,6 +815,7 @@ def test_expiry_month_all_valid(month):
 # ─────────────────────────────────────────────
 # EXPIRY_YEAR — граничные случаи (25.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-085")
 def test_expiry_year_as_int():
     """expiry_year передан как число. Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_year": 27}
@@ -739,6 +824,7 @@ def test_expiry_year_as_int():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-086")
 def test_expiry_year_one_char():
     """expiry_year из 1 символа. Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_year": "7"}
@@ -747,6 +833,7 @@ def test_expiry_year_one_char():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-087")
 def test_expiry_year_four_chars():
     """expiry_year из 4 символов ('2027'). Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_year": "2027"}
@@ -755,6 +842,7 @@ def test_expiry_year_four_chars():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-088")
 def test_expiry_year_alpha():
     """expiry_year состоит из букв. Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_year": "AB"}
@@ -763,6 +851,7 @@ def test_expiry_year_alpha():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-089")
 def test_expiry_year_empty():
     """expiry_year передан как пустая строка. Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_year": ""}
@@ -771,6 +860,7 @@ def test_expiry_year_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-090")
 def test_expiry_year_null():
     """expiry_year передан как null. Ожидается 400."""
     details = {**CARD_DETAILS, "expiry_year": None}
@@ -782,6 +872,7 @@ def test_expiry_year_null():
 # ─────────────────────────────────────────────
 # EXPIRY КОМБО (26.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-091")
 def test_expiry_future_year():
     """expiry_month='01', expiry_year='99' — дата в далёком будущем. Ожидается 201."""
     details = {**CARD_DETAILS, "expiry_month": "01", "expiry_year": "99"}
@@ -789,6 +880,7 @@ def test_expiry_future_year():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-092")
 def test_expiry_future_month_current_year():
     """Месяц больше текущего, год текущий — карта ещё действует. Ожидается 201."""
     now = datetime.now()
@@ -801,6 +893,7 @@ def test_expiry_future_month_current_year():
 
 
 @pytest.mark.skipif(datetime.now().month == 1, reason="Январь — нет предыдущего месяца в текущем году")
+@pytest.mark.tcid("PC-093")
 def test_expiry_past_month_current_year():
     """Месяц меньше текущего, год текущий — карта просрочена. Ожидается 400."""
     now = datetime.now()
@@ -812,6 +905,7 @@ def test_expiry_past_month_current_year():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-094")
 def test_expiry_current_month_year():
     """Текущий месяц и год — карта ещё действует. Ожидается 201."""
     now = datetime.now()
@@ -825,6 +919,7 @@ def test_expiry_current_month_year():
 # ─────────────────────────────────────────────
 # HOLDER — граничные случаи (27.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-095")
 def test_holder_three_words():
     """holder из 3 слов. Ожидается 201 или 400 (зависит от валидации)."""
     details = {**CARD_DETAILS, "holder": "JOHN DOE SMITH"}
@@ -832,6 +927,7 @@ def test_holder_three_words():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-096")
 def test_holder_one_word():
     """holder из 1 слова. Ожидается 201 или 400."""
     details = {**CARD_DETAILS, "holder": "JOHN"}
@@ -839,6 +935,7 @@ def test_holder_one_word():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-097")
 def test_holder_short():
     """holder общей длиной 3 символа ('AB C'). Ожидается 201 или 400."""
     details = {**CARD_DETAILS, "holder": "AB C"}
@@ -846,6 +943,7 @@ def test_holder_short():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-098")
 def test_holder_cyrillic():
     """holder с кириллицей. Ожидается 400."""
     details = {**CARD_DETAILS, "holder": "ИВАНОВ ИВАН"}
@@ -854,6 +952,7 @@ def test_holder_cyrillic():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-099")
 def test_holder_30_chars():
     """holder длиной ровно 30 символов. Ожидается 201."""
     details = {**CARD_DETAILS, "holder": "JOHN " + "A" * 25}
@@ -861,6 +960,7 @@ def test_holder_30_chars():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-100")
 def test_holder_over_30_chars():
     """holder длиной более 30 символов. Ожидается 400."""
     details = {**CARD_DETAILS, "holder": "JOHN " + "A" * 26}
@@ -869,6 +969,7 @@ def test_holder_over_30_chars():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-101")
 def test_holder_empty():
     """holder передан как пустая строка. Ожидается 400."""
     details = {**CARD_DETAILS, "holder": ""}
@@ -877,6 +978,7 @@ def test_holder_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-102")
 def test_holder_null():
     """holder передан как null. Ожидается 400."""
     details = {**CARD_DETAILS, "holder": None}
@@ -888,6 +990,7 @@ def test_holder_null():
 # ─────────────────────────────────────────────
 # PAN — граничные случаи (28.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-103")
 def test_pan_as_int():
     """pan передан как число (int). Ожидается 400."""
     details = {**CARD_DETAILS, "pan": 4111111111111111}
@@ -896,6 +999,7 @@ def test_pan_as_int():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-104")
 def test_pan_13_valid_luhn():
     """13-значный PAN, проходящий алгоритм Луна. Ожидается 201."""
     details = {**CARD_DETAILS, "pan": _PAN_13_VALID}
@@ -903,6 +1007,7 @@ def test_pan_13_valid_luhn():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-105")
 def test_pan_13_invalid_luhn():
     """13-значный PAN, не проходящий алгоритм Луна. Ожидается 400."""
     details = {**CARD_DETAILS, "pan": _PAN_13_INVALID}
@@ -911,6 +1016,7 @@ def test_pan_13_invalid_luhn():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-106")
 def test_pan_16_invalid_luhn():
     """16-значный PAN, не проходящий алгоритм Луна. Ожидается 400."""
     details = {**CARD_DETAILS, "pan": "4111111111111112"}
@@ -919,6 +1025,7 @@ def test_pan_16_invalid_luhn():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-107")
 def test_pan_18_valid_luhn():
     """18-значный PAN, проходящий алгоритм Луна. Ожидается 201."""
     details = {**CARD_DETAILS, "pan": _PAN_18_VALID}
@@ -926,6 +1033,7 @@ def test_pan_18_valid_luhn():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-108")
 def test_pan_18_invalid_luhn():
     """18-значный PAN, не проходящий алгоритм Луна. Ожидается 400."""
     details = {**CARD_DETAILS, "pan": _PAN_18_INVALID}
@@ -934,6 +1042,7 @@ def test_pan_18_invalid_luhn():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-109")
 def test_pan_19_valid_luhn():
     """19-значный PAN, проходящий алгоритм Луна. Ожидается 201."""
     details = {**CARD_DETAILS, "pan": _PAN_19_VALID}
@@ -941,6 +1050,7 @@ def test_pan_19_valid_luhn():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-110")
 def test_pan_19_invalid_luhn():
     """19-значный PAN, не проходящий алгоритм Луна. Ожидается 400."""
     details = {**CARD_DETAILS, "pan": _PAN_19_INVALID}
@@ -949,6 +1059,7 @@ def test_pan_19_invalid_luhn():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-111")
 def test_pan_over_19_chars():
     """PAN из 20 цифр (больше максимума). Ожидается 400."""
     details = {**CARD_DETAILS, "pan": "41111111111111111111"}
@@ -957,6 +1068,7 @@ def test_pan_over_19_chars():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-112")
 def test_pan_with_letters():
     """PAN содержит буквы. Ожидается 400."""
     details = {**CARD_DETAILS, "pan": "411111111111111X"}
@@ -965,6 +1077,7 @@ def test_pan_with_letters():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-113")
 def test_pan_empty():
     """pan передан как пустая строка. Ожидается 400."""
     details = {**CARD_DETAILS, "pan": ""}
@@ -973,6 +1086,7 @@ def test_pan_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-114")
 def test_pan_null():
     """pan передан как null. Ожидается 400."""
     details = {**CARD_DETAILS, "pan": None}
@@ -984,6 +1098,7 @@ def test_pan_null():
 # ─────────────────────────────────────────────
 # PIN — граничные случаи (29.x)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-115")
 def test_pin_valid_string():
     """pin передан как 4-символьная строка. Ожидается 201."""
     details = {**CARD_DETAILS, "pin": "1234"}
@@ -991,6 +1106,7 @@ def test_pin_valid_string():
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
+@pytest.mark.tcid("PC-116")
 def test_pin_as_int():
     """pin передан как число (int). Ожидается 400."""
     details = {**CARD_DETAILS, "pin": 1234}
@@ -999,6 +1115,7 @@ def test_pin_as_int():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-117")
 def test_pin_too_short():
     """pin из 3 символов (короче минимума). Ожидается 400."""
     details = {**CARD_DETAILS, "pin": "123"}
@@ -1007,6 +1124,7 @@ def test_pin_too_short():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-118")
 def test_pin_too_long():
     """pin из 5 символов (длиннее максимума). Ожидается 400."""
     details = {**CARD_DETAILS, "pin": "12345"}
@@ -1015,6 +1133,7 @@ def test_pin_too_long():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-119")
 def test_pin_alpha():
     """pin из букв. Ожидается 400."""
     details = {**CARD_DETAILS, "pin": "ABCD"}
@@ -1023,6 +1142,7 @@ def test_pin_alpha():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-120")
 def test_pin_empty():
     """pin передан как пустая строка. Ожидается 400."""
     details = {**CARD_DETAILS, "pin": ""}
@@ -1031,6 +1151,7 @@ def test_pin_empty():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PC-121")
 def test_pin_null():
     """pin передан как null. Ожидается 201 (необязательное поле)."""
     details = {**CARD_DETAILS, "pin": None}
@@ -1041,6 +1162,7 @@ def test_pin_null():
 # ─────────────────────────────────────────────
 # CUSTOMER_DATA — пустой объект (30.2)
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-122")
 def test_customer_data_empty_object():
     """customer_data передан как пустой объект {} (все поля необязательны). Ожидается 201."""
     resp = post_transaction({**_BASE, "customer_data": {}})

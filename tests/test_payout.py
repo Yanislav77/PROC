@@ -34,6 +34,7 @@ def _assert_payout_ok(resp):
 # ─────────────────────────────────────────────
 # HAPPY PATH — card
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-001")
 def test_payout_card():
     """Выплата на карту — pan и holder обязательны."""
     body = {
@@ -47,6 +48,7 @@ def test_payout_card():
 # ─────────────────────────────────────────────
 # HAPPY PATH — token
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-002")
 def test_payout_token():
     """Выплата по сохранённому токену (method=token)."""
     body = {
@@ -62,12 +64,14 @@ def test_payout_token():
 # ─────────────────────────────────────────────
 # HAPPY PATH — mobile
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-003")
 def test_payout_mobile():
     """Выплата методом mobile — phone обязателен, provider необязателен."""
     body = {**_BASE, "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567"}}}
     _assert_payout_ok(post_transaction(body))
 
 
+@pytest.mark.tcid("PY-004")
 def test_payout_mobile_with_provider():
     """Выплата mobile с необязательным полем provider."""
     body = {
@@ -80,6 +84,7 @@ def test_payout_mobile_with_provider():
 # ─────────────────────────────────────────────
 # HAPPY PATH — sbp
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-005")
 def test_payout_sbp():
     """Выплата через СБП с phone и bank."""
     body = {
@@ -89,6 +94,7 @@ def test_payout_sbp():
     _assert_payout_ok(post_transaction(body))
 
 
+@pytest.mark.tcid("PY-006")
 def test_payout_sbp_without_details():
     """Выплата через СБП без details — все поля SbpDetails необязательны."""
     body = {**_BASE, "transaction_data": {"method": "sbp"}}
@@ -98,12 +104,14 @@ def test_payout_sbp_without_details():
 # ─────────────────────────────────────────────
 # HAPPY PATH — wallet
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-007")
 def test_payout_wallet():
     """Выплата на кошелёк — id обязателен, brand необязателен."""
     body = {**_BASE, "transaction_data": {"method": "wallet", "details": {"id": "wallet_abc123"}}}
     _assert_payout_ok(post_transaction(body))
 
 
+@pytest.mark.tcid("PY-008")
 def test_payout_wallet_with_brand():
     """Выплата на кошелёк с необязательным полем brand."""
     body = {
@@ -116,6 +124,7 @@ def test_payout_wallet_with_brand():
 # ─────────────────────────────────────────────
 # HAPPY PATH — bank_account
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-009")
 def test_payout_bank_account():
     """Выплата на банковский счёт с SWIFT-реквизитами."""
     body = {
@@ -133,6 +142,7 @@ def test_payout_bank_account():
     _assert_payout_ok(post_transaction(body))
 
 
+@pytest.mark.tcid("PY-010")
 def test_payout_bank_account_pix():
     """Выплата через PIX (Бразилия)."""
     body = {
@@ -145,6 +155,7 @@ def test_payout_bank_account_pix():
     _assert_payout_ok(post_transaction(body))
 
 
+@pytest.mark.tcid("PY-011")
 def test_payout_bank_account_minimal():
     """Выплата на банковский счёт без details — все поля BankAccountDetails необязательны."""
     body = {**_BASE, "transaction_data": {"method": "bank_account"}}
@@ -154,6 +165,7 @@ def test_payout_bank_account_minimal():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ — card
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-012")
 def test_payout_card_missing_pan():
     """Выплата на карту без pan (обязательное). Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "card", "details": {"holder": "JOHN DOE"}}}
@@ -162,6 +174,7 @@ def test_payout_card_missing_pan():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PY-013")
 def test_payout_card_missing_holder():
     """Выплата на карту без holder (обязательное). Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111"}}}
@@ -170,6 +183,7 @@ def test_payout_card_missing_holder():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PY-014")
 def test_payout_card_missing_details():
     """Выплата на карту без details. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "card"}}
@@ -181,6 +195,7 @@ def test_payout_card_missing_details():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ — mobile
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-015")
 def test_payout_mobile_missing_phone():
     """Выплата mobile без phone (обязательное). Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "mobile", "details": {"provider": "Beeline"}}}
@@ -189,6 +204,7 @@ def test_payout_mobile_missing_phone():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PY-016")
 def test_payout_mobile_missing_details():
     """Выплата mobile без details. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "mobile"}}
@@ -200,6 +216,7 @@ def test_payout_mobile_missing_details():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ — wallet
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-017")
 def test_payout_wallet_missing_id():
     """Выплата wallet без id (обязательное). Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "wallet", "details": {"brand": "PayPal"}}}
@@ -208,6 +225,7 @@ def test_payout_wallet_missing_id():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PY-018")
 def test_payout_wallet_missing_details():
     """Выплата wallet без details. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "wallet"}}
@@ -219,6 +237,7 @@ def test_payout_wallet_missing_details():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ — token
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-019")
 def test_payout_token_missing_token():
     """Выплата по токену без поля token. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "token", "details": {}}}
@@ -227,6 +246,7 @@ def test_payout_token_missing_token():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PY-020")
 def test_payout_token_missing_details():
     """Выплата по токену без details. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "token"}}
@@ -238,6 +258,7 @@ def test_payout_token_missing_details():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ — общие
 # ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-021")
 def test_payout_unknown_method():
     """Неизвестный метод выплаты. Ожидается 400."""
     body = {**_BASE, "transaction_data": {"method": "unknown_method"}}
@@ -246,6 +267,7 @@ def test_payout_unknown_method():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PY-022")
 def test_payout_negative_amount():
     """Выплата с отрицательной суммой. Ожидается 400."""
     body = {
@@ -258,6 +280,7 @@ def test_payout_negative_amount():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PY-023")
 def test_payout_zero_amount():
     """Выплата с нулевой суммой. Ожидается 400."""
     body = {
@@ -270,6 +293,7 @@ def test_payout_zero_amount():
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("PY-024")
 def test_payout_invalid_currency():
     """Выплата с невалидным кодом валюты. Ожидается 400."""
     body = {
