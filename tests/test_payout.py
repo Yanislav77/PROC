@@ -304,3 +304,716 @@ def test_payout_invalid_currency():
     resp = post_transaction(body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
+
+
+# База с transaction_data для валидационных тестов (sbp — нет обязательных details)
+_VALID = {**_BASE, "transaction_data": {"method": "sbp"}}
+
+
+# ─────────────────────────────────────────────
+# TYPE — граничные случаи (2.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-025")
+def test_payout_type_payin():
+    """type = 'payin' вместо 'payout'. Ожидается 400."""
+    resp = post_transaction({**_VALID, "type": "payin"})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-026")
+def test_payout_type_null():
+    """type = null. Ожидается 400."""
+    resp = post_transaction({**_VALID, "type": None})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-027")
+def test_payout_type_empty():
+    """type = '' (пустая строка). Ожидается 400."""
+    resp = post_transaction({**_VALID, "type": ""})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-028")
+def test_payout_type_uppercase():
+    """type = 'PAYOUT' (верхний регистр). Ожидается 400."""
+    resp = post_transaction({**_VALID, "type": "PAYOUT"})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# MERCHANT_DATA.ORDER_ID — граничные случаи (3.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-029")
+def test_payout_missing_order_id():
+    """merchant_data без order_id. Ожидается 400."""
+    merchant = {k: v for k, v in MERCHANT_DATA.items() if k != "order_id"}
+    resp = post_transaction({**_VALID, "merchant_data": merchant})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-030")
+def test_payout_order_id_null():
+    """merchant_data.order_id = null. Ожидается 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": None}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-031")
+def test_payout_order_id_empty():
+    """merchant_data.order_id = '' (пустая строка). Ожидается 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": ""}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-032")
+def test_payout_order_id_spaces():
+    """merchant_data.order_id = '   ' (только пробелы). Ожидается 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": "   "}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-033")
+def test_payout_order_id_special_chars():
+    """merchant_data.order_id = спецсимволы ORDER#@$%^&*(). Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": "ORDER#@$%^&*()"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-034")
+def test_payout_order_id_256_chars():
+    """merchant_data.order_id = 256 символов (граничное). Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": "x" * 256}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-035")
+def test_payout_order_id_257_chars():
+    """merchant_data.order_id = 257 символов (превышение лимита). Ожидается 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": "x" * 257}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-036")
+def test_payout_order_id_cyrillic():
+    """merchant_data.order_id = кириллица 'ЗАКАЗ-12345'. Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": "ЗАКАЗ-12345"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-037")
+def test_payout_order_id_duplicate():
+    """merchant_data.order_id = дубликат уже созданного заказа. Ожидается 201 или 409."""
+    body = {**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": "order_payout_card"}}
+    resp = post_transaction(body)
+    assert resp.status_code in (201, 409), f"Expected 201 or 409, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# FINANCIAL_DATA.AMOUNT — граничные случаи (4.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-038")
+def test_payout_amount_missing():
+    """financial_data без поля amount. Ожидается 400."""
+    resp = post_transaction({**_VALID, "financial_data": {"currency": "RUB"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-039")
+def test_payout_amount_min():
+    """financial_data.amount = 1 (минимально допустимое). Ожидается 201."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": 1, "currency": "RUB"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-040")
+def test_payout_amount_as_string():
+    """financial_data.amount = '10000' (строка). Ожидается 400."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": "10000", "currency": "RUB"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-041")
+def test_payout_amount_float():
+    """financial_data.amount = 100.50 (дробное число). Ожидается 400."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": 100.50, "currency": "RUB"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-042")
+def test_payout_amount_large():
+    """financial_data.amount = 99999999999 (очень большое). Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": 99999999999, "currency": "RUB"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-043")
+def test_payout_amount_exceeds_balance():
+    """financial_data.amount = 999999999999999 (заведомо превышает баланс). Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": 999999999999999, "currency": "RUB"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# FINANCIAL_DATA.CURRENCY — граничные случаи (5.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-044")
+def test_payout_currency_usd():
+    """financial_data.currency = 'USD'. Ожидается 201 или 400 (зависит от настроек терминала)."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": 1000, "currency": "USD"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-045")
+def test_payout_currency_eur():
+    """financial_data.currency = 'EUR'. Ожидается 201 или 400 (зависит от настроек терминала)."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": 1000, "currency": "EUR"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-046")
+def test_payout_currency_missing():
+    """financial_data без поля currency. Ожидается 400."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": 1000}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-047")
+def test_payout_currency_null():
+    """financial_data.currency = null. Ожидается 400."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": 1000, "currency": None}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-048")
+def test_payout_currency_lowercase():
+    """financial_data.currency = 'rub' (нижний регистр). Ожидается 400."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": 1000, "currency": "rub"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-049")
+def test_payout_currency_rur():
+    """financial_data.currency = 'RUR' (старый код рубля). Ожидается 400."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": 1000, "currency": "RUR"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-050")
+def test_payout_currency_numeric_code():
+    """financial_data.currency = '643' (цифровой код). Ожидается 400."""
+    resp = post_transaction({**_VALID, "financial_data": {"amount": 1000, "currency": "643"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# CUSTOMER_DATA — граничные случаи (6.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-051")
+def test_payout_missing_customer_data():
+    """customer_data отсутствует. Ожидается 400."""
+    body = {k: v for k, v in _VALID.items() if k != "customer_data"}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-052")
+def test_payout_invalid_email():
+    """customer_data.contact_info.email = невалидный email. Ожидается 400."""
+    customer = {**CUSTOMER_DATA, "contact_info": {"email": "not_an_email", "phone": "+79991234567"}}
+    resp = post_transaction({**_VALID, "customer_data": customer})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-053")
+def test_payout_invalid_phone_format():
+    """customer_data.contact_info.phone не в формате E.164. Ожидается 400."""
+    customer = {**CUSTOMER_DATA, "contact_info": {"email": "test@test.com", "phone": "89991234567"}}
+    resp = post_transaction({**_VALID, "customer_data": customer})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# TRANSACTION_DATA.METHOD — граничные случаи (7.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-054")
+def test_payout_method_missing():
+    """transaction_data без поля method. Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-055")
+def test_payout_method_null():
+    """transaction_data.method = null. Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": None}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-056")
+def test_payout_method_uppercase():
+    """transaction_data.method = 'CARD' (верхний регистр). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "CARD"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ОПЦИОНАЛЬНЫЕ ПОЛЯ MERCHANT_DATA (8.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-057")
+def test_payout_description_long():
+    """merchant_data.description = 1000 символов. Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "description": "x" * 1000}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-058")
+def test_payout_description_special_chars():
+    """merchant_data.description = спецсимволы. Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "description": "Test!@#$%^&*()_+[]{}|;':\",.<>?"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-059")
+def test_payout_webhook_url_valid_https():
+    """merchant_data.webhook_url = валидный HTTPS URL. Ожидается 201."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "webhook_url": "https://example.com/webhook"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-060")
+def test_payout_webhook_url_invalid():
+    """merchant_data.webhook_url = невалидный URL. Ожидается 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "webhook_url": "not_a_url"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-061")
+def test_payout_webhook_url_http():
+    """merchant_data.webhook_url = HTTP URL (небезопасный). Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "webhook_url": "http://example.com/webhook"}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-062")
+def test_payout_return_url_valid_https():
+    """merchant_data.return_url = валидный HTTPS URL. Ожидается 201."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "return_url": "https://example.com/return"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-063")
+def test_payout_return_url_with_query_params():
+    """merchant_data.return_url = URL с query-параметрами. Ожидается 201."""
+    resp = post_transaction({**_VALID, "merchant_data": {**MERCHANT_DATA, "return_url": "https://example.com/return?order=123&status=ok"}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# CARD DETAILS — граничные случаи (9.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-064")
+def test_payout_card_pan_empty():
+    """card.pan = '' (пустая строка). Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "", "holder": "JOHN DOE"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-065")
+def test_payout_card_pan_invalid_luhn():
+    """card.pan не проходит проверку Luhn. Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "4111111111111112", "holder": "JOHN DOE"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-066")
+def test_payout_card_pan_too_short():
+    """card.pan менее 13 цифр. Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "411111111", "holder": "JOHN DOE"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-067")
+def test_payout_card_pan_too_long():
+    """card.pan более 19 цифр. Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "41111111111111111111", "holder": "JOHN DOE"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-068")
+def test_payout_card_pan_with_spaces():
+    """card.pan = '4111 1111 1111 1111' (с пробелами). Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "4111 1111 1111 1111", "holder": "JOHN DOE"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-069")
+def test_payout_card_pan_with_dashes():
+    """card.pan = '4111-1111-1111-1111' (с дефисами). Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "4111-1111-1111-1111", "holder": "JOHN DOE"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-070")
+def test_payout_card_holder_empty():
+    """card.holder = '' (пустая строка). Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": ""}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-071")
+def test_payout_card_holder_spaces():
+    """card.holder = '   ' (только пробелы). Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "   "}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-072")
+def test_payout_card_holder_cyrillic():
+    """card.holder = 'ИВАН ПЕТРОВ' (кириллица). Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "ИВАН ПЕТРОВ"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-073")
+def test_payout_card_holder_with_dot():
+    """card.holder = 'JOHN DOE JR.' (с точкой). Ожидается 201 или 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE JR."}}}
+    resp = post_transaction(body)
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-074")
+def test_payout_card_expiry_month_13():
+    """card.expiry_month = '13' (невалидный месяц). Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {
+        "pan": "4111111111111111", "holder": "JOHN DOE",
+        "expiry_month": "13", "expiry_year": "30", "cvv": "123",
+    }}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-075")
+def test_payout_card_expiry_month_00():
+    """card.expiry_month = '00'. Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {
+        "pan": "4111111111111111", "holder": "JOHN DOE",
+        "expiry_month": "00", "expiry_year": "30", "cvv": "123",
+    }}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-076")
+def test_payout_card_expiry_month_single_digit():
+    """card.expiry_month = '5' (без ведущего нуля). Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {
+        "pan": "4111111111111111", "holder": "JOHN DOE",
+        "expiry_month": "5", "expiry_year": "30", "cvv": "123",
+    }}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-077")
+def test_payout_card_expired():
+    """Истёкший срок действия карты (год 20). Ожидается 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {
+        "pan": "4111111111111111", "holder": "JOHN DOE",
+        "expiry_month": "01", "expiry_year": "20", "cvv": "123",
+    }}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-078")
+def test_payout_card_expiry_year_far_future():
+    """card.expiry_year = '50' (слишком далёкий год). Ожидается 201 или 400."""
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {
+        "pan": "4111111111111111", "holder": "JOHN DOE",
+        "expiry_month": "01", "expiry_year": "50", "cvv": "123",
+    }}}
+    resp = post_transaction(body)
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# TOKEN DETAILS — граничные случаи (10.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-079")
+def test_payout_token_empty_string():
+    """token = '' (пустая строка). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "token", "details": {"token": ""}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-080")
+def test_payout_token_not_uuid():
+    """token = произвольная строка, не UUID. Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "token", "details": {"token": "not-a-valid-uuid-format"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-081")
+def test_payout_token_uppercase_uuid():
+    """token = UUID с заглавными буквами. Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "token", "details": {"token": "B928586B-E6EC-4400-9039-E36F19C0094C"}}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-082")
+def test_payout_token_nonexistent():
+    """token = несуществующий UUID (все нули). Ожидается 400 или 404."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "token", "details": {"token": "00000000-0000-0000-0000-000000000000"}}})
+    assert resp.status_code in (400, 404), f"Expected 400 or 404, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# MOBILE DETAILS — граничные случаи (11.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-083")
+def test_payout_mobile_phone_empty():
+    """mobile.phone = '' (пустая строка). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": ""}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-084")
+def test_payout_mobile_phone_no_country_code():
+    """mobile.phone = '9991234567' (без кода страны). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "9991234567"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-085")
+def test_payout_mobile_phone_8_prefix():
+    """mobile.phone = '89991234567' (8 вместо +7). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "89991234567"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-086")
+def test_payout_mobile_phone_too_short():
+    """mobile.phone = '+7' (слишком короткий). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "+7"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-087")
+def test_payout_mobile_phone_too_long():
+    """mobile.phone = '+79991234567890' (слишком длинный). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567890"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-088")
+def test_payout_mobile_phone_with_spaces():
+    """mobile.phone = '+7 999 123-45-67' (с пробелами и дефисами). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "+7 999 123-45-67"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-089")
+def test_payout_mobile_provider_mts():
+    """mobile.provider = 'MTS'. Ожидается 201."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567", "provider": "MTS"}}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-090")
+def test_payout_mobile_provider_custom():
+    """mobile.provider = 'CustomOperator' (нестандартный). Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567", "provider": "CustomOperator"}}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# SBP DETAILS — граничные случаи (12.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-091")
+def test_payout_sbp_phone_only():
+    """sbp с только phone (bank отсутствует). Ожидается 201."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "sbp", "details": {"phone": "+79991234567"}}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-092")
+def test_payout_sbp_bank_only():
+    """sbp с только bank (phone отсутствует). Ожидается 201."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "sbp", "details": {"bank": "Sberbank"}}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-093")
+def test_payout_sbp_phone_not_e164():
+    """sbp.phone = '89998887766' (не E.164 формат). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "sbp", "details": {"phone": "89998887766"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-094")
+def test_payout_sbp_bank_long_name():
+    """sbp.bank = длинное официальное название. Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "sbp", "details": {"bank": "Public Joint Stock Company Sberbank"}}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# WALLET DETAILS — граничные случаи (13.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-095")
+def test_payout_wallet_id_empty():
+    """wallet.id = '' (пустая строка). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "wallet", "details": {"id": ""}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-096")
+def test_payout_wallet_id_email():
+    """wallet.id = email-адрес. Ожидается 201."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "wallet", "details": {"id": "user@example.com"}}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-097")
+def test_payout_wallet_id_phone():
+    """wallet.id = номер телефона. Ожидается 201."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "wallet", "details": {"id": "+79991234567"}}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-098")
+def test_payout_wallet_brand_skrill():
+    """wallet.brand = 'Skrill'. Ожидается 201."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "wallet", "details": {"id": "wallet_abc123", "brand": "Skrill"}}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-099")
+def test_payout_wallet_brand_unknown():
+    """wallet.brand = неизвестный провайдер. Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "wallet", "details": {"id": "wallet_abc123", "brand": "UnknownWallet"}}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-100")
+def test_payout_wallet_brand_uppercase():
+    """wallet.brand = 'PAYPAL' (верхний регистр). Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "wallet", "details": {"id": "wallet_abc123", "brand": "PAYPAL"}}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# ПОЛЯ ОТВЕТА (16.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-101")
+def test_payout_response_merchant_order_id():
+    """В ответе merchant_data.order_id совпадает с отправленным значением."""
+    body = {**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": "order_resp_check_py"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert data.get("merchant_data", {}).get("order_id") == "order_resp_check_py"
+
+
+@pytest.mark.tcid("PY-102")
+def test_payout_response_financial_data():
+    """В ответе financial_data.amount и currency соответствуют запросу."""
+    resp = post_transaction(_VALID)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    fd = data.get("financial_data", {})
+    assert fd.get("amount") == 1000
+    assert fd.get("currency") == "RUB"
+
+
+@pytest.mark.tcid("PY-103")
+def test_payout_response_created_at():
+    """В ответе присутствует created_at в формате ISO 8601."""
+    from datetime import datetime
+    resp = post_transaction(_VALID)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    created_at = data.get("created_at")
+    assert created_at is not None, "created_at отсутствует в ответе"
+    try:
+        datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        pytest.fail(f"created_at не является валидным ISO 8601: {created_at}")
+
+
+@pytest.mark.tcid("PY-104")
+def test_payout_response_mode():
+    """В ответе transaction_data.mode равен 'test' или 'live'."""
+    resp = post_transaction(_VALID)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    mode = data.get("transaction_data", {}).get("mode")
+    assert mode in ("test", "live"), f"Неожиданное значение mode: {mode}"
+
+
+@pytest.mark.tcid("PY-105")
+def test_payout_response_method():
+    """В ответе transaction_data.method совпадает с отправленным методом."""
+    resp = post_transaction(_VALID)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    method = data.get("transaction_data", {}).get("method")
+    assert method == "sbp", f"Ожидался method='sbp', получен: {method}"
