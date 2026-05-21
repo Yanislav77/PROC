@@ -4,6 +4,8 @@ POST /api/v1/transactions/{id}/confirm
 Типы: threed_secure, redirect, transfer_card, transfer_phone, transfer_qr, transfer_account, top_up_mobile.
 Happy path требует транзакцию в статусе waiting_action — покрыты только негативные сценарии.
 """
+import pytest
+
 from conftest import post_operation, assert_error_response
 
 

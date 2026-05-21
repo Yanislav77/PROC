@@ -3,6 +3,8 @@
 POST /api/v1/transactions/{id}/refund
 """
 import json
+
+import pytest
 import requests
 
 from conftest import (

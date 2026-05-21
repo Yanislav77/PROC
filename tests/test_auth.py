@@ -9,6 +9,7 @@ import json
 import time
 import uuid
 
+import pytest
 import requests
 
 from conftest import (

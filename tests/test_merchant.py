@@ -3,6 +3,8 @@
 GET /api/v1/merchant/balance — получение текущего баланса терминала
 """
 import time
+
+import pytest
 import requests
 
 from conftest import (

@@ -6,6 +6,8 @@ token — UUID, получается из поля recurrent_token в ответ
 Happy path (отмена реальной подписки) требует сохранённого recurrent_token — см. conftest.py.
 """
 import time
+
+import pytest
 import requests
 
 from conftest import (

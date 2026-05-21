@@ -2,6 +2,8 @@
 Тесты для операции cancel (отмена транзакции).
 POST /api/v1/transactions/{id}/cancel
 """
+import pytest
+
 from conftest import (
     post_transaction,
     post_operation,

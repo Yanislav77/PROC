@@ -3,6 +3,8 @@
 POST /api/v1/transactions/{id}/capture
 Применимо только к транзакциям с capture_mode=manual в статусе authorized.
 """
+import pytest
+
 from conftest import (
     post_transaction,
     post_operation,
