@@ -4,6 +4,8 @@ import json
 import os
 import time
 import uuid
+from http import HTTPStatus
+
 import pytest
 import requests
 from dotenv import load_dotenv
@@ -173,6 +175,58 @@ CARDS = {
 }
 
 THREED = {"challenge_window_size": "05"}
+
+
+# ─────────────────────────────────────────────
+# FIXTURES
+# ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# HTTP LOGGING
+# ─────────────────────────────────────────────
+def _fmt_body(raw) -> str:
+    if not raw:
+        return "    (no body)"
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="replace")
+    try:
+        lines = json.dumps(json.loads(raw), ensure_ascii=False, indent=2).splitlines()
+        return "\n".join("    " + line for line in lines)
+    except (ValueError, TypeError):
+        return "    " + str(raw)
+
+
+def _status_phrase(code: int) -> str:
+    try:
+        return HTTPStatus(code).phrase
+    except ValueError:
+        return ""
+
+
+@pytest.fixture(autouse=True)
+def log_http_calls():
+    """Перехватывает HTTP-вызовы теста и печатает запрос/ответ после его завершения."""
+    captures = []
+    orig = requests.Session.send
+
+    def _patched(self, prepared, **kw):
+        resp = orig(self, prepared, **kw)
+        captures.append((prepared, resp))
+        return resp
+
+    requests.Session.send = _patched
+    yield
+    requests.Session.send = orig
+
+    bar = "━" * 64
+    for prep, resp in captures:
+        phrase = _status_phrase(resp.status_code)
+        print(f"\n{bar}")
+        print(f"  {prep.method} {prep.url}")
+        print(f"  ── Request body {'─' * 46}")
+        print(_fmt_body(prep.body))
+        print(f"  ── Response: {resp.status_code} {phrase} {'─' * max(0, 44 - len(phrase))}")
+        print(_fmt_body(resp.text))
+        print(bar)
 
 
 # ─────────────────────────────────────────────
