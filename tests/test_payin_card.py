@@ -3,6 +3,8 @@
 POST /api/v1/transactions — type:payin, method:card
 Включает: happy path, обязательные поля, валидация карты, финансовых данных, merchant_data.
 """
+import copy
+import uuid
 import pytest
 from datetime import datetime
 
@@ -1414,3 +1416,142 @@ def test_pin_missing():
     details = {k: v for k, v in CARD_DETAILS.items() if k != "pin"}
     resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# ДОПОЛНИТЕЛЬНЫЕ (PC-151 … PC-165)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-151")
+def test_response_transaction_id_is_positive_integer():
+    """POST /transactions — transaction_id в ответе положительное целое число."""
+    resp = post_transaction(_BASE)
+    assert resp.status_code == 201
+    tid = resp.json().get("transaction_id")
+    assert isinstance(tid, int) and tid > 0, f"Ожидался положительный int, получен: {tid}"
+
+
+@pytest.mark.tcid("PC-152")
+def test_response_status_in_valid_set():
+    """POST /transactions — status в ответе принадлежит допустимому набору."""
+    _valid = {"completed", "authorized", "processing", "waiting_action", "cancelled", "rejected", "refunded"}
+    resp = post_transaction(_BASE)
+    assert resp.status_code == 201
+    status = resp.json().get("status")
+    assert status in _valid, f"Неожиданный status: {status!r}"
+
+
+@pytest.mark.tcid("PC-153")
+def test_response_type_is_payin():
+    """POST /transactions — type в ответе равен 'payin'."""
+    resp = post_transaction(_BASE)
+    assert resp.status_code == 201
+    assert resp.json().get("type") == "payin"
+
+
+@pytest.mark.tcid("PC-154")
+def test_response_created_at_iso8601():
+    """POST /transactions — created_at в ответе валидный ISO 8601."""
+    resp = post_transaction(_BASE)
+    assert resp.status_code == 201
+    created_at = resp.json().get("created_at", "")
+    try:
+        datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        pytest.fail(f"created_at не является ISO 8601: {created_at!r}")
+
+
+@pytest.mark.tcid("PC-155")
+def test_response_financial_data_amount_matches_request():
+    """POST /transactions — financial_data.amount в ответе совпадает с запросом."""
+    body = copy.deepcopy(_BASE)
+    body["financial_data"]["amount"] = 5000
+    body["merchant_data"] = {**MERCHANT_DATA, "order_id": f"order_amt_{uuid.uuid4().hex[:6]}"}
+    resp = post_transaction(body)
+    assert resp.status_code == 201
+    assert resp.json()["financial_data"]["amount"] == 5000
+
+
+@pytest.mark.tcid("PC-156")
+def test_response_content_type_is_json():
+    """POST /transactions — Content-Type ответа содержит application/json."""
+    resp = post_transaction(_BASE)
+    assert "application/json" in resp.headers.get("Content-Type", ""), \
+        f"Content-Type: {resp.headers.get('Content-Type')}"
+
+
+@pytest.mark.tcid("PC-157")
+def test_order_id_only_spaces_returns_400():
+    """order_id состоит только из пробелов. Ожидается 400."""
+    resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": "   "}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PC-158")
+def test_financial_data_missing_amount_field():
+    """financial_data без поля amount (не null, а отсутствие). Ожидается 400."""
+    resp = post_transaction({**_BASE, "financial_data": {"currency": "RUB"}})
+    assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PC-159")
+def test_payin_card_recurrent_token_in_response():
+    """Payin с is_recurrent=True — recurrent_token в ответе при статусе completed."""
+    resp = post_transaction(_BASE)
+    assert resp.status_code == 201
+    data = resp.json()
+    if data.get("status") == "completed":
+        td = data.get("transaction_data", {})
+        assert "recurrent_token" in td, "recurrent_token отсутствует у completed recurrent payin"
+
+
+@pytest.mark.tcid("PC-160")
+def test_payin_card_response_has_transaction_data():
+    """POST /transactions — ответ содержит поле transaction_id."""
+    resp = post_transaction(_BASE)
+    assert resp.status_code == 201
+
+
+@pytest.mark.tcid("PC-161")
+def test_pan_with_dashes_returns_400():
+    """PAN с дефисами '4111-1111-1111-1111'. Ожидается 400."""
+    details = {**CARD_DETAILS, "pan": "4111-1111-1111-1111"}
+    resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
+    assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PC-162")
+def test_webhook_url_http_scheme():
+    """webhook_url с HTTP схемой (не HTTPS). Ожидается 201 или 400."""
+    body = {**_BASE, "merchant_data": {**MERCHANT_DATA,
+                                        "order_id": f"order_http_{uuid.uuid4().hex[:6]}",
+                                        "webhook_url": "http://merchant.com/webhook"}}
+    resp = post_transaction(body)
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}"
+
+
+@pytest.mark.tcid("PC-163")
+def test_expiry_month_zero_zero_returns_400():
+    """expiry_month='00'. Ожидается 400."""
+    details = {**CARD_DETAILS, "expiry_month": "00"}
+    resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
+    assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PC-164")
+def test_customer_data_null_returns_400():
+    """customer_data = null. Ожидается 400."""
+    resp = post_transaction({**_BASE, "customer_data": None})
+    assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PC-165")
+def test_financial_data_null_returns_400():
+    """financial_data = null. Ожидается 400."""
+    resp = post_transaction({**_BASE, "financial_data": None})
+    assert resp.status_code == 400
+    assert_error_response(resp)

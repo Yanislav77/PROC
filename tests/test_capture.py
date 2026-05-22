@@ -3,6 +3,8 @@
 POST /api/v1/transactions/{id}/capture
 Применимо только к транзакциям с capture_mode=manual в статусе authorized.
 """
+import hashlib
+import hmac
 import json
 import time
 import uuid
@@ -19,9 +21,15 @@ from conftest import (
     CUSTOMER_DATA,
     CARD_DETAILS,
     THREED,
+    SERVICE_SECRET,
     assert_transaction_response,
     assert_error_response,
 )
+
+
+def _sign(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
+    message = f"{timestamp}{terminal_id}{raw_body}"
+    return hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 _OP_BODY = {
     "merchant_data": {
@@ -31,6 +39,28 @@ _OP_BODY = {
     },
     "financial_data": {"amount": 1000, "currency": "RUB"},
 }
+
+
+def _make_completed_payin(order_id: str = None) -> str:
+    """Создаёт auto-capture payin и возвращает transaction_id."""
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": order_id or f"order_{uuid.uuid4().hex[:8]}"},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Setup auto payin failed: {resp.text}"
+    return resp.json()["transaction_id"]
+
+
+def _op_body(order_id: str, amount: int = 1000) -> dict:
+    return {
+        "merchant_data": {"order_id": order_id},
+        "financial_data": {"amount": amount, "currency": "RUB"},
+    }
 
 
 def _make_block_payin(order_id: str = "order_block_capture") -> str:
@@ -363,3 +393,99 @@ def test_capture_response_fields():
     assert_transaction_response(data)
     assert data["type"] == "payin"
     assert data["financial_data"]["currency"] == "RUB"
+
+
+# ─────────────────────────────────────────────
+# ДОПОЛНИТЕЛЬНЫЕ (CAP-024 … CAP-030)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CAP-024")
+def test_capture_idempotency_same_key_second_returns_409():
+    """Capture с одним idempotency_key дважды — второй возвращает 409."""
+    order_id = f"order_cap_idem_{uuid.uuid4().hex[:6]}"
+    tid = _make_block_payin(order_id)
+    body = _op_body(order_id)
+    raw = json.dumps(body, separators=(",", ":"))
+    key = str(uuid.uuid4())
+
+    def _do(ts: str) -> requests.Response:
+        sig = _sign(TERMINAL_ID, ts, raw)
+        h = {
+            "Content-Type": "application/json",
+            "Api-Terminal-ID": TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature": sig,
+            "Api-Timestamp": ts,
+        }
+        return requests.post(f"{BASE_URL}/{tid}/capture", data=raw, headers=h, timeout=30)
+
+    r1 = _do(str(int(time.time())))
+    assert r1.status_code == 200, f"First capture failed: {r1.text}"
+    r2 = _do(str(int(time.time())))
+    assert r2.status_code == 409, f"Expected 409, got {r2.status_code}"
+
+
+@pytest.mark.tcid("CAP-025")
+def test_capture_missing_idempotency_key_returns_400():
+    """Capture без Api-Idempotency-Key. Ожидается 400."""
+    body = _op_body("order_capture_test")
+    raw = json.dumps(body, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    sig = _sign(TERMINAL_ID, timestamp, raw)
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature": sig,
+        "Api-Timestamp": timestamp,
+    }
+    resp = requests.post(f"{BASE_URL}/000000000000/capture", data=raw, headers=headers, timeout=30)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CAP-026")
+def test_capture_response_has_merchant_data():
+    """Capture успешной транзакции — ответ содержит merchant_data."""
+    order_id = f"order_cap_md_{uuid.uuid4().hex[:6]}"
+    tid = _make_block_payin(order_id)
+    resp = post_operation(tid, "capture", _op_body(order_id))
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+    assert "merchant_data" in resp.json()
+
+
+@pytest.mark.tcid("CAP-027")
+def test_capture_response_has_created_at():
+    """Capture успешной транзакции — ответ содержит created_at."""
+    order_id = f"order_cap_ca_{uuid.uuid4().hex[:6]}"
+    tid = _make_block_payin(order_id)
+    resp = post_operation(tid, "capture", _op_body(order_id))
+    assert resp.status_code == 200
+    assert "created_at" in resp.json()
+
+
+@pytest.mark.tcid("CAP-028")
+def test_capture_financial_data_empty_object():
+    """Capture с financial_data как пустым объектом. Ожидается 400."""
+    body = {"merchant_data": {"order_id": "order_capture_test"}, "financial_data": {}}
+    resp = post_operation("000000000000", "capture", body)
+    assert resp.status_code in (400, 404)
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CAP-029")
+def test_capture_auto_payin_returns_409():
+    """Capture по транзакции с capture_mode=auto. Ожидается 409."""
+    order_id = f"order_cap_auto_{uuid.uuid4().hex[:6]}"
+    tid = _make_completed_payin(order_id)
+    resp = post_operation(tid, "capture", _op_body(order_id))
+    assert resp.status_code == 409, f"Expected 409, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CAP-030")
+def test_capture_min_amount_one():
+    """Capture с суммой 1 (минимально допустимое). Ожидается 200 или 400."""
+    order_id = f"order_cap_min_{uuid.uuid4().hex[:6]}"
+    tid = _make_block_payin(order_id)
+    body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": 1, "currency": "RUB"}}
+    resp = post_operation(tid, "capture", body)
+    assert resp.status_code in (200, 400), f"Expected 200 or 400, got {resp.status_code}"

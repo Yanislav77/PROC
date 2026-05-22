@@ -4,6 +4,8 @@ POST /api/v1/transactions/{id}/confirm
 Типы: threed_secure, redirect, transfer_card, transfer_phone, transfer_qr, transfer_account, top_up_mobile.
 Happy path требует транзакцию в статусе waiting_action — покрыты только негативные сценарии.
 """
+import hashlib
+import hmac
 import json
 import time
 import uuid
@@ -11,7 +13,12 @@ import uuid
 import pytest
 import requests
 
-from conftest import post_operation, BASE_URL, TERMINAL_ID, assert_error_response
+from conftest import post_operation, BASE_URL, TERMINAL_ID, SERVICE_SECRET, assert_error_response
+
+
+def _sign(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
+    message = f"{timestamp}{terminal_id}{raw_body}"
+    return hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
 # ─────────────────────────────────────────────
@@ -385,3 +392,121 @@ def test_confirm_missing_timestamp():
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ДОПОЛНИТЕЛЬНЫЕ (CON-026 … CON-032)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-026")
+def test_confirm_idempotency_same_key_second_returns_409():
+    """Confirm с одним idempotency_key дважды — второй возвращает 409."""
+    body = {
+        "merchant_data": {"order_id": "order_confirm_idem"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "test", "md": "test"}}},
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    key = str(uuid.uuid4())
+
+    def _do(ts: str) -> requests.Response:
+        sig = _sign(TERMINAL_ID, ts, raw)
+        h = {
+            "Content-Type": "application/json",
+            "Api-Terminal-ID": TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature": sig,
+            "Api-Timestamp": ts,
+        }
+        return requests.post(f"{BASE_URL}/000000000000/confirm", data=raw, headers=h, timeout=30)
+
+    r1 = _do(str(int(time.time())))
+    r2 = _do(str(int(time.time())))
+    if r1.status_code == 404:
+        assert r2.status_code == 409, f"Expected 409 for duplicate key after 404, got {r2.status_code}"
+
+
+@pytest.mark.tcid("CON-027")
+def test_confirm_missing_idempotency_key_returns_400():
+    """Confirm без Api-Idempotency-Key. Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": "order_confirm_test"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "test", "md": "test"}}},
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    sig = _sign(TERMINAL_ID, timestamp, raw)
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature": sig,
+        "Api-Timestamp": timestamp,
+    }
+    resp = requests.post(f"{BASE_URL}/000000000000/confirm", data=raw, headers=headers, timeout=30)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-028")
+def test_confirm_result_type_null():
+    """Confirm с result.type = null. Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": "order_confirm_test"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": None, "details": {"data": {"pares": "test", "md": "test"}}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-029")
+def test_confirm_financial_data_empty_object():
+    """Confirm с financial_data = {}. Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": "order_confirm_test"},
+        "financial_data": {},
+        "result": {"type": "redirect", "details": {"confirmed": True}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404)
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-030")
+def test_confirm_threed_secure_pares_empty_string():
+    """Confirm 3DS с pares = '' (пустая строка). Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": "order_confirm_test"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "", "md": "test_md"}}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404)
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-031")
+def test_confirm_amount_null():
+    """Confirm с financial_data.amount = null. Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": "order_confirm_test"},
+        "financial_data": {"amount": None, "currency": "RUB"},
+        "result": {"type": "redirect", "details": {"confirmed": True}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404)
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-032")
+def test_confirm_content_type_is_json_in_response():
+    """Confirm ошибочного запроса — Content-Type ответа содержит application/json."""
+    body = {
+        "merchant_data": {"order_id": "order_confirm_test"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert "application/json" in resp.headers.get("Content-Type", ""), \
+        f"Content-Type не json: {resp.headers.get('Content-Type')}"

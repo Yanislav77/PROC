@@ -3,6 +3,7 @@
 POST /api/v1/transactions — методы: card, token, mobile, sbp, wallet, bank_account.
 Включает: happy path и негативные сценарии по каждому методу.
 """
+import uuid
 import pytest
 
 from conftest import (
@@ -1062,3 +1063,112 @@ def test_payout_bank_account_no_account_number():
     }}}
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# ДОПОЛНИТЕЛЬНЫЕ (PY-111 … PY-120)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-111")
+def test_payout_response_type_is_payout():
+    """Payout — type в ответе равен 'payout'."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_type_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": {"method": "sbp"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201
+    assert resp.json().get("type") == "payout"
+
+
+@pytest.mark.tcid("PY-112")
+def test_payout_response_content_type_is_json():
+    """Payout — Content-Type ответа содержит application/json."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_ct_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": {"method": "sbp"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201
+    assert "application/json" in resp.headers.get("Content-Type", "")
+
+
+@pytest.mark.tcid("PY-113")
+def test_payout_card_without_expiry_fields():
+    """Payout card без expiry_month/expiry_year — поля опциональны для payout. Ожидается 201."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_no_exp_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-114")
+def test_payout_sbp_holder_field():
+    """Payout SBP с полем holder в details. Ожидается 201."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_sbp_h_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": {"method": "sbp", "details": {
+                "phone": "+79991234567", "bank": "Sberbank", "holder": "IVAN IVANOV"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-115")
+def test_payout_sbp_missing_details():
+    """Payout SBP без details. Ожидается 201."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_sbp_nd_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": {"method": "sbp"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-116")
+def test_payout_financial_data_null_returns_400():
+    """Payout с financial_data = null. Ожидается 400."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_fd_null_{uuid.uuid4().hex[:6]}"},
+            "financial_data": None, "transaction_data": {"method": "sbp"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-117")
+def test_payout_customer_data_null_returns_400():
+    """Payout с customer_data = null. Ожидается 400."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_cd_null_{uuid.uuid4().hex[:6]}"},
+            "customer_data": None, "transaction_data": {"method": "sbp"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-118")
+def test_payout_merchant_data_null_returns_400():
+    """Payout с merchant_data = null. Ожидается 400."""
+    body = {**_BASE, "merchant_data": None, "transaction_data": {"method": "sbp"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-119")
+def test_payout_transaction_data_null_returns_400():
+    """Payout с transaction_data = null. Ожидается 400."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_td_null_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": None}
+    resp = post_transaction(body)
+    assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-120")
+def test_payout_card_response_has_transaction_id():
+    """Payout card — ответ содержит transaction_id."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_tid_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201
+    assert "transaction_id" in resp.json(), "transaction_id отсутствует в ответе payout"

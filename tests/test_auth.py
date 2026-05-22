@@ -34,6 +34,11 @@ _VALID_BODY = {
 }
 
 
+def _sign(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
+    message = f"{timestamp}{terminal_id}{raw_body}"
+    return hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
 # ─────────────────────────────────────────────
 # HAPPY PATH
 # ─────────────────────────────────────────────
@@ -379,4 +384,145 @@ def test_post_without_body():
     }
     resp = requests.post(BASE_URL, headers=headers, timeout=30)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ДОПОЛНИТЕЛЬНЫЕ (A-019 … A-025)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("A-019")
+def test_signature_computed_over_wrong_body():
+    """Подпись посчитана над другим телом (тело подменено). Ожидается 401/403."""
+    raw_for_sig = json.dumps({"fake": "body"}, separators=(",", ":"))
+    raw_to_send = json.dumps(_VALID_BODY, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    sig = _sign(TERMINAL_ID, timestamp, raw_for_sig)
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature": sig,
+        "Api-Timestamp": timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw_to_send, headers=headers, timeout=30)
+    assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("A-020")
+def test_signature_hex_uppercase():
+    """Api-Signature в верхнем регистре. Ожидается 201 или 401/403."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    sig = _sign(TERMINAL_ID, timestamp, raw).upper()
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature": sig,
+        "Api-Timestamp": timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (201, 401, 403), f"Expected 2xx or 4xx, got {resp.status_code}"
+
+
+@pytest.mark.tcid("A-021")
+def test_signature_wrong_length_32_chars():
+    """Api-Signature длиной 32 символа вместо 64. Ожидается 400/401/403."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature": "a" * 32,
+        "Api-Timestamp": str(int(time.time())),
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("A-022")
+def test_timestamp_boundary_exactly_5min_ago():
+    """Api-Timestamp ровно 5 минут назад (граничное значение). Ожидается 400 или 201."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    ts = str(int(time.time()) - 300)
+    sig = _sign(TERMINAL_ID, ts, raw)
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature": sig,
+        "Api-Timestamp": ts,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}"
+
+
+@pytest.mark.tcid("A-023")
+def test_timestamp_as_float():
+    """Api-Timestamp содержит дробное значение. Ожидается 400/401/403."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    ts = f"{int(time.time())}.5"
+    sig = _sign(TERMINAL_ID, ts, raw)
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature": sig,
+        "Api-Timestamp": ts,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("A-024")
+def test_idempotency_key_different_bodies_same_key():
+    """Два разных тела с одним idempotency_key. Второй должен вернуть 409."""
+    key = str(uuid.uuid4())
+    body2 = copy.deepcopy(_VALID_BODY)
+    body2["financial_data"]["amount"] = 5000
+
+    raw1 = json.dumps(_VALID_BODY, separators=(",", ":"))
+    ts1 = str(int(time.time()))
+    h1 = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": key,
+        "Api-Signature": _sign(TERMINAL_ID, ts1, raw1),
+        "Api-Timestamp": ts1,
+    }
+    resp1 = requests.post(BASE_URL, data=raw1, headers=h1, timeout=30)
+    assert resp1.status_code == 201, f"First request failed: {resp1.text}"
+
+    raw2 = json.dumps(body2, separators=(",", ":"))
+    ts2 = str(int(time.time()))
+    h2 = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": key,
+        "Api-Signature": _sign(TERMINAL_ID, ts2, raw2),
+        "Api-Timestamp": ts2,
+    }
+    resp2 = requests.post(BASE_URL, data=raw2, headers=h2, timeout=30)
+    assert resp2.status_code == 409, f"Expected 409 for conflicting body with same key, got {resp2.status_code}"
+    assert_error_response(resp2)
+
+
+@pytest.mark.tcid("A-025")
+def test_content_type_not_json():
+    """Content-Type: text/plain вместо application/json. Ожидается 400/415."""
+    raw = json.dumps(_VALID_BODY, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    sig = _sign(TERMINAL_ID, timestamp, raw)
+    headers = {
+        "Content-Type": "text/plain",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature": sig,
+        "Api-Timestamp": timestamp,
+    }
+    resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 415), f"Expected 400 or 415, got {resp.status_code}"
     assert_error_response(resp)

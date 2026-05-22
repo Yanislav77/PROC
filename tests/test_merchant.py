@@ -2,6 +2,8 @@
 Тесты для эндпоинтов мерчанта.
 GET /api/v1/merchant/balance — получение текущего баланса терминала
 """
+import hashlib
+import hmac
 import time
 
 import pytest
@@ -9,10 +11,17 @@ import requests
 
 from conftest import (
     get_request,
+    make_get_headers,
     MERCHANT_BALANCE_URL,
     TERMINAL_ID,
+    SERVICE_SECRET,
     assert_error_response,
 )
+
+
+def _sign(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
+    message = f"{timestamp}{terminal_id}{raw_body}"
+    return hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
 # ─────────────────────────────────────────────
@@ -160,3 +169,73 @@ def test_get_merchant_balance_stable_structure():
     keys1 = set(resp1.json().keys())
     keys2 = set(resp2.json().keys())
     assert keys1 == keys2, f"Response keys differ: {keys1} vs {keys2}"
+
+
+# ─────────────────────────────────────────────
+# ДОПОЛНИТЕЛЬНЫЕ (MB-013 … MB-018)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("MB-013")
+def test_get_merchant_balance_method_post_not_allowed():
+    """POST /merchant/balance не должен быть доступен. Ожидается 405 или 404."""
+    headers = make_get_headers(TERMINAL_ID)
+    resp = requests.post(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code in (404, 405), f"Expected 404/405, got {resp.status_code}"
+
+
+@pytest.mark.tcid("MB-014")
+def test_get_merchant_balance_method_delete_not_allowed():
+    """DELETE /merchant/balance не должен быть доступен. Ожидается 405 или 404."""
+    headers = make_get_headers(TERMINAL_ID)
+    resp = requests.delete(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code in (404, 405), f"Expected 404/405, got {resp.status_code}"
+
+
+@pytest.mark.tcid("MB-015")
+def test_get_merchant_balance_response_no_extra_fields():
+    """GET /merchant/balance — ответ содержит только ожидаемые поля."""
+    resp = get_request(MERCHANT_BALANCE_URL)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "financial_data" in data
+    fd = data["financial_data"]
+    assert set(fd.keys()) >= {"amount", "currency"}, f"Неожиданная структура financial_data: {fd}"
+
+
+@pytest.mark.tcid("MB-016")
+def test_get_merchant_balance_content_type_json():
+    """GET /merchant/balance — Content-Type ответа содержит application/json."""
+    resp = get_request(MERCHANT_BALANCE_URL)
+    assert resp.status_code == 200
+    assert "application/json" in resp.headers.get("Content-Type", ""), \
+        f"Content-Type не json: {resp.headers.get('Content-Type')}"
+
+
+@pytest.mark.tcid("MB-017")
+def test_get_merchant_balance_timestamp_expired():
+    """GET /merchant/balance с устаревшим timestamp. Ожидается 400/401."""
+    old_ts = str(int(time.time()) - 400)
+    sig = _sign(TERMINAL_ID, old_ts)
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature": sig,
+        "Api-Timestamp": old_ts,
+    }
+    resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401), f"Expected 400/401, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("MB-018")
+def test_get_merchant_balance_idempotency_key_ignored():
+    """GET /merchant/balance с Api-Idempotency-Key — заголовок должен игнорироваться, 200."""
+    import uuid as _uuid
+    timestamp = str(int(time.time()))
+    sig = _sign(TERMINAL_ID, timestamp)
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature": sig,
+        "Api-Timestamp": timestamp,
+        "Api-Idempotency-Key": str(_uuid.uuid4()),
+    }
+    resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"

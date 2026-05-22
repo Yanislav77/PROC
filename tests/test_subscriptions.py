@@ -5,17 +5,27 @@ DELETE /api/v1/subscriptions/{token}
 token — UUID, получается из поля recurrent_token в ответе на Payin с is_recurrent=True.
 Happy path (отмена реальной подписки) требует сохранённого recurrent_token — см. conftest.py.
 """
+import hashlib
+import hmac
 import time
+import uuid
 
 import pytest
 import requests
 
 from conftest import (
     delete_request,
+    make_get_headers,
     SUBSCRIPTIONS_URL,
     TERMINAL_ID,
+    SERVICE_SECRET,
     assert_error_response,
 )
+
+
+def _sign(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
+    message = f"{timestamp}{terminal_id}{raw_body}"
+    return hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 _NONEXISTENT_TOKEN = "00000000-0000-0000-0000-000000000000"
 _INVALID_TOKEN     = "not-a-valid-uuid-format"
@@ -150,4 +160,67 @@ def test_cancel_subscription_numeric_token():
     url = f"{SUBSCRIPTIONS_URL}/123456789"
     resp = delete_request(url)
     assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ДОПОЛНИТЕЛЬНЫЕ (SB-013 … SB-018)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("SB-013")
+def test_cancel_subscription_response_has_no_body_on_404():
+    """DELETE по несуществующему токену — ответ 404 с JSON телом."""
+    url = f"{SUBSCRIPTIONS_URL}/00000000-0000-0000-0000-000000000000"
+    resp = delete_request(url)
+    assert resp.status_code == 404
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("SB-014")
+def test_cancel_subscription_post_instead_of_delete():
+    """POST /subscriptions/{token} вместо DELETE. Ожидается 404 или 405."""
+    url = f"{SUBSCRIPTIONS_URL}/00000000-0000-0000-0000-000000000000"
+    headers = make_get_headers(TERMINAL_ID)
+    resp = requests.post(url, headers=headers, timeout=30)
+    assert resp.status_code in (404, 405), f"Expected 404/405, got {resp.status_code}"
+
+
+@pytest.mark.tcid("SB-015")
+def test_cancel_subscription_get_instead_of_delete():
+    """GET /subscriptions/{token} вместо DELETE. Ожидается 404 или 405."""
+    url = f"{SUBSCRIPTIONS_URL}/00000000-0000-0000-0000-000000000000"
+    from conftest import get_request as _get
+    resp = _get(url)
+    assert resp.status_code in (404, 405), f"Expected 404/405, got {resp.status_code}"
+
+
+@pytest.mark.tcid("SB-016")
+def test_cancel_subscription_token_with_extra_segments():
+    """DELETE /subscriptions/{token}/extra — лишний сегмент URL. Ожидается 404."""
+    url = f"{SUBSCRIPTIONS_URL}/00000000-0000-0000-0000-000000000000/extra"
+    resp = delete_request(url)
+    assert resp.status_code in (400, 404, 405), f"Expected error, got {resp.status_code}"
+
+
+@pytest.mark.tcid("SB-017")
+def test_cancel_subscription_content_type_in_error_response():
+    """DELETE несуществующего токена — Content-Type ответа application/json."""
+    url = f"{SUBSCRIPTIONS_URL}/00000000-0000-0000-0000-000000000000"
+    resp = delete_request(url)
+    assert "application/json" in resp.headers.get("Content-Type", ""), \
+        f"Content-Type не json: {resp.headers.get('Content-Type')}"
+
+
+@pytest.mark.tcid("SB-018")
+def test_cancel_subscription_idempotency_key_should_not_be_required():
+    """DELETE /subscriptions — идемпотентный ключ не требуется (DELETE метод)."""
+    url = f"{SUBSCRIPTIONS_URL}/00000000-0000-0000-0000-000000000000"
+    timestamp = str(int(time.time()))
+    sig = _sign(TERMINAL_ID, timestamp)
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature": sig,
+        "Api-Timestamp": timestamp,
+    }
+    resp = requests.delete(url, headers=headers, timeout=30)
+    assert resp.status_code in (404, 409), f"Expected 404/409, got {resp.status_code}"
     assert_error_response(resp)

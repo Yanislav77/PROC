@@ -5,6 +5,9 @@ POST /api/v1/payment-links
 Обязательные поля: merchant_data (с order_id), financial_data (amount + currency), customer_data
 Необязательные: flow_data
 """
+import copy
+import hashlib
+import hmac
 import json
 import time
 import uuid
@@ -18,8 +21,14 @@ from conftest import (
     MERCHANT_DATA,
     CUSTOMER_DATA,
     THREED,
+    SERVICE_SECRET,
     assert_error_response,
 )
+
+
+def _sign(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
+    message = f"{timestamp}{terminal_id}{raw_body}"
+    return hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 _VALID_LINK_BODY = {
     "merchant_data": MERCHANT_DATA,
@@ -373,3 +382,103 @@ def test_payment_link_return_url_with_query_params():
     body = {**_VALID_LINK_BODY, "merchant_data": merchant}
     resp = post_payment_link(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PL-032")
+def test_payment_link_idempotency_same_key_second_returns_409():
+    """Payment link с одним idempotency_key дважды — второй возвращает 409."""
+    body = copy.deepcopy(_VALID_LINK_BODY)
+    body["merchant_data"] = {**MERCHANT_DATA, "order_id": f"order_pl_idem_{uuid.uuid4().hex[:6]}"}
+    raw = json.dumps(body, separators=(",", ":"))
+    key = str(uuid.uuid4())
+    timestamp = str(int(time.time()))
+    sig = _sign(TERMINAL_ID, timestamp, raw)
+
+    h = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": key,
+        "Api-Signature": sig,
+        "Api-Timestamp": timestamp,
+    }
+    r1 = requests.post(PAYMENT_LINKS_URL, data=raw, headers=h, timeout=30)
+    assert r1.status_code == 201, f"First link creation failed: {r1.text}"
+
+    ts2 = str(int(time.time()))
+    sig2 = _sign(TERMINAL_ID, ts2, raw)
+    h["Api-Signature"] = sig2
+    h["Api-Timestamp"] = ts2
+    r2 = requests.post(PAYMENT_LINKS_URL, data=raw, headers=h, timeout=30)
+    assert r2.status_code == 409, f"Expected 409 for duplicate key, got {r2.status_code}"
+
+
+@pytest.mark.tcid("PL-033")
+def test_payment_link_missing_idempotency_key_returns_400():
+    """Payment link без Api-Idempotency-Key. Ожидается 400."""
+    body = copy.deepcopy(_VALID_LINK_BODY)
+    raw = json.dumps(body, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    sig = _sign(TERMINAL_ID, timestamp, raw)
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature": sig,
+        "Api-Timestamp": timestamp,
+    }
+    resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PL-034")
+def test_payment_link_response_has_all_required_fields():
+    """POST /payment-links — ответ содержит link_id, link_data.url, merchant_data."""
+    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": f"order_pl_f_{uuid.uuid4().hex[:6]}"}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert "link_id" in data
+    assert "link_data" in data
+    assert "url" in data["link_data"]
+    assert "merchant_data" in data
+
+
+@pytest.mark.tcid("PL-035")
+def test_payment_link_link_data_url_is_string():
+    """POST /payment-links — link_data.url является строкой."""
+    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": f"order_pl_url_{uuid.uuid4().hex[:6]}"}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 201
+    url = resp.json()["link_data"]["url"]
+    assert isinstance(url, str) and url.startswith("http")
+
+
+@pytest.mark.tcid("PL-036")
+def test_payment_link_content_type_is_json():
+    """POST /payment-links — Content-Type ответа содержит application/json."""
+    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": f"order_pl_ct_{uuid.uuid4().hex[:6]}"}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 201
+    assert "application/json" in resp.headers.get("Content-Type", "")
+
+
+@pytest.mark.tcid("PL-037")
+def test_payment_link_flow_data_invalid_is_recurrent():
+    """Payment link с is_recurrent = 1 (не boolean). Ожидается 400."""
+    body = {**_VALID_LINK_BODY,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_pl_ir_{uuid.uuid4().hex[:6]}"},
+            "flow_data": {"is_recurrent": 1, "capture_mode": "auto"}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PL-038")
+def test_payment_link_financial_data_null_returns_400():
+    """Payment link с financial_data = null. Ожидается 400."""
+    body = {**_VALID_LINK_BODY,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_pl_fn_{uuid.uuid4().hex[:6]}"},
+            "financial_data": None}
+    resp = post_payment_link(body)
+    assert resp.status_code == 400
+    assert_error_response(resp)

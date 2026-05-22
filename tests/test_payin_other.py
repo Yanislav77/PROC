@@ -2,6 +2,7 @@
 Тесты для payin с методами p2p, qr, mobile и token.
 POST /api/v1/transactions — type:payin, method: p2p | qr | mobile | token
 """
+import uuid
 import pytest
 
 from conftest import (
@@ -326,3 +327,88 @@ def test_payin_p2p_response_fields():
     data = resp.json()
     assert_transaction_response(data)
     assert data["type"] == "payin"
+
+
+@pytest.mark.tcid("PO-024")
+def test_payin_qr_response_has_action_data():
+    """Payin QR — ответ для QR может содержать action с QR-кодом (если waiting_action)."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_qr_act_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": {"method": "qr"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert_transaction_response(data)
+    if data.get("status") == "waiting_action":
+        assert "action" in data, "action отсутствует при status=waiting_action"
+
+
+@pytest.mark.tcid("PO-025")
+def test_payin_p2p_response_has_action_data():
+    """Payin P2P — ответ может содержать action с реквизитами перевода."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_p2p_act_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": {"method": "p2p"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201
+    data = resp.json()
+    assert_transaction_response(data)
+
+
+@pytest.mark.tcid("PO-026")
+def test_payin_mobile_response_fields():
+    """Payin mobile — ответ содержит все обязательные поля."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_mob_rf_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201
+    assert_transaction_response(resp.json())
+
+
+@pytest.mark.tcid("PO-027")
+def test_payin_p2p_zero_amount_returns_400():
+    """Payin P2P с нулевой суммой. Ожидается 400."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_p2p_z_{uuid.uuid4().hex[:6]}"},
+            "financial_data": {"amount": 0, "currency": "RUB"},
+            "transaction_data": {"method": "p2p"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-028")
+def test_payin_qr_negative_amount_returns_400():
+    """Payin QR с отрицательной суммой. Ожидается 400."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_qr_neg_{uuid.uuid4().hex[:6]}"},
+            "financial_data": {"amount": -1, "currency": "RUB"},
+            "transaction_data": {"method": "qr"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PO-029")
+def test_payin_token_missing_parent_transaction_id():
+    """Payin token без parent_transaction_id. Ожидается 400."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_tok_np_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": {
+                "method": "token",
+                "details": {"token": "b928586b-e6ec-4400-9039-e36f19c0094c"},
+            }}
+    resp = post_transaction(body)
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}"
+
+
+@pytest.mark.tcid("PO-030")
+def test_payin_mobile_phone_null_returns_400():
+    """Payin mobile с phone = null. Ожидается 400."""
+    body = {**_BASE,
+            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_mob_pn_{uuid.uuid4().hex[:6]}"},
+            "transaction_data": {"method": "mobile", "details": {"phone": None}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400
+    assert_error_response(resp)

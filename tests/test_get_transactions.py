@@ -3,6 +3,8 @@
 GET /api/v1/transactions?order_id=  — поиск по order_id мерчанта
 GET /api/v1/transactions/{id}       — получение транзакции по числовому ID
 """
+import hashlib
+import hmac
 import time
 import requests
 import pytest
@@ -13,9 +15,17 @@ from conftest import (
     BASE_URL,
     TERMINAL_ID,
     MERCHANT_DATA,
+    SERVICE_SECRET,
+    CARD_DETAILS,
+    MERCHANT_BALANCE_URL,
     assert_transaction_response,
     assert_error_response,
 )
+
+
+def _sign(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
+    message = f"{timestamp}{terminal_id}{raw_body}"
+    return hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 
 # ─────────────────────────────────────────────
@@ -222,3 +232,121 @@ def test_get_by_order_id_list_structure(payin_transaction_id):
     for item in data:
         assert "transaction_id" in item, f"Missing transaction_id in item: {item}"
         assert "status" in item, f"Missing status in item: {item}"
+
+
+# ─────────────────────────────────────────────
+# ДОПОЛНИТЕЛЬНЫЕ (GT-019 … GT-030)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("GT-019")
+def test_get_by_id_raw_pan_not_in_response(payin_transaction_id):
+    """GET /{id} — открытый PAN карты не должен присутствовать в ответе."""
+    url = f"{BASE_URL}/{payin_transaction_id}"
+    resp = get_request(url)
+    assert resp.status_code == 200
+    assert CARD_DETAILS["pan"] not in resp.text, "Raw PAN exposed in GET response"
+
+
+@pytest.mark.tcid("GT-020")
+def test_get_by_id_cvv_not_in_response(payin_transaction_id):
+    """GET /{id} — CVV карты не должен присутствовать в ответе."""
+    url = f"{BASE_URL}/{payin_transaction_id}"
+    resp = get_request(url)
+    assert resp.status_code == 200
+    assert CARD_DETAILS["cvv"] not in resp.text, "CVV exposed in GET response"
+
+
+@pytest.mark.tcid("GT-021")
+def test_get_by_id_masked_pan_format(payin_transaction_id):
+    """GET /{id} — sender_info.masked_pan содержит маску (звёздочки)."""
+    url = f"{BASE_URL}/{payin_transaction_id}"
+    resp = get_request(url)
+    assert resp.status_code == 200
+    sender = resp.json().get("transaction_data", {}).get("sender_info", {})
+    if "masked_pan" in sender:
+        assert "*" in sender["masked_pan"], f"masked_pan не маскирован: {sender['masked_pan']}"
+
+
+@pytest.mark.tcid("GT-022")
+def test_get_by_order_id_response_is_array(payin_transaction_id):
+    """GET ?order_id= — ответ всегда список, даже если одна транзакция."""
+    resp = get_request(BASE_URL, params={"order_id": MERCHANT_DATA["order_id"]})
+    assert resp.status_code == 200
+    assert isinstance(resp.json(), list), "Ответ должен быть массивом"
+
+
+@pytest.mark.tcid("GT-023")
+def test_get_by_id_transaction_id_is_integer(payin_transaction_id):
+    """GET /{id} — transaction_id в ответе является целым числом."""
+    url = f"{BASE_URL}/{payin_transaction_id}"
+    resp = get_request(url)
+    assert resp.status_code == 200
+    assert isinstance(resp.json()["transaction_id"], int), "transaction_id должен быть int"
+
+
+@pytest.mark.tcid("GT-024")
+def test_get_by_id_zero_id_returns_404():
+    """GET /transactions/0 — нулевой ID. Ожидается 400 или 404."""
+    url = f"{BASE_URL}/0"
+    resp = get_request(url)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("GT-025")
+def test_get_transaction_content_type_is_json(payin_transaction_id):
+    """GET /{id} — Content-Type ответа содержит application/json."""
+    url = f"{BASE_URL}/{payin_transaction_id}"
+    resp = get_request(url)
+    assert resp.status_code == 200
+    assert "application/json" in resp.headers.get("Content-Type", ""), \
+        f"Content-Type не json: {resp.headers.get('Content-Type')}"
+
+
+@pytest.mark.tcid("GT-026")
+def test_get_by_order_id_each_item_has_created_at():
+    """GET ?order_id= — каждый элемент массива содержит created_at."""
+    resp = get_request(BASE_URL, params={"order_id": MERCHANT_DATA["order_id"]})
+    assert resp.status_code == 200
+    for item in resp.json():
+        assert "created_at" in item, f"created_at отсутствует в item: {item}"
+
+
+@pytest.mark.tcid("GT-027")
+def test_get_by_order_id_transaction_data_has_method():
+    """GET ?order_id= — transaction_data.method присутствует в каждом элементе."""
+    resp = get_request(BASE_URL, params={"order_id": MERCHANT_DATA["order_id"]})
+    assert resp.status_code == 200
+    for item in resp.json():
+        td = item.get("transaction_data", {})
+        assert "method" in td, f"method отсутствует в transaction_data: {td}"
+
+
+@pytest.mark.tcid("GT-028")
+def test_get_transaction_invalid_signature_for_get():
+    """GET /merchant/balance с подписью, посчитанной как POST (с телом). Ожидается 401/403."""
+    timestamp = str(int(time.time()))
+    wrong_sig = _sign(TERMINAL_ID, timestamp, "fakebody")
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature": wrong_sig,
+        "Api-Timestamp": timestamp,
+    }
+    resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("GT-029")
+def test_get_by_id_very_large_id():
+    """GET /transactions/99999999999999999999 — очень большой ID. Ожидается 400/404."""
+    url = f"{BASE_URL}/99999999999999999999"
+    resp = get_request(url)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("GT-030")
+def test_get_by_order_id_special_chars_in_param():
+    """GET ?order_id= со спецсимволами в значении параметра. Ожидается 400 или 404."""
+    resp = get_request(BASE_URL, params={"order_id": "order<script>alert(1)</script>"})
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}"

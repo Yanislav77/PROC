@@ -2,6 +2,8 @@
 Тесты для операции refund (возврат средств).
 POST /api/v1/transactions/{id}/refund
 """
+import hashlib
+import hmac
 import json
 import time
 import uuid
@@ -20,9 +22,15 @@ from conftest import (
     CUSTOMER_DATA,
     CARD_DETAILS,
     THREED,
+    SERVICE_SECRET,
     assert_transaction_response,
     assert_error_response,
 )
+
+
+def _sign(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
+    message = f"{timestamp}{terminal_id}{raw_body}"
+    return hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 _REFUND_BODY = {
     "merchant_data": {
@@ -32,6 +40,21 @@ _REFUND_BODY = {
     },
     "financial_data": {"amount": 1000, "currency": "RUB"},
 }
+
+
+def _make_block_payin(order_id: str = None) -> str:
+    """Создаёт Payin с capture_mode=manual (холд) и возвращает transaction_id."""
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": order_id or f"order_{uuid.uuid4().hex[:8]}"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Setup block payin failed: {resp.text}"
+    return resp.json()["transaction_id"]
 
 
 def _make_auto_payin(order_id: str = "order_refund_auto") -> str:
@@ -380,3 +403,187 @@ def test_refund_response_fields(payin_transaction_id):
     assert_transaction_response(data)
     assert data["financial_data"]["currency"] == "RUB"
     assert data["type"] == "payin"
+
+
+# ─────────────────────────────────────────────
+# ДОПОЛНИТЕЛЬНЫЕ (RF-024 … RF-035)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RF-024")
+def test_refund_idempotency_same_key_second_returns_409(payin_transaction_id):
+    """Refund с одним idempotency_key дважды — второй возвращает 409."""
+    body = {
+        "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
+        "financial_data": {"amount": 100, "currency": "RUB"},
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    key = str(uuid.uuid4())
+
+    def _do(ts: str) -> requests.Response:
+        sig = _sign(TERMINAL_ID, ts, raw)
+        h = {
+            "Content-Type": "application/json",
+            "Api-Terminal-ID": TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature": sig,
+            "Api-Timestamp": ts,
+        }
+        return requests.post(f"{BASE_URL}/{payin_transaction_id}/refund", data=raw, headers=h, timeout=30)
+
+    r1 = _do(str(int(time.time())))
+    assert r1.status_code in (200, 201), f"First refund failed: {r1.text}"
+    r2 = _do(str(int(time.time())))
+    assert r2.status_code == 409, f"Expected 409 for duplicate key, got {r2.status_code}"
+
+
+@pytest.mark.tcid("RF-025")
+def test_refund_missing_idempotency_key_returns_400(payin_transaction_id):
+    """Refund без Api-Idempotency-Key. Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
+        "financial_data": {"amount": 100, "currency": "RUB"},
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    timestamp = str(int(time.time()))
+    sig = _sign(TERMINAL_ID, timestamp, raw)
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature": sig,
+        "Api-Timestamp": timestamp,
+    }
+    resp = requests.post(f"{BASE_URL}/{payin_transaction_id}/refund", data=raw, headers=headers, timeout=30)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-026")
+def test_refund_response_content_type_is_json(payin_transaction_id):
+    """Refund — Content-Type ответа содержит application/json."""
+    body = {
+        "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
+        "financial_data": {"amount": 100, "currency": "RUB"},
+    }
+    from conftest import post_operation as _post_op
+    resp = _post_op(payin_transaction_id, "refund", body)
+    assert "application/json" in resp.headers.get("Content-Type", ""), \
+        f"Content-Type не json: {resp.headers.get('Content-Type')}"
+
+
+@pytest.mark.tcid("RF-027")
+def test_refund_financial_data_empty_object(payin_transaction_id):
+    """Refund с financial_data как пустым объектом. Ожидается 400."""
+    body = {"merchant_data": {"order_id": MERCHANT_DATA["order_id"]}, "financial_data": {}}
+    resp = post_operation(payin_transaction_id, "refund", body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-028")
+def test_refund_on_cancelled_transaction():
+    """Refund по отменённой транзакции (cancelled). Ожидается 409."""
+    order_id = f"order_rf_cancelled_{uuid.uuid4().hex[:6]}"
+    tid = _make_block_payin(order_id)
+    cancel_body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": 1000, "currency": "RUB"}}
+    resp_cancel = post_operation(tid, "cancel", cancel_body)
+    assert resp_cancel.status_code in (200, 201), f"Cancel setup failed: {resp_cancel.text}"
+
+    body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": 100, "currency": "RUB"}}
+    resp = post_operation(tid, "refund", body)
+    assert resp.status_code == 409, f"Expected 409 for refund on cancelled, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-029")
+def test_refund_currency_mismatch(payin_transaction_id):
+    """Refund с валютой, отличной от оригинальной транзакции. Ожидается 400 или 409."""
+    body = {
+        "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
+        "financial_data": {"amount": 100, "currency": "USD"},
+    }
+    resp = post_operation(payin_transaction_id, "refund", body)
+    assert resp.status_code in (400, 409), f"Expected 400/409, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-030")
+def test_refund_min_amount_one(payin_transaction_id):
+    """Refund с суммой 1 (минимально допустимое). Ожидается 200 или 201."""
+    body = {
+        "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
+        "financial_data": {"amount": 1, "currency": "RUB"},
+    }
+    resp = post_operation(payin_transaction_id, "refund", body)
+    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("RF-031")
+def test_refund_response_has_financial_data(payin_transaction_id):
+    """Refund — ответ содержит financial_data с amount и currency."""
+    body = {
+        "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
+        "financial_data": {"amount": 100, "currency": "RUB"},
+    }
+    resp = post_operation(payin_transaction_id, "refund", body)
+    if resp.status_code in (200, 201):
+        fd = resp.json().get("financial_data", {})
+        assert "amount" in fd
+        assert "currency" in fd
+
+
+@pytest.mark.tcid("RF-032")
+def test_refund_response_transaction_id_is_int(payin_transaction_id):
+    """Refund — transaction_id в ответе является целым числом."""
+    body = {
+        "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
+        "financial_data": {"amount": 100, "currency": "RUB"},
+    }
+    resp = post_operation(payin_transaction_id, "refund", body)
+    if resp.status_code in (200, 201):
+        assert isinstance(resp.json().get("transaction_id"), int)
+
+
+@pytest.mark.tcid("RF-033")
+def test_refund_merchant_data_null_values(payin_transaction_id):
+    """Refund с order_id = null в merchant_data. Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": None},
+        "financial_data": {"amount": 100, "currency": "RUB"},
+    }
+    resp = post_operation(payin_transaction_id, "refund", body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-034")
+def test_refund_payout_transaction_returns_409():
+    """Refund по payout-транзакции. Ожидается 409."""
+    from conftest import THREED as _THREED, CUSTOMER_DATA as _CD
+    payout_body = {
+        "type": "payout",
+        "merchant_data": {**MERCHANT_DATA, "order_id": f"order_payout_rf_{uuid.uuid4().hex[:6]}"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": _THREED},
+        "customer_data": _CD,
+        "transaction_data": {"method": "sbp"},
+    }
+    resp_create = post_transaction(payout_body)
+    assert resp_create.status_code == 201, f"Payout creation failed: {resp_create.text}"
+    tid = resp_create.json()["transaction_id"]
+    order_id = payout_body["merchant_data"]["order_id"]
+
+    body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": 100, "currency": "RUB"}}
+    resp = post_operation(tid, "refund", body)
+    assert resp.status_code == 409, f"Expected 409 for refund on payout, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-035")
+def test_refund_amount_null(payin_transaction_id):
+    """Refund с amount = null. Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
+        "financial_data": {"amount": None, "currency": "RUB"},
+    }
+    resp = post_operation(payin_transaction_id, "refund", body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
