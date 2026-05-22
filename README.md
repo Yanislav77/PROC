@@ -3,6 +3,8 @@
 Интеграционные тесты для CORE REST API платёжного шлюза.
 Тесты делают реальные HTTP-запросы к препрод-окружению — никаких моков.
 
+**821 тест** в 13 файлах, покрывают все эндпоинты API.
+
 ---
 
 ## Содержание
@@ -142,33 +144,22 @@ MERCHANT_DATA = {
 
 ---
 
-### Суммы, валюты, телефон → конкретный файл теста
+### Суммы и валюты → конкретный файл теста
 
 Каждый тест содержит `financial_data` с суммой и валютой. Найдите нужный тест
-и поменяйте прямо там. Например, в `test_payin_card`:
-
-```python
-"financial_data": {"amount": 10000, "currency": "RUB"},
-```
-
-Сумма указывается в минимальных единицах: `10000` = 100.00 RUB.
-
-Телефон для мобильного платежа — в `test_payin_mobile`:
-```python
-"transaction_data": {"method": "mobile", "details": {"phone": "+345283494512"}},
-```
+и поменяйте прямо там. Сумма указывается в минимальных единицах: `10000` = 100.00 RUB.
 
 ---
 
-### Токен для rebill → `tests/test_happy_path.py`
+### Токен для rebill → `tests/test_payin_other.py`
 
-В тестах `test_rebill` и `test_rebill_block` используется токен карты:
+В тестах `test_payin_token_rebill` используется токен карты:
 
 ```python
 "details": {"token": "b928586b-e6ec-4400-9039-e36f19c0094c"},
 ```
 
-Это заглушка. Замените на реальный токен, который вернул API в ответе на Payin.
+Это заглушка. Замените на реальный токен, который вернул API в ответе на Payin с `is_recurrent=True`.
 
 ---
 
@@ -193,17 +184,22 @@ MERCHANT_BALANCE_URL = f"{_API_BASE}/merchant/balance"
 В правом верхнем углу PyCharm есть выпадающий список конфигураций.
 Там готовы варианты для каждого файла тестов:
 
-| Конфигурация | Что запускает |
-|---|---|
-| **All Tests** | все тесты сразу |
-| **Happy Path** | `test_happy_path.py` — позитивные сценарии |
-| **Negative** | `test_negative.py` — негативные сценарии |
-| **Get Transactions** | `test_get_transactions.py` — GET-запросы |
-| **Operations** | `test_operations.py` — capture, cancel, confirm, refund |
-| **Payout Methods** | `test_payout_methods.py` — все методы выплат |
-| **Payment Links** | `test_payment_links.py` — платёжные ссылки |
-| **Merchant** | `test_merchant.py` — баланс мерчанта |
-| **Subscriptions** | `test_subscriptions.py` — управление подписками |
+| Конфигурация | Файл | Тестов |
+|---|---|---|
+| **All Tests** | все файлы | 821 |
+| **Auth** | `test_auth.py` | 25 |
+| **Payin Card** | `test_payin_card.py` | 165 |
+| **Payin Other** | `test_payin_other.py` | 30 |
+| **Payout** | `test_payout.py` | 120 |
+| **Customer Data** | `test_customer_data.py` | 250 |
+| **Get Transactions** | `test_get_transactions.py` | 30 |
+| **Capture** | `test_capture.py` | 30 |
+| **Cancel** | `test_cancel.py` | 30 |
+| **Confirm** | `test_confirm.py` | 32 |
+| **Refund** | `test_refund.py` | 35 |
+| **Payment Links** | `test_payment_links.py` | 38 |
+| **Merchant** | `test_merchant.py` | 18 |
+| **Subscriptions** | `test_subscriptions.py` | 18 |
 
 Выберите нужный → нажмите ▶.
 
@@ -217,11 +213,14 @@ MERCHANT_BALANCE_URL = f"{_API_BASE}/merchant/balance"
 pytest
 
 # один файл
-pytest tests/test_happy_path.py
-pytest tests/test_operations.py
+pytest tests/test_payin_card.py
+pytest tests/test_payout.py
 
 # один конкретный тест
-pytest tests/test_happy_path.py::test_payin_card
+pytest tests/test_payin_card.py::test_payin_card_auto_capture
+
+# по ID тест-кейса (маркер @pytest.mark.tcid)
+pytest -k "PC-001"
 
 # остановиться на первой ошибке
 pytest -x
@@ -229,7 +228,7 @@ pytest -x
 # полный вывод при падении
 pytest --tb=long
 
-# показать print() внутри тестов
+# показать HTTP-запросы и ответы внутри тестов
 pytest -s
 ```
 
@@ -237,228 +236,232 @@ pytest -s
 
 ## 5. Что делают тесты
 
-### `test_happy_path.py` — позитивные сценарии создания транзакций
+Каждый тест помечен уникальным идентификатором вида `@pytest.mark.tcid("XX-NNN")`.
+Этот ID отображается в HTML-отчёте (папка `reports/`).
 
-Проверяют, что каждый тип транзакции создаётся успешно (HTTP 201)
-и в ответе есть все обязательные поля.
+---
 
-| Тест | Что проверяет |
+### `test_auth.py` — авторизация и подпись запросов (25 тестов, A-001…A-025)
+
+Проверяют механизм HMAC-SHA256 подписи и заголовки авторизации.
+
+| Сценарий | Ожидаемый статус |
 |---|---|
-| `test_payin_card` | Payin картой, автосписание (`capture=auto`) |
-| `test_payin_p2p` | Payin через P2P |
-| `test_payin_qr` | Payin через QR-код |
-| `test_payin_mobile` | Payin через мобильный платёж |
-| `test_payin_block` | Payin картой с холдом (`capture=manual`) |
-| `test_recurrent` | Рекуррентный платёж по данным предыдущей транзакции |
-| `test_payout` | Выплата на карту |
-| `test_rebill` | Ребилл по токену карты, автосписание |
-| `test_rebill_block` | Ребилл по токену карты с холдом |
-| `test_refund` | Частичный возврат по существующей транзакции |
-| `test_payin_card_without_flow_data` | flow_data необязателен |
-| `test_payin_card_without_webhook_url` | webhook_url необязателен |
-
-Тесты `test_recurrent`, `test_rebill`, `test_rebill_block`, `test_refund` автоматически
-создают один Payin перед запуском и переиспользуют его `transaction_id` — это происходит
-один раз на весь прогон.
+| Корректный запрос проходит | 201 |
+| Дублирующий `Api-Idempotency-Key` | 409 |
+| Подпись из нулей | 401 / 403 |
+| Отсутствует `Api-Terminal-ID` | 400 / 401 / 403 |
+| Отсутствует `Api-Timestamp` | 400 / 401 / 403 |
+| Timestamp старше 5 минут | 400 |
+| Timestamp в будущем на 5+ минут | 400 |
+| Неизвестный терминал | 401 / 403 / 404 |
+| Пустой `Api-Signature` | 401 / 403 |
 
 ---
 
-### `test_negative.py` — негативные сценарии создания транзакций
+### `test_payin_card.py` — Payin картой (165 тестов, PC-001…PC-165)
 
-Проверяют, что API корректно отклоняет невалидные запросы.
+Самый большой файл. Покрывает создание транзакций через карту: happy path, валидация полей карты, параметры потока (`capture_mode`, `is_recurrent`, `threed_secure`), граничные значения сумм и форматов.
 
-| Тест | Что проверяет | Ожидаемый статус |
-|---|---|---|
-| `test_missing_top_level_field` | Отсутствие одного из 5 обязательных полей (5 вариантов) | 422 |
-| `test_invalid_transaction_type` | Неизвестный `type` | 422 |
-| `test_negative_amount` | Отрицательная сумма | 422 |
-| `test_zero_amount` | Нулевая сумма | 422 |
-| `test_invalid_currency` | Несуществующий код валюты | 422 |
-| `test_missing_currency` | Поле `currency` отсутствует | 422 |
-| `test_missing_merchant_order_id` | Нет `order_id` в `merchant_data` | 422 |
-| `test_invalid_card_pan` | PAN из 4 цифр | 422 |
-| `test_expired_card` | Истёкший срок карты | 422 |
-| `test_missing_card_required_field` | Каждое из 5 обязательных полей карты (5 вариантов) | 422 |
-| `test_invalid_signature` | Подпись из нулей | 401 / 403 |
-| `test_missing_signature_header` | Заголовок `Api-Signature` отсутствует | 400 / 401 / 403 |
-| `test_missing_terminal_id_header` | Заголовок `Api-Terminal-ID` отсутствует | 400 / 401 / 403 |
-| `test_unknown_terminal_id` | Несуществующий терминал | 401 / 403 / 404 |
-| `test_idempotency_key_deduplication` | Повтор с тем же ключом → тот же `transaction_id` | 201 + 200/201 |
-| `test_invalid_json_body` | Тело не является JSON | 400 / 422 |
-| `test_refund_nonexistent_transaction` | Возврат по несуществующей транзакции | 404 / 422 |
-| `test_refund_amount_exceeds_original` | Сумма возврата больше оригинала | 400 / 422 |
-| `test_timestamp_too_old` | Timestamp старше 5 минут | 401 / 403 |
+| Группа | Примеры сценариев |
+|---|---|
+| Happy path | auto-capture, manual-capture, рекуррентный Payin |
+| Карта | невалидный PAN, истёкшая карта, отсутствие cvv/holder/expiry |
+| financial_data | нулевая/отрицательная сумма, неверная валюта |
+| flow_data | неверный capture_mode, отсутствие threed_secure |
+| customer_data | обязательные поля, форматы |
+| Ответ | transaction_id — int, status в допустимом множестве, created_at ISO 8601 |
 
 ---
 
-### `test_get_transactions.py` — получение транзакций
+### `test_payin_other.py` — Payin другими методами (30 тестов, PO-001…PO-030)
 
-| Тест | Что проверяет | Ожидаемый статус |
-|---|---|---|
-| `test_get_transaction_by_id` | GET `/{id}` — возвращает транзакцию с нужными полями | 200 |
-| `test_get_transaction_fields` | Типы и форматы полей ответа | 200 |
-| `test_get_transaction_status_is_valid` | Статус входит в список допустимых значений | 200 |
-| `test_get_transactions_by_order_id` | GET `?order_id=` — возвращает массив | 200 |
-| `test_get_transaction_not_found` | GET по несуществующему ID | 404 |
-| `test_get_by_order_id_not_found` | GET по несуществующему order_id | 404 |
-| `test_get_by_order_id_missing_param` | GET без параметра order_id | 400 / 422 |
-| `test_get_transaction_no_auth` | Без заголовков авторизации | 400 / 401 / 403 |
-| `test_get_transaction_invalid_signature` | Подпись из нулей | 401 / 403 |
-| `test_get_transaction_missing_terminal_id` | Нет `Api-Terminal-ID` | 400 / 401 / 403 |
-| `test_get_transaction_missing_timestamp` | Нет `Api-Timestamp` | 400 / 401 / 403 |
+Payin через P2P, QR-код, мобильный платёж и токен (rebill).
+
+| Метод | Примеры сценариев |
+|---|---|
+| p2p | happy path, manual capture, с description, нулевая сумма → 400 |
+| qr | happy path, is_recurrent=True, отрицательная сумма → 400, action в ответе |
+| mobile | phone обязателен, формат E.164, provider опционален, phone=null → 400 |
+| token | token — UUID, отсутствие parent_transaction_id, несуществующий UUID |
 
 ---
 
-### `test_operations.py` — операции над транзакциями
+### `test_payout.py` — Выплаты (120 тестов, PY-001…PY-120)
 
-#### Capture — списание заблокированных средств
+Покрывает все методы выплат: карта, SBP, кошелёк, банковский счёт, мобильный, токен.
 
-| Тест | Что проверяет | Ожидаемый статус |
-|---|---|---|
-| `test_capture_after_block` | Списание после Payin с `capture=manual` | 200 / 201 |
-| `test_capture_partial_amount` | Частичное списание | 200 / 201 |
-| `test_capture_without_webhook_url` | Без необязательного `webhook_url` | 200 / 201 |
-| `test_capture_nonexistent_transaction` | Несуществующая транзакция | 404 |
-| `test_capture_missing_financial_data` | Нет `financial_data` | 400 / 422 |
-| `test_capture_missing_merchant_data` | Нет `merchant_data` | 400 / 422 |
-| `test_capture_missing_order_id` | Нет `order_id` | 400 / 422 |
-| `test_capture_missing_amount` | Нет `amount` | 400 / 422 |
-| `test_capture_missing_currency` | Нет `currency` | 400 / 422 |
-| `test_capture_invalid_currency` | Невалидный код валюты | 400 / 422 |
-| `test_capture_zero_amount` | Нулевая сумма | 400 / 422 |
-| `test_capture_negative_amount` | Отрицательная сумма | 400 / 422 |
-
-#### Cancel — отмена транзакции
-
-| Тест | Что проверяет | Ожидаемый статус |
-|---|---|---|
-| `test_cancel_transaction` | Отмена транзакции с холдом | 200 / 201 |
-| `test_cancel_with_description` | С необязательным `description` | 200 / 201 |
-| `test_cancel_nonexistent_transaction` | Несуществующая транзакция | 404 |
-| `test_cancel_missing_financial_data` | Нет `financial_data` | 400 / 422 |
-| `test_cancel_missing_merchant_data` | Нет `merchant_data` | 400 / 422 |
-| `test_cancel_missing_order_id` | Нет `order_id` | 400 / 422 |
-
-#### Confirm — подтверждение ожидающего действия (3DS, redirect и т.д.)
-
-| Тест | Что проверяет | Ожидаемый статус |
-|---|---|---|
-| `test_confirm_nonexistent_transaction` | Несуществующая транзакция | 404 |
-| `test_confirm_missing_result` | Нет поля `result` | 400 / 422 |
-| `test_confirm_missing_financial_data` | Нет `financial_data` | 400 / 422 |
-| `test_confirm_missing_merchant_data` | Нет `merchant_data` | 400 / 422 |
-| `test_confirm_missing_order_id` | Нет `order_id` | 400 / 422 |
-| `test_confirm_invalid_result_type` | Неизвестный тип `result` | 400 / 422 |
-| `test_confirm_threed_secure_missing_pares` | Нет `pares` в 3DS result | 400 / 422 |
-| `test_confirm_threed_secure_missing_md` | Нет `md` в 3DS result | 400 / 422 |
-| `test_confirm_generic_missing_confirmed` | Нет `confirmed` в redirect result | 400 / 422 |
-
-#### Refund — дополнительные поля возврата
-
-| Тест | Что проверяет | Ожидаемый статус |
-|---|---|---|
-| `test_refund_missing_merchant_data` | Нет `merchant_data` | 400 / 422 |
-| `test_refund_missing_financial_data` | Нет `financial_data` | 400 / 422 |
-| `test_refund_missing_order_id` | Нет `order_id` | 400 / 422 |
-| `test_refund_missing_currency` | Нет `currency` | 400 / 422 |
-| `test_refund_missing_amount` | Нет `amount` | 400 / 422 |
-| `test_refund_zero_amount` | Нулевая сумма | 400 / 422 |
-| `test_refund_negative_amount` | Отрицательная сумма | 400 / 422 |
-| `test_refund_invalid_currency` | Невалидный код валюты | 400 / 422 |
+| Метод | Примеры сценариев |
+|---|---|
+| card | happy path, без expiry, PAN/holder/cvv обязательны |
+| sbp | с phone+bank, без details, с holder → 201 |
+| wallet | id обязателен, с brand |
+| bank_account | SWIFT, PIX (Бразилия), без details |
+| mobile | phone обязателен, E.164 |
+| token | token обязателен |
+| Общие негативные | нулевая/отрицательная сумма, неверная валюта, null поля → 400 |
 
 ---
 
-### `test_payout_methods.py` — все методы выплат
+### `test_customer_data.py` — Данные клиента (250 тестов, CD-001…CD-250)
 
-#### Happy path
-
-| Тест | Метод | Что проверяет |
-|---|---|---|
-| `test_payout_mobile` | mobile | phone обязателен |
-| `test_payout_mobile_with_provider` | mobile | с необязательным provider |
-| `test_payout_sbp_with_phone_and_bank` | sbp | phone и bank (оба необязательны) |
-| `test_payout_sbp_without_details` | sbp | без details |
-| `test_payout_wallet` | wallet | id обязателен |
-| `test_payout_wallet_with_brand` | wallet | с необязательным brand |
-| `test_payout_bank_account_with_swift` | bank_account | счёт + SWIFT |
-| `test_payout_bank_account_with_pix` | bank_account | PIX (Бразилия) |
-| `test_payout_bank_account_minimal` | bank_account | без details |
-| `test_payout_token` | token | token обязателен |
-
-#### Негативные сценарии
-
-| Тест | Что проверяет | Ожидаемый статус |
-|---|---|---|
-| `test_payout_card_missing_pan` | Нет `pan` | 422 |
-| `test_payout_card_missing_holder` | Нет `holder` | 422 |
-| `test_payout_card_missing_details` | Нет `details` | 422 |
-| `test_payout_mobile_missing_phone` | Нет `phone` | 422 |
-| `test_payout_mobile_missing_details` | Нет `details` | 422 |
-| `test_payout_wallet_missing_id` | Нет `id` | 422 |
-| `test_payout_wallet_missing_details` | Нет `details` | 422 |
-| `test_payout_token_missing_token` | Нет `token` | 422 |
-| `test_payout_token_missing_details` | Нет `details` | 422 |
-| `test_payout_unknown_method` | Неизвестный метод | 422 |
-| `test_payout_negative_amount` | Отрицательная сумма | 422 |
-| `test_payout_zero_amount` | Нулевая сумма | 422 |
-| `test_payout_invalid_currency` | Невалидный код валюты | 422 |
+Детальная валидация всех полей `customer_data`: контакты, персональные данные, данные браузера, паспортные данные. Граничные значения, форматы, обязательность полей.
 
 ---
 
-### `test_payment_links.py` — платёжные ссылки
+### `test_get_transactions.py` — Получение транзакций (30 тестов, GT-001…GT-030)
 
-| Тест | Что проверяет | Ожидаемый статус |
-|---|---|---|
-| `test_create_payment_link` | Создание ссылки, обязательные поля ответа | 201 |
-| `test_create_payment_link_response_fields` | Типы полей ответа, валидность URL | 201 |
-| `test_create_payment_link_with_flow_data` | С необязательным flow_data | 201 |
-| `test_create_payment_link_with_recurrent_flow` | is_recurrent=True | 201 |
-| `test_create_payment_link_with_manual_capture` | capture_mode=manual | 201 |
-| `test_create_payment_link_without_webhook_url` | Без необязательного webhook_url | 201 |
-| `test_create_payment_link_without_return_url` | Без необязательного return_url | 201 |
-| `test_create_payment_link_minimal_customer_data` | Пустой customer_data (все поля необязательны) | 201 |
-| `test_create_payment_link_usd` | Валюта USD | 201 |
-| `test_payment_link_missing_required_field` | Каждое из 3 обязательных полей (3 варианта) | 422 |
-| `test_payment_link_missing_order_id` | Нет order_id в merchant_data | 422 |
-| `test_payment_link_negative_amount` | Отрицательная сумма | 422 |
-| `test_payment_link_zero_amount` | Нулевая сумма | 422 |
-| `test_payment_link_invalid_currency` | Невалидный код валюты | 422 |
-| `test_payment_link_missing_currency` | Нет currency | 422 |
-| `test_payment_link_missing_amount` | Нет amount | 422 |
-| `test_payment_link_invalid_capture_mode` | Невалидный capture_mode | 422 |
-| `test_payment_link_no_auth` | Без авторизации | 400 / 401 / 403 |
-| `test_payment_link_invalid_signature` | Подпись из нулей | 401 / 403 |
+GET `/api/v1/transactions/{id}` и GET `/api/v1/transactions?order_id=`.
+
+| Сценарий | Ожидаемый статус |
+|---|---|
+| GET по существующему ID | 200 |
+| GET по несуществующему ID | 404 |
+| GET по order_id — массив в ответе | 200 |
+| GET по несуществующему order_id | 404 |
+| Без параметра order_id | 400 / 422 |
+| Без авторизации / неверная подпись | 400 / 401 / 403 |
+| PAN и CVV не возвращаются в ответе | 200 |
+| masked_pan в нужном формате | 200 |
+| transaction_id — int, created_at в полях | 200 |
 
 ---
 
-### `test_merchant.py` — баланс мерчанта
+### `test_capture.py` — Списание заблокированных средств (30 тестов, CAP-001…CAP-030)
 
-| Тест | Что проверяет | Ожидаемый статус |
-|---|---|---|
-| `test_get_merchant_balance` | Получение баланса, обязательные поля | 200 |
-| `test_get_merchant_balance_currency_format` | currency — 3-символьный ISO-код | 200 |
-| `test_get_merchant_balance_no_auth` | Без авторизации | 400 / 401 / 403 |
-| `test_get_merchant_balance_invalid_signature` | Подпись из нулей | 401 / 403 |
-| `test_get_merchant_balance_missing_terminal_id` | Нет Api-Terminal-ID | 400 / 401 / 403 |
-| `test_get_merchant_balance_missing_timestamp` | Нет Api-Timestamp | 400 / 401 / 403 |
-| `test_get_merchant_balance_unknown_terminal` | Несуществующий терминал | 401 / 403 / 404 |
+POST `/api/v1/transactions/{id}/capture`.
+
+| Сценарий | Ожидаемый статус |
+|---|---|
+| Списание после Payin manual-capture | 200 / 201 |
+| Частичное списание | 200 / 201 |
+| Несуществующая транзакция | 404 |
+| Дублирующий idempotency key | 409 |
+| Отсутствует idempotency key | 400 |
+| Отсутствуют обязательные поля | 400 / 422 |
+| Нулевая / отрицательная сумма | 400 / 422 |
+| Auto-capture Payin → повторный capture | 409 |
+| Ответ содержит merchant_data, created_at | 200 / 201 |
 
 ---
 
-### `test_subscriptions.py` — управление подписками
+### `test_cancel.py` — Отмена транзакции (30 тестов, CAN-001…CAN-030)
 
-| Тест | Что проверяет | Ожидаемый статус |
-|---|---|---|
-| `test_cancel_nonexistent_subscription` | DELETE по несуществующему UUID | 404 |
-| `test_cancel_subscription_invalid_token_format` | Токен не в формате UUID | 400 / 404 / 422 |
-| `test_cancel_subscription_no_auth` | Без авторизации | 400 / 401 / 403 |
-| `test_cancel_subscription_invalid_signature` | Подпись из нулей | 401 / 403 |
-| `test_cancel_subscription_missing_terminal_id` | Нет Api-Terminal-ID | 400 / 401 / 403 |
-| `test_cancel_subscription_missing_timestamp` | Нет Api-Timestamp | 400 / 401 / 403 |
+POST `/api/v1/transactions/{id}/cancel`.
+
+| Сценарий | Ожидаемый статус |
+|---|---|
+| Отмена Payin с холдом | 200 / 201 |
+| С необязательным description | 200 / 201 |
+| Несуществующая транзакция | 404 |
+| Дублирующий idempotency key | 409 |
+| Отсутствует idempotency key | 400 |
+| Auto-capture Payin → cancel | 409 |
+| Пустые financial_data / merchant_data | 400 |
+
+---
+
+### `test_confirm.py` — Подтверждение ожидающего действия (32 теста, CON-001…CON-032)
+
+POST `/api/v1/transactions/{id}/confirm` — используется после 3DS или redirect.
+
+| Сценарий | Ожидаемый статус |
+|---|---|
+| Несуществующая транзакция | 404 |
+| Отсутствует поле result | 400 / 422 |
+| Неизвестный тип result | 400 / 422 |
+| 3DS: отсутствует pares или md | 400 / 422 |
+| redirect: отсутствует confirmed | 400 / 422 |
+| Дублирующий idempotency key | 409 |
+| result.type = null | 400 |
+| pares = пустая строка | 400 |
+| Пустые financial_data | 400 |
+
+---
+
+### `test_refund.py` — Возвраты (35 тестов, RF-001…RF-035)
+
+POST `/api/v1/transactions/{id}/refund`.
+
+| Сценарий | Ожидаемый статус |
+|---|---|
+| Частичный возврат | 200 / 201 |
+| Полный возврат | 200 / 201 |
+| Сумма превышает оригинал | 400 / 422 |
+| Несуществующая транзакция | 404 |
+| Возврат по отменённой транзакции | 409 |
+| Возврат по Payout | 409 |
+| Несоответствие валюты | 400 / 409 |
+| Дублирующий idempotency key | 409 |
+| Отсутствует idempotency key | 400 |
+| amount = null | 400 |
+| Минимальная сумма = 1 | 200 / 201 |
+
+---
+
+### `test_payment_links.py` — Платёжные ссылки (38 тестов, PL-001…PL-038)
+
+POST `/api/v1/payment-links`.
+
+| Сценарий | Ожидаемый статус |
+|---|---|
+| Создание ссылки, обязательные поля ответа | 201 |
+| С flow_data (is_recurrent, capture_mode) | 201 |
+| Без webhook_url / return_url | 201 |
+| Отсутствие обязательного поля | 400 |
+| Отрицательная / нулевая сумма | 400 |
+| Неверная валюта / capture_mode | 400 |
+| Без авторизации / неверная подпись | 400 / 401 / 403 |
+| Дублирующий idempotency key | 409 |
+| Отсутствует idempotency key | 400 |
+| return_url с query-параметрами | 201 |
+| link_data.url — строка, начинается с http | 201 |
+| financial_data = null | 400 |
+
+---
+
+### `test_merchant.py` — Баланс мерчанта (18 тестов, MB-001…MB-018)
+
+GET `/api/v1/merchant/balance`.
+
+| Сценарий | Ожидаемый статус |
+|---|---|
+| Получение баланса, обязательные поля | 200 |
+| currency — 3-символьный ISO-код | 200 |
+| POST / DELETE вместо GET | 404 / 405 |
+| Без авторизации / неверная подпись | 400 / 401 / 403 |
+| Истёкший timestamp | 400 / 401 / 403 |
+| Idempotency key игнорируется (GET) | 200 |
+
+---
+
+### `test_subscriptions.py` — Управление подписками (18 тестов, SB-001…SB-018)
+
+DELETE `/api/v1/subscriptions/{token}`.
+
+| Сценарий | Ожидаемый статус |
+|---|---|
+| DELETE по несуществующему UUID | 404 |
+| Токен не в формате UUID | 400 / 404 |
+| Слишком короткий / числовой токен | 400 / 404 |
+| UUID с заглавными буквами | 400 / 404 |
+| Без авторизации / неверная подпись | 400 / 401 / 403 |
+| POST / GET вместо DELETE | 404 / 405 |
+| Лишний сегмент URL | 400 / 404 / 405 |
+| Content-Type ответа — application/json | 200 |
+| Idempotency key не требуется (DELETE) | 404 / 409 |
 
 ---
 
 ## 6. Как читать результат
+
+### HTML-отчёт (автоматически)
+
+После каждого прогона в папке `reports/` создаётся HTML-файл вида
+`2026-05-22_14-30-00_all.html`. Откройте его в браузере:
+- Левая панель — список всех тестов с маркерами PASSED/FAILED и ID кейса
+- Клик на тест — справа видны полный HTTP-запрос и ответ
+- Первый упавший тест открывается автоматически
 
 ### В PyCharm
 
@@ -471,15 +474,14 @@ pytest -s
 
 Успешный прогон:
 ```
-tests/test_happy_path.py::test_payin_card   PASSED  [ 5%]
-tests/test_happy_path.py::test_payin_p2p    PASSED  [ 6%]
+tests/test_payin_card.py::test_payin_card_auto_capture   PASSED
 ...
-85 passed in 42.10s
+821 passed in 410.32s
 ```
 
 Упавший тест:
 ```
-FAILED tests/test_happy_path.py::test_payin_card
+FAILED tests/test_payin_card.py::test_payin_card_auto_capture
 AssertionError: Expected 201, got 401: {"error":"invalid signature"}
 ```
 
@@ -505,7 +507,7 @@ AssertionError: Expected 201, got 401: {"error":"invalid signature"}
 
 ---
 
-### `Expected 201, got 422` — невалидное тело запроса
+### `Expected 201, got 400` / `422` — невалидное тело запроса
 
 API вернул ошибку валидации. Ответ содержит причину:
 ```
@@ -522,16 +524,16 @@ AssertionError: Expected 201, got 422: {"error": "invalid pan format"}
 
 ---
 
-### `ERROR at setup` на тестах `test_recurrent` / `test_rebill` / `test_refund` / операциях
+### `ERROR at setup` на тестах с fixture `payin_transaction_id` или `payin_block_transaction_id`
 
 ```
-ERROR tests/test_happy_path.py::test_recurrent - AssertionError: Setup Payin failed: ...
+ERROR tests/test_payin_other.py::test_payin_token_rebill - AssertionError: Setup Payin failed: ...
 ```
 
 Перед этими тестами автоматически выполняется Payin, и он упал.
 Сначала запустите базовый тест отдельно:
 ```
-pytest tests/test_happy_path.py::test_payin_card -v --tb=long
+pytest tests/test_payin_card.py::test_payin_card_auto_capture -v --tb=long
 ```
 Исправьте причину его падения — остальные тесты тоже заработают.
 
@@ -547,12 +549,23 @@ pytest tests/test_happy_path.py::test_payin_card -v --tb=long
 
 Запустите с флагами `-s --tb=long`:
 ```
-pytest tests/test_happy_path.py::test_payin_card -s --tb=long
+pytest tests/test_payin_card.py::test_payin_card_auto_capture -s --tb=long
 ```
 
-Или добавьте в тест временный `print` и запустите с `-s`:
-```python
-resp = post_transaction(body)
-print(resp.status_code, resp.text)  # временно для отладки
-assert_success(resp)
+Или откройте HTML-отчёт в `reports/` — там уже есть полный HTTP-запрос и ответ для каждого теста.
+
+---
+
+### Тесты работают слишком медленно
+
+Между тестами есть задержка 3 секунды (защита от rate-limiting препрода).
+Изменить её можно через переменную окружения:
+
+```
+TEST_DELAY=1.0 pytest tests/test_merchant.py
+```
+
+или в `.env`:
+```
+TEST_DELAY=1.0
 ```
