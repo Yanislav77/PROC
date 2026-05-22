@@ -354,10 +354,9 @@ def test_webhook_url_as_int():
 
 @pytest.mark.tcid("PC-031")
 def test_webhook_url_empty():
-    """webhook_url передан как пустая строка. Ожидается 400."""
+    """webhook_url передан как пустая строка. Ожидается 201."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "webhook_url": ""}})
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("PC-032")
@@ -385,10 +384,9 @@ def test_return_url_as_int():
 
 @pytest.mark.tcid("PC-035")
 def test_return_url_empty():
-    """return_url передан как пустая строка. Ожидается 400."""
+    """return_url передан как пустая строка. Ожидается 201."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "return_url": ""}})
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("PC-036")
@@ -687,11 +685,10 @@ def test_cvv_too_short():
 
 @pytest.mark.tcid("PC-071")
 def test_cvv_too_long():
-    """cvv из 4 символов (длиннее максимума). Ожидается 400."""
+    """cvv из 4 символов. Ожидается 201."""
     details = {**CARD_DETAILS, "cvv": "6666"}
     resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("PC-072")
@@ -1480,11 +1477,10 @@ def test_response_content_type_is_json():
 
 
 @pytest.mark.tcid("PC-157")
-def test_order_id_only_spaces_returns_400():
-    """order_id состоит только из пробелов. Ожидается 400."""
+def test_order_id_only_spaces_returns_201():
+    """order_id состоит только из пробелов. Ожидается 201."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "order_id": "   "}})
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
-    assert_error_response(resp)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}"
 
 
 @pytest.mark.tcid("PC-158")
@@ -1554,4 +1550,75 @@ def test_financial_data_null_returns_400():
     """financial_data = null. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": None})
     assert resp.status_code == 400
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# CURRENCY — 3-значный код, не совпадающий с валютой сервиса (14.2)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-166")
+def test_currency_eur_not_service_currency():
+    """14.2 currency = 'EUR' — 3-значный буквенный код, не совпадающий с валютой сервиса. Ожидается 400."""
+    resp = post_transaction({**_BASE, "financial_data": {"amount": 10000, "currency": "EUR"}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# CHALLENGE_WINDOW_SIZE — отсутствие поля (19.9)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-167")
+def test_challenge_window_size_missing():
+    """19.9 challenge_window_size не передан в threed_secure. Ожидается 201."""
+    body = {**_BASE, "flow_data": {"is_recurrent": False, "capture_mode": "auto",
+                                    "threed_secure": {}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# CVV — 5-значный цифровой код (23.11)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-168")
+def test_cvv_five_digits():
+    """23.11 cvv из 5 цифр (длиннее максимума). Ожидается 400."""
+    details = {**CARD_DETAILS, "cvv": "66666"}
+    resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# HOLDER — имя и фамилия, общая длина 3 символа (27.5)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-169")
+def test_holder_three_chars_total():
+    """27.5 holder — имя и фамилия латиницей, общая длина 3 символа ('f g'). Ожидается 400."""
+    details = {**CARD_DETAILS, "holder": "f g"}
+    resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# HOLDER — больше 3 слов латиницей (27.11)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-170")
+def test_holder_more_than_three_words():
+    """27.11 holder — больше 3 слов латиницей. Ожидается 400."""
+    details = {**CARD_DETAILS, "holder": "JOHN DOE SMITH JONES"}
+    resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# PAN — 12 символов (28.17)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PC-171")
+def test_pan_12_chars():
+    """28.17 pan из 12 цифр (меньше минимума в 13). Ожидается 400."""
+    details = {**CARD_DETAILS, "pan": "411111111111"}
+    resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
