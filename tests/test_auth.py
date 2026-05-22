@@ -61,13 +61,8 @@ def test_idempotency_key_deduplication():
     resp2 = _send(str(int(time.time())))
 
     assert resp1.status_code == 201
-    assert resp2.status_code in (200, 201), "Idempotent repeat should succeed"
-    data1 = resp1.json()
-    data2 = resp2.json()
-    assert_transaction_response(data1)
-    tid1 = data1.get("transaction_id")
-    tid2 = data2.get("transaction_id")
-    assert tid1 == tid2, f"Idempotency broken: {tid1} vs {tid2}"
+    assert resp2.status_code == 409, f"Expected 409 Conflict for duplicate idempotency key, got {resp2.status_code}"
+    assert_error_response(resp2)
 
 
 # ─────────────────────────────────────────────
@@ -140,7 +135,7 @@ def test_unknown_terminal_id():
 
 @pytest.mark.tcid("A-006")
 def test_timestamp_too_old():
-    """Api-Timestamp более чем на 5 минут в прошлом. Ожидается 401 или 403."""
+    """Api-Timestamp более чем на 5 минут в прошлом. Ожидается 400 Bad Request."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
     old_ts = str(int(time.time()) - 400)
     message = f"{old_ts}{TERMINAL_ID}{raw}"
@@ -153,7 +148,7 @@ def test_timestamp_too_old():
         "Api-Timestamp":       old_ts,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
-    assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
 
@@ -348,7 +343,7 @@ def test_timestamp_near_future():
 
 @pytest.mark.tcid("A-017")
 def test_timestamp_far_future():
-    """Api-Timestamp — 10 минут в будущем (вне окна ±5 мин). Ожидается 401 или 403."""
+    """Api-Timestamp — 10 минут в будущем (вне окна ±5 мин). Ожидается 400 Bad Request."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
     ts = str(int(time.time()) + 600)
     message = f"{ts}{TERMINAL_ID}{raw}"
@@ -361,7 +356,7 @@ def test_timestamp_far_future():
         "Api-Timestamp":       ts,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
-    assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
 
