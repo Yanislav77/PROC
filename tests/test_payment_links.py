@@ -23,6 +23,7 @@ from conftest import (
     THREED,
     SERVICE_SECRET,
     assert_error_response,
+    gen_order_id,
 )
 
 
@@ -367,12 +368,13 @@ def test_payment_link_invalid_threed_window_size():
 @pytest.mark.tcid("PL-030")
 def test_payment_link_response_order_id_matches():
     """В ответе merchant_data.order_id совпадает с отправленным значением."""
-    merchant = {**MERCHANT_DATA, "order_id": "order_link_resp_check"}
+    order_id = gen_order_id("pl_resp_check")
+    merchant = {**MERCHANT_DATA, "order_id": order_id}
     body = {**_VALID_LINK_BODY, "merchant_data": merchant}
     resp = post_payment_link(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
     data = resp.json()
-    assert data.get("merchant_data", {}).get("order_id") == "order_link_resp_check"
+    assert data.get("merchant_data", {}).get("order_id") == order_id
 
 
 @pytest.mark.tcid("PL-031")
@@ -388,7 +390,7 @@ def test_payment_link_return_url_with_query_params():
 def test_payment_link_idempotency_same_key_second_returns_409():
     """Payment link с одним idempotency_key дважды — второй возвращает 409."""
     body = copy.deepcopy(_VALID_LINK_BODY)
-    body["merchant_data"] = {**MERCHANT_DATA, "order_id": f"order_pl_idem_{uuid.uuid4().hex[:6]}"}
+    body["merchant_data"] = {**MERCHANT_DATA, "order_id": gen_order_id("pl_idem")}
     raw = json.dumps(body, separators=(",", ":"))
     key = str(uuid.uuid4())
     timestamp = str(int(time.time()))
@@ -433,7 +435,7 @@ def test_payment_link_missing_idempotency_key_returns_400():
 @pytest.mark.tcid("PL-034")
 def test_payment_link_response_has_all_required_fields():
     """POST /payment-links — ответ содержит link_id, link_data.url, merchant_data."""
-    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": f"order_pl_f_{uuid.uuid4().hex[:6]}"}}
+    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_f")}}
     resp = post_payment_link(body)
     assert resp.status_code == 201
     data = resp.json()
@@ -446,7 +448,7 @@ def test_payment_link_response_has_all_required_fields():
 @pytest.mark.tcid("PL-035")
 def test_payment_link_link_data_url_is_string():
     """POST /payment-links — link_data.url является строкой."""
-    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": f"order_pl_url_{uuid.uuid4().hex[:6]}"}}
+    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_url")}}
     resp = post_payment_link(body)
     assert resp.status_code == 201
     url = resp.json()["link_data"]["url"]
@@ -456,7 +458,7 @@ def test_payment_link_link_data_url_is_string():
 @pytest.mark.tcid("PL-036")
 def test_payment_link_content_type_is_json():
     """POST /payment-links — Content-Type ответа содержит application/json."""
-    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": f"order_pl_ct_{uuid.uuid4().hex[:6]}"}}
+    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_ct")}}
     resp = post_payment_link(body)
     assert resp.status_code == 201
     assert "application/json" in resp.headers.get("Content-Type", "")
@@ -466,7 +468,7 @@ def test_payment_link_content_type_is_json():
 def test_payment_link_flow_data_invalid_is_recurrent():
     """Payment link с is_recurrent = 1 (не boolean). Ожидается 400."""
     body = {**_VALID_LINK_BODY,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_pl_ir_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_ir")},
             "flow_data": {"is_recurrent": 1, "capture_mode": "auto"}}
     resp = post_payment_link(body)
     assert resp.status_code == 400
@@ -477,7 +479,7 @@ def test_payment_link_flow_data_invalid_is_recurrent():
 def test_payment_link_financial_data_null_returns_400():
     """Payment link с financial_data = null. Ожидается 400."""
     body = {**_VALID_LINK_BODY,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_pl_fn_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_fn")},
             "financial_data": None}
     resp = post_payment_link(body)
     assert resp.status_code == 400

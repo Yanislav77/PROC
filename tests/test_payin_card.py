@@ -16,6 +16,7 @@ from conftest import (
     THREED,
     assert_transaction_response,
     assert_error_response,
+    gen_order_id,
 )
 
 
@@ -72,7 +73,7 @@ def test_payin_card_manual_capture():
     """Оплата картой — manual capture (холд средств). Ожидаемый статус: authorized или processing."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_manual_cap"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("manual_cap")},
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
     }
@@ -85,7 +86,7 @@ def test_payin_card_recurrent(payin_transaction_id):
     """Рекуррентный платёж по parent_transaction_id (method:card)."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_recurrent_card"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("recurrent_card")},
         "financial_data": {"amount": 900, "currency": "RUB"},
         "transaction_data": {
             "method": "card",
@@ -1462,7 +1463,7 @@ def test_response_financial_data_amount_matches_request():
     """POST /transactions — financial_data.amount в ответе совпадает с запросом."""
     body = copy.deepcopy(_BASE)
     body["financial_data"]["amount"] = 5000
-    body["merchant_data"] = {**MERCHANT_DATA, "order_id": f"order_amt_{uuid.uuid4().hex[:6]}"}
+    body["merchant_data"] = {**MERCHANT_DATA, "order_id": gen_order_id("amt_match")}
     resp = post_transaction(body)
     assert resp.status_code == 201
     assert resp.json()["financial_data"]["amount"] == 5000
@@ -1522,7 +1523,7 @@ def test_pan_with_dashes_returns_400():
 def test_webhook_url_http_scheme():
     """webhook_url с HTTP схемой (не HTTPS). Ожидается 201 или 400."""
     body = {**_BASE, "merchant_data": {**MERCHANT_DATA,
-                                        "order_id": f"order_http_{uuid.uuid4().hex[:6]}",
+                                        "order_id": gen_order_id("http_scheme"),
                                         "webhook_url": "http://merchant.com/webhook"}}
     resp = post_transaction(body)
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}"

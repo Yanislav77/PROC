@@ -24,6 +24,7 @@ from conftest import (
     SERVICE_SECRET,
     assert_transaction_response,
     assert_error_response,
+    gen_order_id,
 )
 
 
@@ -94,9 +95,10 @@ def test_capture_full(payin_block_transaction_id):
 @pytest.mark.tcid("CAP-002")
 def test_capture_partial():
     """Частичное списание (500 из 1000). Ожидается 200."""
-    tid = _make_block_payin("order_capture_partial")
+    oid = gen_order_id("capture_partial")
+    tid = _make_block_payin(oid)
     body = {
-        "merchant_data": {"order_id": "order_capture_partial"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 500, "currency": "RUB"},
     }
     resp = post_operation(tid, "capture", body)
@@ -107,9 +109,10 @@ def test_capture_partial():
 @pytest.mark.tcid("CAP-003")
 def test_capture_without_webhook_url():
     """Capture без необязательного webhook_url в merchant_data. Ожидается 200."""
-    tid = _make_block_payin("order_capture_no_wh")
+    oid = gen_order_id("capture_no_wh")
+    tid = _make_block_payin(oid)
     body = {
-        "merchant_data": {"order_id": "order_capture_no_wh"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp = post_operation(tid, "capture", body)
@@ -338,9 +341,10 @@ def test_capture_currency_lowercase():
 @pytest.mark.tcid("CAP-020")
 def test_capture_amount_exceeds_authorized():
     """Capture с суммой, превышающей заблокированную (1000). Ожидается 400 или 409."""
-    tid = _make_block_payin("order_capture_exceed")
+    oid = gen_order_id("capture_exceed")
+    tid = _make_block_payin(oid)
     body = {
-        "merchant_data": {"order_id": "order_capture_exceed"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 999999, "currency": "RUB"},
     }
     resp = post_operation(tid, "capture", body)
@@ -351,9 +355,10 @@ def test_capture_amount_exceeds_authorized():
 @pytest.mark.tcid("CAP-021")
 def test_capture_already_captured():
     """Повторный capture уже захваченной транзакции. Ожидается 409."""
-    tid = _make_block_payin("order_capture_twice")
+    oid = gen_order_id("capture_twice")
+    tid = _make_block_payin(oid)
     body = {
-        "merchant_data": {"order_id": "order_capture_twice"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp1 = post_operation(tid, "capture", body)
@@ -366,10 +371,11 @@ def test_capture_already_captured():
 @pytest.mark.tcid("CAP-022")
 def test_capture_with_description():
     """Capture с опциональным description в merchant_data. Ожидается 200."""
-    tid = _make_block_payin("order_capture_desc")
+    oid = gen_order_id("capture_desc")
+    tid = _make_block_payin(oid)
     body = {
         "merchant_data": {
-            "order_id": "order_capture_desc",
+            "order_id": oid,
             "description": "Authorized capture",
         },
         "financial_data": {"amount": 1000, "currency": "RUB"},
@@ -382,9 +388,10 @@ def test_capture_with_description():
 @pytest.mark.tcid("CAP-023")
 def test_capture_response_fields():
     """Capture успешной транзакции — ответ содержит все обязательные поля."""
-    tid = _make_block_payin("order_capture_resp_check")
+    oid = gen_order_id("capture_resp_check")
+    tid = _make_block_payin(oid)
     body = {
-        "merchant_data": {"order_id": "order_capture_resp_check"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp = post_operation(tid, "capture", body)
@@ -401,7 +408,7 @@ def test_capture_response_fields():
 @pytest.mark.tcid("CAP-024")
 def test_capture_idempotency_same_key_second_returns_409():
     """Capture с одним idempotency_key дважды — второй возвращает 409."""
-    order_id = f"order_cap_idem_{uuid.uuid4().hex[:6]}"
+    order_id = gen_order_id("cap_idem")
     tid = _make_block_payin(order_id)
     body = _op_body(order_id)
     raw = json.dumps(body, separators=(",", ":"))
@@ -445,7 +452,7 @@ def test_capture_missing_idempotency_key_returns_400():
 @pytest.mark.tcid("CAP-026")
 def test_capture_response_has_merchant_data():
     """Capture успешной транзакции — ответ содержит merchant_data."""
-    order_id = f"order_cap_md_{uuid.uuid4().hex[:6]}"
+    order_id = gen_order_id("cap_md")
     tid = _make_block_payin(order_id)
     resp = post_operation(tid, "capture", _op_body(order_id))
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
@@ -455,7 +462,7 @@ def test_capture_response_has_merchant_data():
 @pytest.mark.tcid("CAP-027")
 def test_capture_response_has_created_at():
     """Capture успешной транзакции — ответ содержит created_at."""
-    order_id = f"order_cap_ca_{uuid.uuid4().hex[:6]}"
+    order_id = gen_order_id("cap_ca")
     tid = _make_block_payin(order_id)
     resp = post_operation(tid, "capture", _op_body(order_id))
     assert resp.status_code == 200
@@ -474,7 +481,7 @@ def test_capture_financial_data_empty_object():
 @pytest.mark.tcid("CAP-029")
 def test_capture_auto_payin_returns_409():
     """Capture по транзакции с capture_mode=auto. Ожидается 409."""
-    order_id = f"order_cap_auto_{uuid.uuid4().hex[:6]}"
+    order_id = gen_order_id("cap_auto")
     tid = _make_completed_payin(order_id)
     resp = post_operation(tid, "capture", _op_body(order_id))
     assert resp.status_code == 409, f"Expected 409, got {resp.status_code}: {resp.text}"
@@ -484,7 +491,7 @@ def test_capture_auto_payin_returns_409():
 @pytest.mark.tcid("CAP-030")
 def test_capture_min_amount_one():
     """Capture с суммой 1 (минимально допустимое). Ожидается 200 или 400."""
-    order_id = f"order_cap_min_{uuid.uuid4().hex[:6]}"
+    order_id = gen_order_id("cap_min")
     tid = _make_block_payin(order_id)
     body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": 1, "currency": "RUB"}}
     resp = post_operation(tid, "capture", body)

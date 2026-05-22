@@ -3,6 +3,7 @@ import hmac
 import html as _html
 import json
 import os
+import re
 import time
 import uuid
 from datetime import datetime
@@ -14,6 +15,8 @@ import requests
 from dotenv import load_dotenv
 
 load_dotenv()  # читает .env из корня проекта
+
+_RUN_ID = uuid.uuid4().hex[:6]
 
 # ─────────────────────────────────────────────
 # CONFIG
@@ -453,10 +456,31 @@ def _status_phrase(code: int) -> str:
 _INTER_TEST_DELAY = float(os.environ.get("TEST_DELAY", "3.0"))
 
 
+def gen_order_id(name: str) -> str:
+    """Unique order_id per test run, tied to a semantic name."""
+    slug = re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')[:60]
+    return f"{_RUN_ID}_{slug}"
+
+
 @pytest.fixture(autouse=True)
 def _inter_test_delay():
     yield
     time.sleep(_INTER_TEST_DELAY)
+
+
+@pytest.fixture(autouse=True)
+def _inject_unique_order_id(request):
+    """Replace order_id in all module-level body dicts before each test and restore after."""
+    module = request.node.module
+    patched = []
+    for obj in vars(module).values():
+        if isinstance(obj, dict) and isinstance(obj.get('merchant_data'), dict):
+            orig_md = obj['merchant_data']
+            obj['merchant_data'] = {**orig_md, 'order_id': gen_order_id(request.node.name)}
+            patched.append((obj, orig_md))
+    yield
+    for obj, orig_md in patched:
+        obj['merchant_data'] = orig_md
 
 
 @pytest.fixture(autouse=True)
@@ -503,7 +527,7 @@ def payin_transaction_id():
     """Делает реальный Payin и возвращает transaction_id для Rebill/Recurrent/Refund."""
     body = {
         "type": "payin",
-        "merchant_data": MERCHANT_DATA,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("payin_fixture")},
         "financial_data": {"amount": 10000, "currency": "RUB"},
         "flow_data": {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
         "customer_data": CUSTOMER_DATA,
@@ -521,7 +545,7 @@ def payin_block_transaction_id():
     """Создаёт Payin с capture_mode=manual (холд средств). Используется в тестах /capture и /cancel."""
     body = {
         "type": "payin",
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_block_fixture"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("block_payin_fixture")},
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
         "customer_data": CUSTOMER_DATA,

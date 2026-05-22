@@ -25,6 +25,7 @@ from conftest import (
     SERVICE_SECRET,
     assert_transaction_response,
     assert_error_response,
+    gen_order_id,
 )
 
 
@@ -57,8 +58,9 @@ def _make_block_payin(order_id: str = None) -> str:
     return resp.json()["transaction_id"]
 
 
-def _make_auto_payin(order_id: str = "order_refund_auto") -> str:
+def _make_auto_payin(order_id: str = None) -> str:
     """Создаёт Payin с capture_mode=auto и возвращает transaction_id."""
+    order_id = order_id or gen_order_id("refund_auto")
     body = {
         "type": "payin",
         "merchant_data": {**MERCHANT_DATA, "order_id": order_id},
@@ -212,9 +214,10 @@ def test_refund_invalid_currency(payin_transaction_id):
 @pytest.mark.tcid("RF-012")
 def test_refund_full():
     """Полный возврат (10000 из 10000). Ожидается 200 или 201."""
-    tid = _make_auto_payin("order_refund_full")
+    oid = gen_order_id("refund_full")
+    tid = _make_auto_payin(oid)
     body = {
-        "merchant_data": {"order_id": "order_refund_full"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 10000, "currency": "RUB"},
     }
     resp = post_operation(tid, "refund", body)
@@ -374,15 +377,16 @@ def test_refund_missing_timestamp():
 @pytest.mark.tcid("RF-022")
 def test_refund_exceeds_remaining():
     """Второй возврат превышает оставшуюся сумму. Ожидается 400 или 409."""
-    tid = _make_auto_payin("order_refund_exceed_remain")
+    oid = gen_order_id("refund_exceed_remain")
+    tid = _make_auto_payin(oid)
     body_first = {
-        "merchant_data": {"order_id": "order_refund_exceed_remain"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 9500, "currency": "RUB"},
     }
     resp1 = post_operation(tid, "refund", body_first)
     assert resp1.status_code in (200, 201), f"First refund failed: {resp1.text}"
     body_second = {
-        "merchant_data": {"order_id": "order_refund_exceed_remain"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp2 = post_operation(tid, "refund", body_second)
@@ -481,7 +485,7 @@ def test_refund_financial_data_empty_object(payin_transaction_id):
 @pytest.mark.tcid("RF-028")
 def test_refund_on_cancelled_transaction():
     """Refund по отменённой транзакции (cancelled). Ожидается 409."""
-    order_id = f"order_rf_cancelled_{uuid.uuid4().hex[:6]}"
+    order_id = gen_order_id("rf_cancelled")
     tid = _make_block_payin(order_id)
     cancel_body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": 1000, "currency": "RUB"}}
     resp_cancel = post_operation(tid, "cancel", cancel_body)
@@ -560,7 +564,7 @@ def test_refund_payout_transaction_returns_409():
     from conftest import THREED as _THREED, CUSTOMER_DATA as _CD
     payout_body = {
         "type": "payout",
-        "merchant_data": {**MERCHANT_DATA, "order_id": f"order_payout_rf_{uuid.uuid4().hex[:6]}"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("payout_rf")},
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": _THREED},
         "customer_data": _CD,

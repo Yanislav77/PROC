@@ -23,6 +23,7 @@ from conftest import (
     SERVICE_SECRET,
     assert_transaction_response,
     assert_error_response,
+    gen_order_id,
 )
 
 
@@ -74,9 +75,10 @@ def _make_block_payin(order_id: str = "order_block_cancel") -> str:
 @pytest.mark.tcid("CAN-001")
 def test_cancel_authorized_transaction():
     """Отмена authorized транзакции (capture_mode=manual). Ожидается 200 или 201."""
-    tid = _make_block_payin("order_cancel_auth")
+    oid = gen_order_id("cancel_auth")
+    tid = _make_block_payin(oid)
     body = {
-        "merchant_data": {"order_id": "order_cancel_auth"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp = post_operation(tid, "cancel", body)
@@ -89,9 +91,10 @@ def test_cancel_authorized_transaction():
 @pytest.mark.tcid("CAN-002")
 def test_cancel_with_description():
     """Отмена с опциональным полем description в merchant_data. Ожидается 200 или 201."""
-    tid = _make_block_payin("order_cancel_desc")
+    oid = gen_order_id("cancel_desc")
+    tid = _make_block_payin(oid)
     body = {
-        "merchant_data": {"order_id": "order_cancel_desc", "description": "Cancelled by customer"},
+        "merchant_data": {"order_id": oid, "description": "Cancelled by customer"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp = post_operation(tid, "cancel", body)
@@ -315,10 +318,11 @@ def test_cancel_amount_as_float():
 @pytest.mark.tcid("CAN-018")
 def test_cancel_with_webhook_url():
     """Cancel с опциональным webhook_url в merchant_data. Ожидается 200 или 201."""
-    tid = _make_block_payin("order_cancel_webhook")
+    oid = gen_order_id("cancel_webhook")
+    tid = _make_block_payin(oid)
     body = {
         "merchant_data": {
-            "order_id": "order_cancel_webhook",
+            "order_id": oid,
             "webhook_url": "https://example.com/webhook",
         },
         "financial_data": {"amount": 1000, "currency": "RUB"},
@@ -331,9 +335,10 @@ def test_cancel_with_webhook_url():
 @pytest.mark.tcid("CAN-019")
 def test_cancel_amount_exceeds_original():
     """Cancel с суммой, превышающей оригинальную (1000). Ожидается 400 или 409."""
-    tid = _make_block_payin("order_cancel_exceed")
+    oid = gen_order_id("cancel_exceed")
+    tid = _make_block_payin(oid)
     body = {
-        "merchant_data": {"order_id": "order_cancel_exceed"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 999999, "currency": "RUB"},
     }
     resp = post_operation(tid, "cancel", body)
@@ -344,9 +349,10 @@ def test_cancel_amount_exceeds_original():
 @pytest.mark.tcid("CAN-020")
 def test_cancel_already_cancelled():
     """Повторная отмена уже отменённой транзакции. Ожидается 409."""
-    tid = _make_block_payin("order_cancel_twice")
+    oid = gen_order_id("cancel_twice")
+    tid = _make_block_payin(oid)
     body = {
-        "merchant_data": {"order_id": "order_cancel_twice"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp1 = post_operation(tid, "cancel", body)
@@ -371,9 +377,10 @@ def test_cancel_currency_lowercase():
 @pytest.mark.tcid("CAN-022")
 def test_cancel_response_type_payin():
     """Cancel успешной authorized транзакции — тип в ответе должен быть 'payin'."""
-    tid = _make_block_payin("order_cancel_type_check")
+    oid = gen_order_id("cancel_type_check")
+    tid = _make_block_payin(oid)
     body = {
-        "merchant_data": {"order_id": "order_cancel_type_check"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     resp = post_operation(tid, "cancel", body)
@@ -389,7 +396,7 @@ def test_cancel_response_type_payin():
 @pytest.mark.tcid("CAN-023")
 def test_cancel_idempotency_same_key_returns_409():
     """Cancel с одним idempotency_key дважды — второй запрос должен вернуть 409."""
-    order_id = f"order_can_idem_{uuid.uuid4().hex[:6]}"
+    order_id = gen_order_id("can_idem")
     tid = _make_block_payin(order_id)
     body = _op_body(order_id)
     raw = json.dumps(body, separators=(",", ":"))
@@ -415,7 +422,7 @@ def test_cancel_idempotency_same_key_returns_409():
 @pytest.mark.tcid("CAN-024")
 def test_cancel_response_has_financial_data():
     """Cancel успешной транзакции — ответ содержит financial_data."""
-    order_id = f"order_can_fd_{uuid.uuid4().hex[:6]}"
+    order_id = gen_order_id("can_fd")
     tid = _make_block_payin(order_id)
     resp = post_operation(tid, "cancel", _op_body(order_id))
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
@@ -425,7 +432,7 @@ def test_cancel_response_has_financial_data():
 @pytest.mark.tcid("CAN-025")
 def test_cancel_response_has_created_at():
     """Cancel успешной транзакции — ответ содержит created_at."""
-    order_id = f"order_can_ca_{uuid.uuid4().hex[:6]}"
+    order_id = gen_order_id("can_ca")
     tid = _make_block_payin(order_id)
     resp = post_operation(tid, "cancel", _op_body(order_id))
     assert resp.status_code in (200, 201)
@@ -453,7 +460,7 @@ def test_cancel_missing_idempotency_key_returns_400():
 @pytest.mark.tcid("CAN-027")
 def test_cancel_auto_captured_transaction_returns_409():
     """Cancel по транзакции с capture_mode=auto (не в статусе authorized). Ожидается 409."""
-    order_id = f"order_can_auto_{uuid.uuid4().hex[:6]}"
+    order_id = gen_order_id("can_auto")
     tid = _make_completed_payin(order_id)
     resp = post_operation(tid, "cancel", _op_body(order_id))
     assert resp.status_code == 409, f"Expected 409, got {resp.status_code}: {resp.text}"

@@ -13,6 +13,7 @@ from conftest import (
     THREED,
     assert_transaction_response,
     assert_error_response,
+    gen_order_id,
 )
 
 _BASE = {
@@ -40,7 +41,7 @@ def test_payout_card():
     """Выплата на карту — pan и holder обязательны."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_payout_card"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("payout_card")},
         "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
     }
     _assert_payout_ok(post_transaction(body))
@@ -414,7 +415,7 @@ def test_payout_order_id_cyrillic():
 @pytest.mark.tcid("PY-037")
 def test_payout_order_id_duplicate():
     """merchant_data.order_id = дубликат уже созданного заказа. Ожидается 201 или 409."""
-    body = {**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": "order_payout_card"}}
+    body = {**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("payout_card_dup")}}
     resp = post_transaction(body)
     assert resp.status_code in (201, 409), f"Expected 201 or 409, got {resp.status_code}: {resp.text}"
 
@@ -967,11 +968,12 @@ def test_payout_wallet_brand_uppercase():
 @pytest.mark.tcid("PY-101")
 def test_payout_response_merchant_order_id():
     """В ответе merchant_data.order_id совпадает с отправленным значением."""
-    body = {**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": "order_resp_check_py"}}
+    order_id = gen_order_id("payout_resp_check")
+    body = {**_VALID, "merchant_data": {**MERCHANT_DATA, "order_id": order_id}}
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
     data = resp.json()
-    assert data.get("merchant_data", {}).get("order_id") == "order_resp_check_py"
+    assert data.get("merchant_data", {}).get("order_id") == order_id
 
 
 @pytest.mark.tcid("PY-102")
@@ -1072,7 +1074,7 @@ def test_payout_bank_account_no_account_number():
 def test_payout_response_type_is_payout():
     """Payout — type в ответе равен 'payout'."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_type_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_type")},
             "transaction_data": {"method": "sbp"}}
     resp = post_transaction(body)
     assert resp.status_code == 201
@@ -1083,7 +1085,7 @@ def test_payout_response_type_is_payout():
 def test_payout_response_content_type_is_json():
     """Payout — Content-Type ответа содержит application/json."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_ct_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_ct")},
             "transaction_data": {"method": "sbp"}}
     resp = post_transaction(body)
     assert resp.status_code == 201
@@ -1094,7 +1096,7 @@ def test_payout_response_content_type_is_json():
 def test_payout_card_without_expiry_fields():
     """Payout card без expiry_month/expiry_year — поля опциональны для payout. Ожидается 201."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_no_exp_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_no_exp")},
             "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}}}
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
@@ -1104,7 +1106,7 @@ def test_payout_card_without_expiry_fields():
 def test_payout_sbp_holder_field():
     """Payout SBP с полем holder в details. Ожидается 201."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_sbp_h_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_sbp_h")},
             "transaction_data": {"method": "sbp", "details": {
                 "phone": "+79991234567", "bank": "Sberbank", "holder": "IVAN IVANOV"}}}
     resp = post_transaction(body)
@@ -1115,7 +1117,7 @@ def test_payout_sbp_holder_field():
 def test_payout_sbp_missing_details():
     """Payout SBP без details. Ожидается 201."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_sbp_nd_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_sbp_nd")},
             "transaction_data": {"method": "sbp"}}
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
@@ -1125,7 +1127,7 @@ def test_payout_sbp_missing_details():
 def test_payout_financial_data_null_returns_400():
     """Payout с financial_data = null. Ожидается 400."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_fd_null_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_fd_null")},
             "financial_data": None, "transaction_data": {"method": "sbp"}}
     resp = post_transaction(body)
     assert resp.status_code == 400
@@ -1136,7 +1138,7 @@ def test_payout_financial_data_null_returns_400():
 def test_payout_customer_data_null_returns_400():
     """Payout с customer_data = null. Ожидается 400."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_cd_null_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_cd_null")},
             "customer_data": None, "transaction_data": {"method": "sbp"}}
     resp = post_transaction(body)
     assert resp.status_code == 400
@@ -1156,7 +1158,7 @@ def test_payout_merchant_data_null_returns_400():
 def test_payout_transaction_data_null_returns_400():
     """Payout с transaction_data = null. Ожидается 400."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_td_null_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_td_null")},
             "transaction_data": None}
     resp = post_transaction(body)
     assert resp.status_code == 400
@@ -1167,7 +1169,7 @@ def test_payout_transaction_data_null_returns_400():
 def test_payout_card_response_has_transaction_id():
     """Payout card — ответ содержит transaction_id."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_py_tid_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_tid")},
             "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}}}
     resp = post_transaction(body)
     assert resp.status_code == 201

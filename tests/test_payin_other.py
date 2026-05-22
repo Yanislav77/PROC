@@ -13,6 +13,7 @@ from conftest import (
     THREED,
     assert_transaction_response,
     assert_error_response,
+    gen_order_id,
 )
 
 _BASE = {
@@ -68,7 +69,7 @@ def test_payin_token_rebill(payin_transaction_id):
     """Ребилл по сохранённому токену карты (method=token), capture=auto."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_rebill"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("rebill")},
         "financial_data": {"amount": 1100, "currency": "RUB"},
         "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
         "transaction_data": {
@@ -85,7 +86,7 @@ def test_payin_token_rebill_manual_capture(payin_transaction_id):
     """Ребилл по токену с блокировкой средств (capture=manual)."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_rebill_manual"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("rebill_manual")},
         "financial_data": {"amount": 1100, "currency": "RUB"},
         "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
         "transaction_data": {
@@ -126,7 +127,7 @@ def test_payin_p2p_manual_capture():
     """Payin p2p с capture_mode=manual. Ожидается 201."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_p2p_manual"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("p2p_manual")},
         "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
         "transaction_data": {"method": "p2p"},
     }
@@ -138,7 +139,7 @@ def test_payin_p2p_with_description():
     """Payin p2p с опциональным description. Ожидается 201."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_p2p_desc", "description": "P2P test"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("p2p_desc"), "description": "P2P test"},
         "transaction_data": {"method": "p2p"},
     }
     _assert_payin_ok(post_transaction(body))
@@ -161,7 +162,7 @@ def test_payin_qr_is_recurrent():
     """Payin qr с is_recurrent=True. Ожидается 201."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_qr_recurrent"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("qr_recurrent")},
         "flow_data": {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
         "transaction_data": {"method": "qr"},
     }
@@ -203,7 +204,7 @@ def test_payin_mobile_with_provider():
     """Payin mobile с необязательным полем provider. Ожидается 201."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_mobile_provider"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("mobile_provider")},
         "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567", "provider": "MTS"}},
     }
     _assert_payin_ok(post_transaction(body))
@@ -249,7 +250,7 @@ def test_payin_token_nonexistent_uuid():
     """Payin token с несуществующим UUID (нулевой). Ожидается 400 или 404."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_token_nonexist"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("token_nonexist")},
         "transaction_data": {
             "method": "token",
             "details": {"token": "00000000-0000-0000-0000-000000000000"},
@@ -303,7 +304,7 @@ def test_payin_qr_response_fields():
     """Payin qr — ответ содержит все обязательные поля согласно спецификации."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_qr_resp"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("qr_resp")},
         "transaction_data": {"method": "qr"},
     }
     resp = post_transaction(body)
@@ -319,7 +320,7 @@ def test_payin_p2p_response_fields():
     """Payin p2p — ответ содержит transaction_id, status, type, created_at."""
     body = {
         **_BASE,
-        "merchant_data": {**MERCHANT_DATA, "order_id": "order_p2p_resp"},
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("p2p_resp")},
         "transaction_data": {"method": "p2p"},
     }
     resp = post_transaction(body)
@@ -333,7 +334,7 @@ def test_payin_p2p_response_fields():
 def test_payin_qr_response_has_action_data():
     """Payin QR — ответ для QR может содержать action с QR-кодом (если waiting_action)."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_qr_act_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("qr_act")},
             "transaction_data": {"method": "qr"}}
     resp = post_transaction(body)
     assert resp.status_code == 201
@@ -347,7 +348,7 @@ def test_payin_qr_response_has_action_data():
 def test_payin_p2p_response_has_action_data():
     """Payin P2P — ответ может содержать action с реквизитами перевода."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_p2p_act_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("p2p_act")},
             "transaction_data": {"method": "p2p"}}
     resp = post_transaction(body)
     assert resp.status_code == 201
@@ -359,7 +360,7 @@ def test_payin_p2p_response_has_action_data():
 def test_payin_mobile_response_fields():
     """Payin mobile — ответ содержит все обязательные поля."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_mob_rf_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("mob_rf")},
             "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567"}}}
     resp = post_transaction(body)
     assert resp.status_code == 201
@@ -370,7 +371,7 @@ def test_payin_mobile_response_fields():
 def test_payin_p2p_zero_amount_returns_400():
     """Payin P2P с нулевой суммой. Ожидается 400."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_p2p_z_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("p2p_z")},
             "financial_data": {"amount": 0, "currency": "RUB"},
             "transaction_data": {"method": "p2p"}}
     resp = post_transaction(body)
@@ -382,7 +383,7 @@ def test_payin_p2p_zero_amount_returns_400():
 def test_payin_qr_negative_amount_returns_400():
     """Payin QR с отрицательной суммой. Ожидается 400."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_qr_neg_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("qr_neg")},
             "financial_data": {"amount": -1, "currency": "RUB"},
             "transaction_data": {"method": "qr"}}
     resp = post_transaction(body)
@@ -394,7 +395,7 @@ def test_payin_qr_negative_amount_returns_400():
 def test_payin_token_missing_parent_transaction_id():
     """Payin token без parent_transaction_id. Ожидается 400."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_tok_np_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("tok_np")},
             "transaction_data": {
                 "method": "token",
                 "details": {"token": "b928586b-e6ec-4400-9039-e36f19c0094c"},
@@ -407,7 +408,7 @@ def test_payin_token_missing_parent_transaction_id():
 def test_payin_mobile_phone_null_returns_400():
     """Payin mobile с phone = null. Ожидается 400."""
     body = {**_BASE,
-            "merchant_data": {**MERCHANT_DATA, "order_id": f"order_mob_pn_{uuid.uuid4().hex[:6]}"},
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("mob_pn")},
             "transaction_data": {"method": "mobile", "details": {"phone": None}}}
     resp = post_transaction(body)
     assert resp.status_code == 400
