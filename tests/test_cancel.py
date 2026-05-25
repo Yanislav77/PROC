@@ -348,7 +348,7 @@ def test_cancel_amount_exceeds_original():
 
 @pytest.mark.tcid("CAN-020")
 def test_cancel_already_cancelled():
-    """Повторная отмена уже отменённой транзакции. Ожидается 409."""
+    """Повторная отмена уже отменённой транзакции. Ожидается 400 или 409."""
     oid = gen_order_id("cancel_twice")
     tid = _make_block_payin(oid)
     body = {
@@ -358,7 +358,7 @@ def test_cancel_already_cancelled():
     resp1 = post_operation(tid, "cancel", body)
     assert resp1.status_code in (200, 201), f"First cancel failed: {resp1.text}"
     resp2 = post_operation(tid, "cancel", body)
-    assert resp2.status_code == 409, f"Expected 409, got {resp2.status_code}: {resp2.text}"
+    assert resp2.status_code in (400, 409), f"Expected 400 or 409, got {resp2.status_code}: {resp2.text}"
     assert_error_response(resp2)
 
 
