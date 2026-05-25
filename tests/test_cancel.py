@@ -167,9 +167,10 @@ def test_cancel_no_auth():
 @pytest.mark.tcid("CAN-008")
 def test_cancel_invalid_signature():
     """Cancel с подписью из нулей. Ожидается 401 или 403."""
-    url = f"{BASE_URL}/000000000000/cancel"
+    tid = _make_block_payin(gen_order_id("cancel_inv_sig"))
+    url = f"{BASE_URL}/{tid}/cancel"
     body = {
-        "merchant_data": {"order_id": "order_cancel_test"},
+        "merchant_data": {"order_id": gen_order_id("cancel_inv_sig")},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     }
     raw = json.dumps(body, separators=(",", ":"))
