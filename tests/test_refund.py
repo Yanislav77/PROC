@@ -76,13 +76,19 @@ def _make_auto_payin(order_id: str = None) -> str:
     return resp.json()["transaction_id"]
 
 
+@pytest.fixture
+def refund_tid():
+    """Создаёт новую Payin-транзакцию (auto) перед каждым тестом возврата."""
+    return _make_auto_payin(gen_order_id("rf_fixture"))
+
+
 # ─────────────────────────────────────────────
 # HAPPY PATH
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RF-001")
-def test_refund_partial(payin_transaction_id):
+def test_refund_partial(refund_tid):
     """Частичный возврат (1000 из 10000) по существующей транзакции. Ожидается 200 или 201."""
-    resp = post_operation(payin_transaction_id, "refund", _REFUND_BODY)
+    resp = post_operation(refund_tid, "refund", _REFUND_BODY)
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
     data = resp.json()
     assert_transaction_response(data)
@@ -109,103 +115,103 @@ def test_refund_nonexistent_transaction():
 
 
 @pytest.mark.tcid("RF-003")
-def test_refund_amount_exceeds_original(payin_transaction_id):
+def test_refund_amount_exceeds_original(refund_tid):
     """Сумма возврата (99999999) превышает оригинальную сумму транзакции. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_refund_test", "webhook_url": "https://example.com/"},
         "financial_data": {"amount": 99999999, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-004")
-def test_refund_missing_merchant_data(payin_transaction_id):
+def test_refund_missing_merchant_data(refund_tid):
     """Возврат без merchant_data (обязательное). Ожидается 400."""
     body = {"financial_data": {"amount": 100, "currency": "RUB"}}
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-005")
-def test_refund_missing_financial_data(payin_transaction_id):
+def test_refund_missing_financial_data(refund_tid):
     """Возврат без financial_data (обязательное). Ожидается 400."""
     body = {"merchant_data": {"order_id": "order_refund_test"}}
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-006")
-def test_refund_missing_order_id(payin_transaction_id):
+def test_refund_missing_order_id(refund_tid):
     """Возврат с merchant_data без order_id. Ожидается 400."""
     body = {
         "merchant_data": {"description": "Refund"},
         "financial_data": {"amount": 100, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-007")
-def test_refund_missing_currency(payin_transaction_id):
+def test_refund_missing_currency(refund_tid):
     """Возврат без поля currency в financial_data. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_refund_test"},
         "financial_data": {"amount": 100},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-008")
-def test_refund_missing_amount(payin_transaction_id):
+def test_refund_missing_amount(refund_tid):
     """Возврат без поля amount в financial_data. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_refund_test"},
         "financial_data": {"currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-009")
-def test_refund_zero_amount(payin_transaction_id):
+def test_refund_zero_amount(refund_tid):
     """Возврат с нулевой суммой. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_refund_test"},
         "financial_data": {"amount": 0, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-010")
-def test_refund_negative_amount(payin_transaction_id):
+def test_refund_negative_amount(refund_tid):
     """Возврат с отрицательной суммой. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_refund_test"},
         "financial_data": {"amount": -100, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-011")
-def test_refund_invalid_currency(payin_transaction_id):
+def test_refund_invalid_currency(refund_tid):
     """Возврат с невалидным кодом валюты. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_refund_test"},
         "financial_data": {"amount": 100, "currency": "INVALID"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
@@ -230,7 +236,7 @@ def test_refund_full():
 
 
 @pytest.mark.tcid("RF-013")
-def test_refund_with_description(payin_transaction_id):
+def test_refund_with_description(refund_tid):
     """Возврат с опциональным description в merchant_data. Ожидается 200 или 201."""
     body = {
         "merchant_data": {
@@ -239,19 +245,19 @@ def test_refund_with_description(payin_transaction_id):
         },
         "financial_data": {"amount": 500, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
     assert_transaction_response(resp.json())
 
 
 @pytest.mark.tcid("RF-014")
-def test_refund_without_webhook_url(payin_transaction_id):
+def test_refund_without_webhook_url(refund_tid):
     """Возврат без webhook_url (необязательное). Ожидается 200 или 201."""
     body = {
         "merchant_data": {"order_id": "order_refund_test"},
         "financial_data": {"amount": 500, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
     assert_transaction_response(resp.json())
 
@@ -260,37 +266,37 @@ def test_refund_without_webhook_url(payin_transaction_id):
 # ГРАНИЧНЫЕ СЛУЧАИ — ТИП ДАННЫХ
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RF-015")
-def test_refund_amount_as_string(payin_transaction_id):
+def test_refund_amount_as_string(refund_tid):
     """Возврат с суммой как строкой. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_refund_test"},
         "financial_data": {"amount": "500", "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-016")
-def test_refund_amount_as_float(payin_transaction_id):
+def test_refund_amount_as_float(refund_tid):
     """Возврат с суммой как вещественным числом. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_refund_test"},
         "financial_data": {"amount": 100.50, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-017")
-def test_refund_currency_lowercase(payin_transaction_id):
+def test_refund_currency_lowercase(refund_tid):
     """Возврат с валютой в нижнем регистре. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_refund_test"},
         "financial_data": {"amount": 100, "currency": "rub"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
@@ -397,13 +403,13 @@ def test_refund_exceeds_remaining():
 
 
 @pytest.mark.tcid("RF-023")
-def test_refund_response_fields(payin_transaction_id):
+def test_refund_response_fields(refund_tid):
     """Refund — проверка типов всех обязательных полей ответа."""
     body = {
         "merchant_data": {"order_id": "order_refund_test"},
         "financial_data": {"amount": 100, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
     data = resp.json()
     assert_transaction_response(data)
@@ -415,7 +421,7 @@ def test_refund_response_fields(payin_transaction_id):
 # ДОПОЛНИТЕЛЬНЫЕ (RF-024 … RF-035)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RF-024")
-def test_refund_idempotency_same_key_second_returns_409(payin_transaction_id):
+def test_refund_idempotency_same_key_second_returns_409(refund_tid):
     """Refund с одним idempotency_key дважды — второй возвращает 409."""
     body = {
         "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
@@ -433,7 +439,7 @@ def test_refund_idempotency_same_key_second_returns_409(payin_transaction_id):
             "Api-Signature": sig,
             "Api-Timestamp": ts,
         }
-        return requests.post(f"{BASE_URL}/{payin_transaction_id}/refund", data=raw, headers=h, timeout=30)
+        return requests.post(f"{BASE_URL}/{refund_tid}/refund", data=raw, headers=h, timeout=30)
 
     r1 = _do(str(int(time.time())))
     assert r1.status_code in (200, 201), f"First refund failed: {r1.text}"
@@ -442,7 +448,7 @@ def test_refund_idempotency_same_key_second_returns_409(payin_transaction_id):
 
 
 @pytest.mark.tcid("RF-025")
-def test_refund_missing_idempotency_key_returns_400(payin_transaction_id):
+def test_refund_missing_idempotency_key_returns_400(refund_tid):
     """Refund без Api-Idempotency-Key. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
@@ -457,29 +463,29 @@ def test_refund_missing_idempotency_key_returns_400(payin_transaction_id):
         "Api-Signature": sig,
         "Api-Timestamp": timestamp,
     }
-    resp = requests.post(f"{BASE_URL}/{payin_transaction_id}/refund", data=raw, headers=headers, timeout=30)
+    resp = requests.post(f"{BASE_URL}/{refund_tid}/refund", data=raw, headers=headers, timeout=30)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-026")
-def test_refund_response_content_type_is_json(payin_transaction_id):
+def test_refund_response_content_type_is_json(refund_tid):
     """Refund — Content-Type ответа содержит application/json."""
     body = {
         "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
         "financial_data": {"amount": 100, "currency": "RUB"},
     }
     from conftest import post_operation as _post_op
-    resp = _post_op(payin_transaction_id, "refund", body)
+    resp = _post_op(refund_tid, "refund", body)
     assert "application/json" in resp.headers.get("Content-Type", ""), \
         f"Content-Type не json: {resp.headers.get('Content-Type')}"
 
 
 @pytest.mark.tcid("RF-027")
-def test_refund_financial_data_empty_object(payin_transaction_id):
+def test_refund_financial_data_empty_object(refund_tid):
     """Refund с financial_data как пустым объектом. Ожидается 400."""
     body = {"merchant_data": {"order_id": MERCHANT_DATA["order_id"]}, "financial_data": {}}
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -500,36 +506,36 @@ def test_refund_on_cancelled_transaction():
 
 
 @pytest.mark.tcid("RF-029")
-def test_refund_currency_mismatch(payin_transaction_id):
+def test_refund_currency_mismatch(refund_tid):
     """Refund с валютой, отличной от оригинальной транзакции. Ожидается 400 или 409."""
     body = {
         "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
         "financial_data": {"amount": 100, "currency": "USD"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code in (400, 409), f"Expected 400/409, got {resp.status_code}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("RF-030")
-def test_refund_min_amount_one(payin_transaction_id):
+def test_refund_min_amount_one(refund_tid):
     """Refund с суммой 1 (минимально допустимое). Ожидается 200 или 201."""
     body = {
         "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
         "financial_data": {"amount": 1, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("RF-031")
-def test_refund_response_has_financial_data(payin_transaction_id):
+def test_refund_response_has_financial_data(refund_tid):
     """Refund — ответ содержит financial_data с amount и currency."""
     body = {
         "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
         "financial_data": {"amount": 100, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     if resp.status_code in (200, 201):
         fd = resp.json().get("financial_data", {})
         assert "amount" in fd
@@ -537,25 +543,25 @@ def test_refund_response_has_financial_data(payin_transaction_id):
 
 
 @pytest.mark.tcid("RF-032")
-def test_refund_response_transaction_id_is_int(payin_transaction_id):
+def test_refund_response_transaction_id_is_int(refund_tid):
     """Refund — transaction_id в ответе является целым числом."""
     body = {
         "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
         "financial_data": {"amount": 100, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     if resp.status_code in (200, 201):
         assert isinstance(resp.json().get("transaction_id"), int)
 
 
 @pytest.mark.tcid("RF-033")
-def test_refund_merchant_data_null_values(payin_transaction_id):
+def test_refund_merchant_data_null_values(refund_tid):
     """Refund с order_id = null в merchant_data. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": None},
         "financial_data": {"amount": 100, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -584,12 +590,12 @@ def test_refund_payout_transaction_returns_409():
 
 
 @pytest.mark.tcid("RF-035")
-def test_refund_amount_null(payin_transaction_id):
+def test_refund_amount_null(refund_tid):
     """Refund с amount = null. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
         "financial_data": {"amount": None, "currency": "RUB"},
     }
-    resp = post_operation(payin_transaction_id, "refund", body)
+    resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
