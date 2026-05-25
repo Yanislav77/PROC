@@ -196,7 +196,7 @@ THREED = {"challenge_window_size": "05"}
 # REPORT FILE (HTML)
 # ─────────────────────────────────────────────
 _report_file = None
-_http_captures: dict = {}  # nodeid -> (list[(PreparedRequest, Response)], list[db_records])
+_http_captures: dict = {}  # nodeid -> (list[(PreparedRequest, Response)], poll|(None), list[db_records])
 _call_reports:  dict = {}  # nodeid -> report (stored until teardown phase)
 _tc_ids:        dict = {}  # nodeid -> tcid string (from @pytest.mark.tcid)
 _test_counter = 0
@@ -299,7 +299,7 @@ def _sc_class(code: int) -> str:
     return "s5xx"
 
 
-def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: str = "", db_data: list = None) -> None:
+def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: str = "", db_data: list = None, poll=None) -> None:
     global _test_counter
     _test_counter += 1
     idx = _test_counter
@@ -321,26 +321,35 @@ def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: 
         f.write('    <div class="section-label">Error</div>\n')
         f.write(f'    <div class="error-block"><pre>{_esc(error)}</pre></div>\n')
 
-    for prep, resp in captures:
+    def _render_http_block(prep, resp, title, css_class):
         phrase = _status_phrase(resp.status_code)
         sc = _sc_class(resp.status_code)
-
-        f.write('    <div class="section-label">Request</div>\n')
-        f.write(f'    <p class="http-line"><span class="method">{_esc(prep.method)}</span>'
+        f.write(f'    <div class="http-block">\n')
+        f.write(f'      <div class="http-block-title {css_class}">{title}</div>\n')
+        f.write(f'      <div class="http-block-body">\n')
+        f.write(f'        <div class="section-label">Request</div>\n')
+        f.write(f'        <p class="http-line"><span class="method">{_esc(prep.method)}</span>'
                 f' <span class="url">{_esc(prep.url)}</span></p>\n')
         if prep.headers:
             headers_text = "\n".join(f"{k}: {v}" for k, v in prep.headers.items())
-            f.write(f'    <pre class="headers">{_esc(headers_text)}</pre>\n')
+            f.write(f'        <pre class="headers">{_esc(headers_text)}</pre>\n')
         body_text = _fmt_body_plain(prep.body)
         if body_text:
-            f.write(f'    <pre class="body">{_esc(body_text)}</pre>\n')
-
-        f.write('    <div class="section-label">Response</div>\n')
-        f.write(f'    <p class="http-line"><span class="status-code {sc}">'
+            f.write(f'        <pre class="body">{_esc(body_text)}</pre>\n')
+        f.write(f'        <div class="section-label">Response</div>\n')
+        f.write(f'        <p class="http-line"><span class="status-code {sc}">'
                 f'{resp.status_code} {_esc(phrase)}</span></p>\n')
         resp_text = _fmt_body_plain(resp.text)
         if resp_text:
-            f.write(f'    <pre class="body">{_esc(resp_text)}</pre>\n')
+            f.write(f'        <pre class="body">{_esc(resp_text)}</pre>\n')
+        f.write(f'      </div>\n    </div>\n')
+
+    for prep, resp in captures:
+        _render_http_block(prep, resp, "Создание транзакции", "create")
+
+    if poll:
+        prep, resp = poll
+        _render_http_block(prep, resp, "Опрос статуса", "poll")
 
     if db_data:
         f.write('    <div class="section-label">Database</div>\n')
@@ -431,6 +440,10 @@ pre.headers{{background:#0a0f1a;border:1px solid #1e2a3a;border-radius:4px;paddi
 .error-block{{background:#1a0a0a;border-left:3px solid #f44336;border-radius:0 4px 4px 0;padding:12px;margin-top:8px}}
 .error-block pre{{color:#ff8a80;font-size:.82em;white-space:pre-wrap;word-break:break-all;
   max-height:400px;overflow-y:auto;margin:0}}
+.http-block{{border:1px solid #2a2a4a;border-radius:6px;margin-top:12px;overflow:hidden}}
+.http-block-title{{background:#1a1a38;padding:6px 12px;font-size:.75em;font-weight:bold;letter-spacing:.07em;text-transform:uppercase;border-bottom:1px solid #2a2a4a}}
+.http-block-title.create{{color:#82aaff}}.http-block-title.poll{{color:#c3e88d}}
+.http-block-body{{padding:10px 14px}}
 .db-block{{margin-top:8px;max-height:260px;overflow:auto}}
 .db-label{{font-size:.72em;font-weight:bold;color:#9c7adf;letter-spacing:.06em;margin-bottom:4px}}
 .db-table{{border-collapse:collapse;font-family:'Consolas',monospace;font-size:.78em;width:100%}}
@@ -515,11 +528,11 @@ def pytest_runtest_logreport(report):
         call = _call_reports.pop(report.nodeid, None)
         if call is None:
             return
-        captures, db_data = _http_captures.pop(report.nodeid, ([], []))
+        captures, poll, db_data = _http_captures.pop(report.nodeid, ([], None, []))
         status = "PASSED" if call.passed else "FAILED"
         error = str(call.longrepr) if call.failed else None
         tc_id = _tc_ids.get(report.nodeid, "")
-        _write_report_entry(report.nodeid, status, error, captures, tc_id, db_data)
+        _write_report_entry(report.nodeid, status, error, captures, tc_id, db_data, poll)
 
 
 # ─────────────────────────────────────────────
@@ -599,21 +612,23 @@ def log_http_calls(request):
     yield
     requests.Session.send = orig
 
+    poll = None
     db_data = []
     for _, resp in list(captures):
         if resp.status_code == 201:
             try:
                 tr_id = resp.json().get("transaction_id")
                 if isinstance(tr_id, int):
+                    time.sleep(1)
                     poll_headers = make_headers(TERMINAL_ID, method="GET")
                     poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
-                    captures.append((poll_resp.request, poll_resp))
+                    poll = (poll_resp.request, poll_resp)
                     db_data = _query_transaction_from_db(tr_id)
                     break
             except Exception:
                 pass
 
-    _http_captures[request.node.nodeid] = (captures, db_data)
+    _http_captures[request.node.nodeid] = (captures, poll, db_data)
 
     bar = "━" * 64
     for prep, resp in captures:
