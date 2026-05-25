@@ -353,24 +353,41 @@ def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: 
 
     if db_data:
         f.write('    <div class="section-label">Database</div>\n')
+        f.write('    <div class="db-section">\n')
+        grouped: dict = {}
         for record in db_data:
-            f.write(f'    <div class="db-block">\n')
-            f.write(f'      <div class="db-label">{_esc(record["db"])} · {_esc(record["table"])}</div>\n')
-            f.write('      <table class="db-table"><thead><tr>\n')
-            for col in record["columns"]:
-                f.write(f'        <th>{_esc(col)}</th>\n')
-            f.write('      </tr></thead><tbody>\n')
-            for row in record["rows"]:
-                f.write('        <tr>\n')
-                for val in row:
-                    if val is None:
-                        cell = "<span style='color:#555'>NULL</span>"
-                    else:
-                        s = str(val)
-                        cell = _esc(s[:200] + "…" if len(s) > 200 else s)
-                    f.write(f'          <td>{cell}</td>\n')
-                f.write('        </tr>\n')
-            f.write('      </tbody></table>\n    </div>\n')
+            grouped.setdefault(record["db"], []).append(record)
+        order = [db for db in ("secure", "support") if db in grouped]
+        order += [db for db in grouped if db not in order]
+        for db_name in order:
+            safe = _esc(db_name)
+            f.write(f'      <div class="db-group">\n')
+            f.write(f'        <div class="db-group-header {safe}">{safe}</div>\n')
+            f.write(f'        <div class="db-group-body">\n')
+            for record in grouped[db_name]:
+                f.write(f'          <div class="db-table-block">\n')
+                f.write(f'            <div class="db-table-name">{_esc(record["table"])}</div>\n')
+                f.write(f'            <div class="db-block">\n')
+                f.write('              <table class="db-table"><thead><tr>\n')
+                for col in record["columns"]:
+                    f.write(f'                <th>{_esc(col)}</th>\n')
+                f.write('              </tr></thead><tbody>\n')
+                for row in record["rows"]:
+                    f.write('              <tr>\n')
+                    for val in row:
+                        if val is None:
+                            cell = "<span style='color:#555'>NULL</span>"
+                        else:
+                            s = str(val)
+                            cell = _esc(s[:200] + "…" if len(s) > 200 else s)
+                        f.write(f'                <td>{cell}</td>\n')
+                    f.write('              </tr>\n')
+                f.write('              </tbody></table>\n')
+                f.write('            </div>\n')
+                f.write('          </div>\n')
+            f.write('        </div>\n')
+            f.write('      </div>\n')
+        f.write('    </div>\n')
 
     f.write('  </div>\n</div>\n')
     f.flush()
@@ -444,11 +461,18 @@ pre.headers{{background:#0a0f1a;border:1px solid #1e2a3a;border-radius:4px;paddi
 .http-block-title{{background:#1a1a38;padding:6px 12px;font-size:.75em;font-weight:bold;letter-spacing:.07em;text-transform:uppercase;border-bottom:1px solid #2a2a4a}}
 .http-block-title.create{{color:#82aaff}}.http-block-title.poll{{color:#c3e88d}}
 .http-block-body{{padding:10px 14px}}
-.db-block{{margin-top:8px;max-height:260px;overflow:auto}}
-.db-label{{font-size:.72em;font-weight:bold;color:#9c7adf;letter-spacing:.06em;margin-bottom:4px}}
+.db-section{{margin-top:12px}}
+.db-group{{border-radius:6px;margin-top:10px;overflow:hidden;border:1px solid #2a2a4a}}
+.db-group-header{{padding:7px 14px;font-size:.76em;font-weight:bold;letter-spacing:.08em;text-transform:uppercase}}
+.db-group-header.secure{{background:#1a1333;color:#c9a8ff;border-bottom:1px solid #3a2a5a}}
+.db-group-header.support{{background:#0f1f2a;color:#82aaff;border-bottom:1px solid #1e3a4a}}
+.db-group-body{{padding:10px 12px;display:flex;flex-direction:column;gap:10px}}
+.db-table-block{{border:1px solid #222240;border-radius:4px;overflow:hidden}}
+.db-table-name{{background:#16163a;padding:4px 10px;font-family:'Consolas',monospace;font-size:.74em;color:#aaa;border-bottom:1px solid #222240}}
+.db-block{{max-height:220px;overflow:auto}}
 .db-table{{border-collapse:collapse;font-family:'Consolas',monospace;font-size:.78em;width:100%}}
-.db-table th{{background:#1e1433;color:#c9a8ff;padding:4px 10px;text-align:left;border:1px solid #3a2a5a;white-space:nowrap}}
-.db-table td{{padding:4px 10px;border:1px solid #2a1e40;color:#cdd9e5;vertical-align:top;word-break:break-all;max-width:400px}}
+.db-table th{{background:#1e1433;color:#c9a8ff;padding:4px 10px;text-align:left;border:1px solid #3a2a5a;white-space:nowrap;position:sticky;top:0}}
+.db-table td{{padding:4px 10px;border:1px solid #2a1e40;color:#cdd9e5;vertical-align:top;word-break:break-all;max-width:360px}}
 .db-table tr:nth-child(even) td{{background:#130f1e}}
 </style>
 </head>
