@@ -14,6 +14,15 @@ import pytest
 import requests
 from dotenv import load_dotenv
 
+try:
+    import psycopg2 as _psycopg2
+    _DB_HOST     = "dbcoretest-preprod.ctxmbfymfost.eu-west-1.rds.amazonaws.com"
+    _DB_USER     = "postgres"
+    _DB_PASSWORD = "pmsqla1234"
+    _DB_AVAILABLE = True
+except ImportError:
+    _DB_AVAILABLE = False
+
 load_dotenv()  # читает .env из корня проекта
 
 _RUN_ID = uuid.uuid4().hex[:6]
@@ -187,12 +196,70 @@ THREED = {"challenge_window_size": "05"}
 # REPORT FILE (HTML)
 # ─────────────────────────────────────────────
 _report_file = None
-_http_captures: dict = {}  # nodeid -> list[(PreparedRequest, Response)]
+_http_captures: dict = {}  # nodeid -> (list[(PreparedRequest, Response)], list[db_records])
 _call_reports:  dict = {}  # nodeid -> report (stored until teardown phase)
 _tc_ids:        dict = {}  # nodeid -> tcid string (from @pytest.mark.tcid)
 _test_counter = 0
 
 _REPORTS_DIR = Path(__file__).parent.parent / "reports"
+
+
+def _query_transaction_from_db(tr_id: int) -> list:
+    """Query both DBs for transaction data. Returns list of {db, table, columns, rows}."""
+    if not _DB_AVAILABLE:
+        return []
+    results = []
+    try:
+        sc = _psycopg2.connect(host=_DB_HOST, port=5432, dbname="secure", user=_DB_USER, password=_DB_PASSWORD)
+        sp = _psycopg2.connect(host=_DB_HOST, port=5432, dbname="support", user=_DB_USER, password=_DB_PASSWORD)
+        sc_cur = sc.cursor()
+        sp_cur = sp.cursor()
+
+        card_id = None
+
+        queries = [
+            (sc_cur, "secure",  "transactions",            "id",           tr_id),
+            (sc_cur, "secure",  "transactions_history",    "trans_id",     tr_id),
+            (sp_cur, "support", "bapi_tr_fields",          "tr_id",        tr_id),
+            (sp_cur, "support", "limits_transaction_info", "tran_id",      tr_id),
+            (sp_cur, "support", "receipt",                 "tran_id",      tr_id),
+            (sp_cur, "support", "meta_transaction",        "transaction_id", tr_id),
+            (sp_cur, "support", "af_data",                 "tr_id",        tr_id),
+            (sp_cur, "support", "ui_interactions",         "transaction_id", tr_id),
+        ]
+
+        for cur, db, table, col, val in queries:
+            try:
+                cur.execute(f'SELECT * FROM public."{table}" WHERE "{col}" = %s LIMIT 5', (val,))
+                rows = cur.fetchall()
+                if rows:
+                    cols = [d[0] for d in cur.description]
+                    results.append({"db": db, "table": table, "columns": cols, "rows": rows})
+                    if table == "transactions":
+                        idx = cols.index("card_id") if "card_id" in cols else -1
+                        if idx >= 0:
+                            card_id = rows[0][idx]
+            except Exception:
+                pass
+
+        if card_id:
+            try:
+                sc_cur.execute(
+                    "SELECT id, key_id, cardholder, expiration_date FROM public.card_storage WHERE id = %s",
+                    (str(card_id),)
+                )
+                rows = sc_cur.fetchall()
+                if rows:
+                    cols = [d[0] for d in sc_cur.description]
+                    results.append({"db": "secure", "table": "card_storage", "columns": cols, "rows": rows})
+            except Exception:
+                pass
+
+        sc.close()
+        sp.close()
+    except Exception:
+        pass
+    return results
 
 
 def _make_report_suffix(config) -> str:
@@ -232,7 +299,7 @@ def _sc_class(code: int) -> str:
     return "s5xx"
 
 
-def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: str = "") -> None:
+def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: str = "", db_data: list = None) -> None:
     global _test_counter
     _test_counter += 1
     idx = _test_counter
@@ -274,6 +341,27 @@ def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: 
         resp_text = _fmt_body_plain(resp.text)
         if resp_text:
             f.write(f'    <pre class="body">{_esc(resp_text)}</pre>\n')
+
+    if db_data:
+        f.write('    <div class="section-label">Database</div>\n')
+        for record in db_data:
+            f.write(f'    <div class="db-block">\n')
+            f.write(f'      <div class="db-label">{_esc(record["db"])} · {_esc(record["table"])}</div>\n')
+            f.write('      <table class="db-table"><thead><tr>\n')
+            for col in record["columns"]:
+                f.write(f'        <th>{_esc(col)}</th>\n')
+            f.write('      </tr></thead><tbody>\n')
+            for row in record["rows"]:
+                f.write('        <tr>\n')
+                for val in row:
+                    if val is None:
+                        cell = "<span style='color:#555'>NULL</span>"
+                    else:
+                        s = str(val)
+                        cell = _esc(s[:200] + "…" if len(s) > 200 else s)
+                    f.write(f'          <td>{cell}</td>\n')
+                f.write('        </tr>\n')
+            f.write('      </tbody></table>\n    </div>\n')
 
     f.write('  </div>\n</div>\n')
     f.flush()
@@ -343,6 +431,12 @@ pre.headers{{background:#0a0f1a;border:1px solid #1e2a3a;border-radius:4px;paddi
 .error-block{{background:#1a0a0a;border-left:3px solid #f44336;border-radius:0 4px 4px 0;padding:12px;margin-top:8px}}
 .error-block pre{{color:#ff8a80;font-size:.82em;white-space:pre-wrap;word-break:break-all;
   max-height:400px;overflow-y:auto;margin:0}}
+.db-block{{margin-top:8px;max-height:260px;overflow:auto}}
+.db-label{{font-size:.72em;font-weight:bold;color:#9c7adf;letter-spacing:.06em;margin-bottom:4px}}
+.db-table{{border-collapse:collapse;font-family:'Consolas',monospace;font-size:.78em;width:100%}}
+.db-table th{{background:#1e1433;color:#c9a8ff;padding:4px 10px;text-align:left;border:1px solid #3a2a5a;white-space:nowrap}}
+.db-table td{{padding:4px 10px;border:1px solid #2a1e40;color:#cdd9e5;vertical-align:top;word-break:break-all;max-width:400px}}
+.db-table tr:nth-child(even) td{{background:#130f1e}}
 </style>
 </head>
 <body>
@@ -421,11 +515,11 @@ def pytest_runtest_logreport(report):
         call = _call_reports.pop(report.nodeid, None)
         if call is None:
             return
-        captures = _http_captures.pop(report.nodeid, [])
+        captures, db_data = _http_captures.pop(report.nodeid, ([], []))
         status = "PASSED" if call.passed else "FAILED"
         error = str(call.longrepr) if call.failed else None
         tc_id = _tc_ids.get(report.nodeid, "")
-        _write_report_entry(report.nodeid, status, error, captures, tc_id)
+        _write_report_entry(report.nodeid, status, error, captures, tc_id, db_data)
 
 
 # ─────────────────────────────────────────────
@@ -505,7 +599,18 @@ def log_http_calls(request):
     yield
     requests.Session.send = orig
 
-    _http_captures[request.node.nodeid] = captures
+    db_data = []
+    for _, resp in captures:
+        if resp.status_code == 201:
+            try:
+                tr_id = resp.json().get("transaction_id")
+                if isinstance(tr_id, int):
+                    db_data = _query_transaction_from_db(tr_id)
+                    break
+            except Exception:
+                pass
+
+    _http_captures[request.node.nodeid] = (captures, db_data)
 
     bar = "━" * 64
     for prep, resp in captures:
