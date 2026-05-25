@@ -299,7 +299,7 @@ def _sc_class(code: int) -> str:
     return "s5xx"
 
 
-def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: str = "", db_data: list = None, poll=None) -> None:
+def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: str = "", db_data: list = None, polls=None) -> None:
     global _test_counter
     _test_counter += 1
     idx = _test_counter
@@ -347,9 +347,8 @@ def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: 
     for prep, resp in captures:
         _render_http_block(prep, resp, "Создание транзакции", "create")
 
-    if poll:
-        prep, resp = poll
-        _render_http_block(prep, resp, "Опрос статуса", "poll")
+    for p_prep, p_resp, p_title in (polls or []):
+        _render_http_block(p_prep, p_resp, p_title, "poll")
 
     if db_data:
         f.write('    <div class="section-label">Database</div>\n')
@@ -552,11 +551,11 @@ def pytest_runtest_logreport(report):
         call = _call_reports.pop(report.nodeid, None)
         if call is None:
             return
-        captures, poll, db_data = _http_captures.pop(report.nodeid, ([], None, []))
+        captures, polls, db_data = _http_captures.pop(report.nodeid, ([], [], []))
         status = "PASSED" if call.passed else "FAILED"
         error = str(call.longrepr) if call.failed else None
         tc_id = _tc_ids.get(report.nodeid, "")
-        _write_report_entry(report.nodeid, status, error, captures, tc_id, db_data, poll)
+        _write_report_entry(report.nodeid, status, error, captures, tc_id, db_data, polls)
 
 
 # ─────────────────────────────────────────────
@@ -636,23 +635,43 @@ def log_http_calls(request):
     yield
     requests.Session.send = orig
 
-    poll = None
+    _OP_TITLES = {
+        "/cancel":  "Статус после отмены",
+        "/capture": "Статус после захвата",
+        "/refund":  "Статус после возврата",
+        "/confirm": "Статус после подтверждения",
+    }
+    polls = []
     db_data = []
-    for _, resp in list(captures):
-        if resp.status_code == 201:
-            try:
-                tr_id = resp.json().get("transaction_id")
-                if isinstance(tr_id, int):
-                    time.sleep(1)
-                    poll_headers = make_headers(TERMINAL_ID, method="GET")
-                    poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
-                    poll = (poll_resp.request, poll_resp)
-                    db_data = _query_transaction_from_db(tr_id)
-                    break
-            except Exception:
-                pass
+    seen: set = set()
 
-    _http_captures[request.node.nodeid] = (captures, poll, db_data)
+    for prep, resp in list(captures):
+        if resp.status_code not in (200, 201):
+            continue
+        try:
+            tr_id = resp.json().get("transaction_id")
+            if not isinstance(tr_id, int):
+                continue
+            url = prep.url or ""
+            title = "Статус после создания"
+            for suffix, op_title in _OP_TITLES.items():
+                if suffix in url:
+                    title = op_title
+                    break
+            key = (tr_id, title)
+            if key in seen:
+                continue
+            seen.add(key)
+            time.sleep(1)
+            poll_headers = make_headers(TERMINAL_ID, method="GET")
+            poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
+            polls.append((poll_resp.request, poll_resp, title))
+            if not db_data:
+                db_data = _query_transaction_from_db(tr_id)
+        except Exception:
+            pass
+
+    _http_captures[request.node.nodeid] = (captures, polls, db_data)
 
     bar = "━" * 64
     for prep, resp in captures:
