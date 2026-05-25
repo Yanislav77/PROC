@@ -66,6 +66,7 @@ def _make_block_payin(order_id: str = "order_block_cancel") -> str:
     }
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Setup Block Payin failed: {resp.text}"
+    time.sleep(1)
     return resp.json()["transaction_id"]
 
 
