@@ -55,6 +55,7 @@ def _make_block_payin(order_id: str = None) -> str:
     }
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Setup block payin failed: {resp.text}"
+    time.sleep(1)
     return resp.json()["transaction_id"]
 
 
@@ -71,6 +72,7 @@ def _make_auto_payin(order_id: str = None) -> str:
     }
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Setup Auto Payin failed: {resp.text}"
+    time.sleep(1)
     return resp.json()["transaction_id"]
 
 
