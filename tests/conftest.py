@@ -600,11 +600,14 @@ def log_http_calls(request):
     requests.Session.send = orig
 
     db_data = []
-    for _, resp in captures:
+    for _, resp in list(captures):
         if resp.status_code == 201:
             try:
                 tr_id = resp.json().get("transaction_id")
                 if isinstance(tr_id, int):
+                    poll_headers = make_headers(TERMINAL_ID, method="GET")
+                    poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
+                    captures.append((poll_resp.request, poll_resp))
                     db_data = _query_transaction_from_db(tr_id)
                     break
             except Exception:
