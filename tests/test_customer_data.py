@@ -198,16 +198,18 @@ def test_java_enabled_false():
 
 @pytest.mark.tcid("CD-016")
 def test_java_enabled_int_one():
-    """java_enabled=1 (корректное значение для boolean). Ожидается 201."""
+    """java_enabled=1 (целое число вместо boolean). Ожидается 400."""
     resp = post_transaction(_with_browser(java_enabled=1))
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("CD-017")
 def test_java_enabled_int_zero():
-    """java_enabled=0 (корректное значение для boolean). Ожидается 201."""
+    """java_enabled=0 (целое число вместо boolean). Ожидается 400."""
     resp = post_transaction(_with_browser(java_enabled=0))
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("CD-018")
@@ -244,9 +246,10 @@ def test_java_script_enabled_false():
 
 @pytest.mark.tcid("CD-022")
 def test_java_script_enabled_int():
-    """java_script_enabled=1 (корректное значение для boolean). Ожидается 201."""
+    """java_script_enabled=1 (целое число вместо boolean). Ожидается 400."""
     resp = post_transaction(_with_browser(java_script_enabled=1))
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("CD-023")
@@ -447,9 +450,10 @@ def test_phone_valid_with_plus():
 
 @pytest.mark.tcid("CD-047")
 def test_phone_valid_without_plus():
-    """phone без символа +. Ожидается 201."""
+    """phone без символа +. Ожидается 400."""
     resp = post_transaction(_with_contact(phone="79991234567"))
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("CD-048")
@@ -814,9 +818,10 @@ def test_java_enabled_missing():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CD-087")
 def test_java_script_enabled_int_zero_extra():
-    """java_script_enabled=0. Ожидается 201."""
+    """java_script_enabled=0 (целое число вместо boolean). Ожидается 400."""
     resp = post_transaction(_with_browser(java_script_enabled=0))
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("CD-088")
@@ -862,6 +867,14 @@ def test_language_missing():
     body["customer_data"]["browser_info"].pop("language", None)
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CD-251")
+def test_language_accept_language_header_format():
+    """language в формате Accept-Language заголовка 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7'. Ожидается 400."""
+    resp = post_transaction(_with_browser(language="ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7"))
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────

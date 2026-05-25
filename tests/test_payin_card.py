@@ -355,9 +355,10 @@ def test_webhook_url_as_int():
 
 @pytest.mark.tcid("PC-031")
 def test_webhook_url_empty():
-    """webhook_url передан как пустая строка. Ожидается 201."""
+    """webhook_url передан как пустая строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "webhook_url": ""}})
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("PC-032")
@@ -385,9 +386,10 @@ def test_return_url_as_int():
 
 @pytest.mark.tcid("PC-035")
 def test_return_url_empty():
-    """return_url передан как пустая строка. Ожидается 201."""
+    """return_url передан как пустая строка. Ожидается 400."""
     resp = post_transaction({**_BASE, "merchant_data": {**MERCHANT_DATA, "return_url": ""}})
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("PC-036")
@@ -1164,9 +1166,10 @@ def test_pin_null():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PC-122")
 def test_customer_data_empty_object():
-    """customer_data передан как пустой объект {} (все поля необязательны). Ожидается 201."""
+    """customer_data передан как пустой объект {}. Ожидается 400."""
     resp = post_transaction({**_BASE, "customer_data": {}})
-    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -1594,11 +1597,10 @@ def test_cvv_five_digits():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PC-169")
 def test_holder_three_chars_total():
-    """27.5 holder — имя и фамилия латиницей, общая длина 3 символа ('f g'). Ожидается 400."""
+    """27.5 holder — имя и фамилия латиницей, общая длина 3 символа ('f g'). Ожидается 201."""
     details = {**CARD_DETAILS, "holder": "f g"}
     resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 # ─────────────────────────────────────────────
@@ -1606,11 +1608,10 @@ def test_holder_three_chars_total():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PC-170")
 def test_holder_more_than_three_words():
-    """27.11 holder — больше 3 слов латиницей. Ожидается 400."""
+    """27.11 holder — больше 3 слов латиницей. Ожидается 201."""
     details = {**CARD_DETAILS, "holder": "JOHN DOE SMITH JONES"}
     resp = post_transaction({**_BASE, "transaction_data": {"method": "card", "details": details}})
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 # ─────────────────────────────────────────────

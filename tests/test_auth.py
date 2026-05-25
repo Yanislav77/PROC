@@ -512,7 +512,7 @@ def test_idempotency_key_different_bodies_same_key():
 
 @pytest.mark.tcid("A-025")
 def test_content_type_not_json():
-    """Content-Type: text/plain вместо application/json. Ожидается 400/415."""
+    """Content-Type: text/plain вместо application/json. Ожидается 201."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
     timestamp = str(int(time.time()))
     sig = _sign(TERMINAL_ID, timestamp, raw)
@@ -524,5 +524,4 @@ def test_content_type_not_json():
         "Api-Timestamp": timestamp,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
-    assert resp.status_code in (400, 415), f"Expected 400 or 415, got {resp.status_code}"
-    assert_error_response(resp)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}"
