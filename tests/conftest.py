@@ -196,7 +196,7 @@ THREED = {"challenge_window_size": "05"}
 # REPORT FILE (HTML)
 # ─────────────────────────────────────────────
 _report_file = None
-_http_captures: dict = {}  # nodeid -> (list[(PreparedRequest, Response)], poll|(None), list[db_records])
+_http_captures: dict = {}  # nodeid -> (list[(PreparedRequest, Response, title, css_class)], list[db_records])
 _call_reports:  dict = {}  # nodeid -> report (stored until teardown phase)
 _tc_ids:        dict = {}  # nodeid -> tcid string (from @pytest.mark.tcid)
 _test_counter = 0
@@ -299,7 +299,7 @@ def _sc_class(code: int) -> str:
     return "s5xx"
 
 
-def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: str = "", db_data: list = None, polls=None) -> None:
+def _write_report_entry(nodeid: str, status: str, error, entries: list, tc_id: str = "", db_data: list = None) -> None:
     global _test_counter
     _test_counter += 1
     idx = _test_counter
@@ -344,11 +344,8 @@ def _write_report_entry(nodeid: str, status: str, error, captures: list, tc_id: 
             f.write(f'        <pre class="body">{_esc(resp_text)}</pre>\n')
         f.write(f'      </div>\n    </div>\n')
 
-    for prep, resp in captures:
-        _render_http_block(prep, resp, "Создание транзакции", "create")
-
-    for p_prep, p_resp, p_title in (polls or []):
-        _render_http_block(p_prep, p_resp, p_title, "poll")
+    for prep, resp, title, css_class in (entries or []):
+        _render_http_block(prep, resp, title, css_class)
 
     if db_data:
         f.write('    <div class="section-label">Database</div>\n')
@@ -458,7 +455,7 @@ pre.headers{{background:#0a0f1a;border:1px solid #1e2a3a;border-radius:4px;paddi
   max-height:400px;overflow-y:auto;margin:0}}
 .http-block{{border:1px solid #2a2a4a;border-radius:6px;margin-top:12px;overflow:hidden}}
 .http-block-title{{background:#1a1a38;padding:6px 12px;font-size:.75em;font-weight:bold;letter-spacing:.07em;text-transform:uppercase;border-bottom:1px solid #2a2a4a}}
-.http-block-title.create{{color:#82aaff}}.http-block-title.poll{{color:#c3e88d}}
+.http-block-title.create{{color:#82aaff}}.http-block-title.operation{{color:#ffb74d}}.http-block-title.poll{{color:#c3e88d}}
 .http-block-body{{padding:10px 14px}}
 .db-section{{margin-top:12px}}
 .db-group{{border-radius:6px;margin-top:10px;overflow:hidden;border:1px solid #2a2a4a}}
@@ -551,11 +548,11 @@ def pytest_runtest_logreport(report):
         call = _call_reports.pop(report.nodeid, None)
         if call is None:
             return
-        captures, polls, db_data = _http_captures.pop(report.nodeid, ([], [], []))
+        entries, db_data = _http_captures.pop(report.nodeid, ([], []))
         status = "PASSED" if call.passed else "FAILED"
         error = str(call.longrepr) if call.failed else None
         tc_id = _tc_ids.get(report.nodeid, "")
-        _write_report_entry(report.nodeid, status, error, captures, tc_id, db_data, polls)
+        _write_report_entry(report.nodeid, status, error, entries, tc_id, db_data)
 
 
 # ─────────────────────────────────────────────
@@ -635,43 +632,61 @@ def log_http_calls(request):
     yield
     requests.Session.send = orig
 
-    _OP_TITLES = {
+    _OP_LABELS = {
+        "/cancel":  "Cancel",
+        "/capture": "Capture",
+        "/refund":  "Refund",
+        "/confirm": "Confirm",
+    }
+    _POLL_TITLES = {
         "/cancel":  "Статус после отмены",
         "/capture": "Статус после захвата",
         "/refund":  "Статус после возврата",
         "/confirm": "Статус после подтверждения",
     }
-    polls = []
+
+    entries = []
     db_data = []
     seen: set = set()
 
-    for prep, resp in list(captures):
-        if resp.status_code not in (200, 201):
-            continue
-        try:
-            tr_id = resp.json().get("transaction_id")
-            if not isinstance(tr_id, int):
-                continue
-            url = prep.url or ""
-            title = "Статус после создания"
-            for suffix, op_title in _OP_TITLES.items():
-                if suffix in url:
-                    title = op_title
-                    break
-            key = (tr_id, title)
-            if key in seen:
-                continue
-            seen.add(key)
-            time.sleep(1)
-            poll_headers = make_headers(TERMINAL_ID, method="GET")
-            poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
-            polls.append((poll_resp.request, poll_resp, title))
-            if not db_data:
-                db_data = _query_transaction_from_db(tr_id)
-        except Exception:
-            pass
+    for prep, resp in captures:
+        url = prep.url or ""
 
-    _http_captures[request.node.nodeid] = (captures, polls, db_data)
+        label = "Создание транзакции"
+        css_class = "create"
+        for suffix, op_label in _OP_LABELS.items():
+            if suffix in url:
+                label = op_label
+                css_class = "operation"
+                break
+
+        entries.append((prep, resp, label, css_class))
+
+        # Сразу после успешного запроса — опрос статуса
+        if resp.status_code in (200, 201):
+            try:
+                tr_id = resp.json().get("transaction_id")
+                if not isinstance(tr_id, int):
+                    continue
+                poll_title = "Статус после создания"
+                for suffix, pt in _POLL_TITLES.items():
+                    if suffix in url:
+                        poll_title = pt
+                        break
+                key = (tr_id, poll_title)
+                if key in seen:
+                    continue
+                seen.add(key)
+                time.sleep(1)
+                poll_headers = make_headers(TERMINAL_ID, method="GET")
+                poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
+                entries.append((poll_resp.request, poll_resp, poll_title, "poll"))
+                if not db_data:
+                    db_data = _query_transaction_from_db(tr_id)
+            except Exception:
+                pass
+
+    _http_captures[request.node.nodeid] = (entries, db_data)
 
     bar = "━" * 64
     for prep, resp in captures:
