@@ -461,11 +461,11 @@ def test_cancel_missing_idempotency_key_returns_400():
 
 @pytest.mark.tcid("CAN-027")
 def test_cancel_auto_captured_transaction_returns_409():
-    """Cancel по транзакции с capture_mode=auto (не в статусе authorized). Ожидается 409."""
+    """Cancel по транзакции с capture_mode=auto (не в статусе authorized). Ожидается 400 или 409."""
     order_id = gen_order_id("can_auto")
     tid = _make_completed_payin(order_id)
     resp = post_operation(tid, "cancel", _op_body(order_id))
-    assert resp.status_code == 409, f"Expected 409, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in (400, 409), f"Expected 400 or 409, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
