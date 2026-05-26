@@ -154,12 +154,6 @@ def _make_pl_headers(raw_body: str = "", terminal_id: str = None,
     }
 
 
-@pytest.fixture(autouse=True)
-def _pace():
-    yield
-    time.sleep(3)
-
-
 _VALID_LINK_BODY = {
     "merchant_data": MERCHANT_DATA,
     "financial_data": {"amount": 5000, "currency": "RUB"},

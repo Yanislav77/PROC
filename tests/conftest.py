@@ -204,6 +204,35 @@ _test_counter = 0
 _REPORTS_DIR = Path(__file__).parent.parent / "reports"
 
 
+def _query_paylink_from_db(link_id: str) -> list:
+    """Query support DB for payment link data. Returns list of {db, table, columns, rows}."""
+    if not _DB_AVAILABLE or not link_id:
+        return []
+    results = []
+    try:
+        conn = _psycopg2.connect(
+            host=_DB_HOST, port=5432, dbname="support",
+            user=_DB_USER, password=_DB_PASSWORD,
+        )
+        cur = conn.cursor()
+        for table, col in [("paylink", "id"), ("webpayv3", "paylink_id")]:
+            try:
+                cur.execute(
+                    f"SELECT * FROM public.{table} WHERE {col} = %s ORDER BY created_time DESC LIMIT 1",
+                    (link_id,),
+                )
+                rows = cur.fetchall()
+                if rows:
+                    cols = [d[0] for d in cur.description]
+                    results.append({"db": "support", "table": table, "columns": cols, "rows": rows})
+            except Exception:
+                pass
+        conn.close()
+    except Exception:
+        pass
+    return results
+
+
 def _query_transaction_from_db(tr_id: int) -> list:
     """Query both DBs for transaction data. Returns list of {db, table, columns, rows}."""
     if not _DB_AVAILABLE:
@@ -663,26 +692,34 @@ def log_http_calls(request):
 
         entries.append((prep, resp, label, css_class))
 
-        # Сразу после успешного запроса — опрос статуса
+        # Сразу после успешного запроса — опрос статуса / DB
         if resp.status_code in (200, 201):
             try:
-                tr_id = resp.json().get("transaction_id")
-                if not isinstance(tr_id, int):
-                    continue
-                poll_title = "Статус после создания"
-                for suffix, pt in _POLL_TITLES.items():
-                    if suffix in url:
-                        poll_title = pt
-                        break
-                key = (tr_id, poll_title)
-                if key in seen:
-                    continue
-                seen.add(key)
-                time.sleep(1)
-                poll_headers = make_headers(TERMINAL_ID, method="GET")
-                poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
-                entries.append((poll_resp.request, poll_resp, poll_title, "poll"))
-                db_data = _query_transaction_from_db(tr_id)
+                body = resp.json()
+                tr_id   = body.get("transaction_id")
+                link_id = body.get("link_id")
+
+                if isinstance(tr_id, int):
+                    poll_title = "Статус после создания"
+                    for suffix, pt in _POLL_TITLES.items():
+                        if suffix in url:
+                            poll_title = pt
+                            break
+                    key = (tr_id, poll_title)
+                    if key not in seen:
+                        seen.add(key)
+                        time.sleep(1)
+                        poll_headers = make_headers(TERMINAL_ID, method="GET")
+                        poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
+                        entries.append((poll_resp.request, poll_resp, poll_title, "poll"))
+                        db_data = _query_transaction_from_db(tr_id)
+
+                elif isinstance(link_id, str) and link_id:
+                    key = ("link", link_id)
+                    if key not in seen:
+                        seen.add(key)
+                        time.sleep(1)
+                        db_data = _query_paylink_from_db(link_id)
             except Exception:
                 pass
 
