@@ -214,11 +214,11 @@ def _query_paylink_from_db(link_id: str) -> list:
             host=_DB_HOST, port=5432, dbname="support",
             user=_DB_USER, password=_DB_PASSWORD,
         )
-        for table, col in [("paylink", "id"), ("webpayv3", "paylink_id")]:
+        for table, col in [("webpayv3", "id")]:
             try:
                 cur = conn.cursor()
                 cur.execute(
-                    f"SELECT * FROM public.{table} WHERE {col} = %s ORDER BY created_time DESC LIMIT 1",
+                    f"SELECT * FROM public.{table} WHERE {col} = %s LIMIT 1",
                     (link_id,),
                 )
                 rows = cur.fetchall()

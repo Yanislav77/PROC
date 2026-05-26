@@ -38,7 +38,7 @@ except ImportError:
 
 
 def _query_pl_db(link_id: str) -> dict:
-    """Возвращает строку из support.paylink по link_id или {}."""
+    """Возвращает строку из support.webpayv3 по id (=link_id) или {}."""
     if not _DB_AVAILABLE:
         return {}
     try:
@@ -48,7 +48,7 @@ def _query_pl_db(link_id: str) -> dict:
         )
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM public.paylink WHERE id = %s LIMIT 1",
+            "SELECT * FROM public.webpayv3 WHERE id = %s LIMIT 1",
             (link_id,),
         )
         rows = cur.fetchall()
@@ -902,15 +902,14 @@ def test_payment_link_db_personal_info_mapping():
             assert ci.get("FirstName") == "John",         f"CustomerInfo.FirstName: {ci}"
             assert ci.get("LastName") == "Doe",           f"CustomerInfo.LastName: {ci}"
             assert ci.get("DateOfBirth") == "1990-05-25", f"CustomerInfo.DateOfBirth: {ci}"
-            pi = pr.get("PassportInfo", {})
-            assert pi.get("Nationality") == "JP",         f"PassportInfo.Nationality: {pi}"
-            assert pi.get("NumberDocument") == "11223344", f"PassportInfo.NumberDocument: {pi}"
-            assert pi.get("IssueDate") == "2020-05-25",   f"PassportInfo.IssueDate: {pi}"
-            assert pi.get("ExpireDate") == "2030-05-25",  f"PassportInfo.ExpireDate: {pi}"
-            assert pi.get("Gender") == "M",               f"PassportInfo.Gender: {pi}"
-            assert pi.get("Issuer") == "UFMS",            f"PassportInfo.Issuer: {pi}"
-            assert pi.get("DepartmentCode") == "032-018", f"PassportInfo.DepartmentCode: {pi}"
-            assert pi.get("Series") == "7700",            f"PassportInfo.Series: {pi}"
+            assert ci.get("Nationality") == "JP",         f"CustomerInfo.Nationality: {ci}"
+            assert ci.get("NumberDocument") == "11223344", f"CustomerInfo.NumberDocument: {ci}"
+            assert ci.get("IssueDate") == "2020-05-25",   f"CustomerInfo.IssueDate: {ci}"
+            assert ci.get("ExpireDate") == "2030-05-25",  f"CustomerInfo.ExpireDate: {ci}"
+            assert ci.get("Gender") == "M",               f"CustomerInfo.Gender: {ci}"
+            assert ci.get("Issuer") == "UFMS",            f"CustomerInfo.Issuer: {ci}"
+            assert ci.get("DepartmentCode") == "032-018", f"CustomerInfo.DepartmentCode: {ci}"
+            assert ci.get("Series") == "7700",            f"CustomerInfo.Series: {ci}"
 
 
 @pytest.mark.tcid("PL-051")
@@ -928,7 +927,7 @@ def test_payment_link_db_is_recurrent_mapping():
     if db:
         pr = db.get("request") or {}
         if isinstance(pr, dict):
-            assert pr.get("RebillFlag") is True, f"PaymentRequest.RebillFlag must be true, got: {pr}"
+            assert pr.get("PaymentRequest", {}).get("RebillFlag") is True, f"PaymentRequest.RebillFlag must be true, got: {pr}"
 
 
 @pytest.mark.tcid("PL-052")
@@ -949,7 +948,7 @@ def test_payment_link_db_challenge_window_size_mapping():
     if db:
         pr = db.get("request") or {}
         if isinstance(pr, dict):
-            extra = pr.get("ExtraData", {})
+            extra = pr.get("PaymentRequest", {}).get("ExtraData", {})
             assert extra.get("ChallengeWindowSize") == "05", \
                 f"ExtraData.ChallengeWindowSize must be '05', got: {extra}"
 
@@ -969,7 +968,7 @@ def test_payment_link_db_return_url_mapping():
     if db:
         pr = db.get("request") or {}
         if isinstance(pr, dict):
-            extra = pr.get("ExtraData", {})
+            extra = pr.get("PaymentRequest", {}).get("ExtraData", {})
             assert extra.get("ReturnUrl") == return_url, \
                 f"ExtraData.ReturnUrl mismatch, got: {extra}"
 
@@ -1073,7 +1072,7 @@ def test_webpay_create_regression():
         assert db.get("state") is not None,   f"webpayv3.state is None: {db}"
         req = db.get("request") or {}
         if isinstance(req, dict):
-            assert req.get("Currency") == "RUB", f"webpayv3.request.Currency mismatch: {req}"
+            assert req.get("PaymentRequest", {}).get("Currency") == "RUB", f"webpayv3.request.PaymentRequest.Currency mismatch: {req}"
 
 
 # ─────────────────────────────────────────────
@@ -1139,8 +1138,9 @@ def test_payment_link_side_effects_match_webpay_create():
     if db_new:
         pr_new = db_new.get("request") or {}
         if isinstance(pr_new, dict):
-            assert pr_new.get("Currency") == "RUB",  f"Currency mismatch in new: {pr_new}"
-            assert pr_new.get("Amount") in (1000, "1000"), f"Amount mismatch in new: {pr_new}"
+            pl_req = pr_new.get("PaymentRequest", {})
+            assert pl_req.get("Currency") == "RUB",  f"Currency mismatch in new: {pr_new}"
+            assert pl_req.get("Amount") in (1000, "1000", 1000.0), f"Amount mismatch in new: {pr_new}"
             ci = pr_new.get("CustomerInfo", {})
             assert ci.get("Email") == "test@example.com", f"CustomerInfo.Email mismatch: {ci}"
 
@@ -1151,4 +1151,4 @@ def test_payment_link_side_effects_match_webpay_create():
             f"webpayv3.paylink_id mismatch: {db_wv3}"
         req_wv3 = db_wv3.get("request") or {}
         if isinstance(req_wv3, dict):
-            assert req_wv3.get("Currency") == "RUB", f"webpayv3.request.Currency mismatch: {req_wv3}"
+            assert req_wv3.get("PaymentRequest", {}).get("Currency") == "RUB", f"webpayv3.request.PaymentRequest.Currency mismatch: {req_wv3}"
