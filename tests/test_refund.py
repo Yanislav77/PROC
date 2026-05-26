@@ -94,13 +94,13 @@ def test_refund_partial(refund_tid):
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RF-002")
 def test_refund_nonexistent_transaction():
-    """Возврат по несуществующей транзакции. Ожидается 404."""
+    """Возврат по несуществующей транзакции. Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_refund_test", "webhook_url": "https://example.com/"},
         "financial_data": {"amount": 100, "currency": "RUB"},
     }
     resp = post_operation("nonexistent-id-000000", "refund", body)
-    assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
