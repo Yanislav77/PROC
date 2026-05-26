@@ -206,7 +206,7 @@ _REPORTS_DIR = Path(__file__).parent.parent / "reports"
 
 def _query_paylink_from_db(link_id: str) -> list:
     """Query support DB for payment link data. Returns list of {db, table, columns, rows}."""
-    if not _DB_AVAILABLE or not link_id:
+    if not _DB_AVAILABLE or not _DB_HOST or not link_id:
         return []
     results = []
     try:
@@ -214,9 +214,9 @@ def _query_paylink_from_db(link_id: str) -> list:
             host=_DB_HOST, port=5432, dbname="support",
             user=_DB_USER, password=_DB_PASSWORD,
         )
-        cur = conn.cursor()
         for table, col in [("paylink", "id"), ("webpayv3", "paylink_id")]:
             try:
+                cur = conn.cursor()
                 cur.execute(
                     f"SELECT * FROM public.{table} WHERE {col} = %s ORDER BY created_time DESC LIMIT 1",
                     (link_id,),
@@ -225,8 +225,9 @@ def _query_paylink_from_db(link_id: str) -> list:
                 if rows:
                     cols = [d[0] for d in cur.description]
                     results.append({"db": "support", "table": table, "columns": cols, "rows": rows})
+                cur.close()
             except Exception:
-                pass
+                conn.rollback()
         conn.close()
     except Exception:
         pass
