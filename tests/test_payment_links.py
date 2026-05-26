@@ -10,6 +10,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import time
 import uuid
 import requests
@@ -37,7 +38,7 @@ except ImportError:
 
 
 def _query_pl_db(link_id: str) -> dict:
-    """Возвращает строку из support.payment_links по link_id или {}."""
+    """Возвращает строку из support.paylink по link_id или {}."""
     if not _DB_AVAILABLE:
         return {}
     try:
@@ -47,17 +48,71 @@ def _query_pl_db(link_id: str) -> dict:
         )
         cur = conn.cursor()
         cur.execute(
-            'SELECT * FROM public.payment_links WHERE "link_id" = %s LIMIT 1',
+            "SELECT * FROM public.paylink WHERE id = %s LIMIT 1",
             (link_id,),
         )
         rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
         conn.close()
         if not rows:
             return {}
-        cols = [d[0] for d in cur.description]
         return dict(zip(cols, rows[0]))
     except Exception:
         return {}
+
+
+def _query_webpayv3_db(session_id: str) -> dict:
+    """Возвращает строку из support.webpayv3 по id (UUID из URL ответа) или {}."""
+    if not _DB_AVAILABLE:
+        return {}
+    try:
+        conn = _psycopg2.connect(
+            host=_DB_HOST, port=5432, dbname="support",
+            user=_DB_USER, password=_DB_PASSWORD,
+        )
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM public.webpayv3 WHERE id = %s LIMIT 1", (session_id,))
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        conn.close()
+        if not rows:
+            return {}
+        return dict(zip(cols, rows[0]))
+    except Exception:
+        return {}
+
+
+def _query_webpayv3_by_paylink(paylink_id: str) -> dict:
+    """Возвращает строку из support.webpayv3 по paylink_id или {}."""
+    if not _DB_AVAILABLE:
+        return {}
+    try:
+        conn = _psycopg2.connect(
+            host=_DB_HOST, port=5432, dbname="support",
+            user=_DB_USER, password=_DB_PASSWORD,
+        )
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM public.webpayv3 WHERE paylink_id = %s ORDER BY created_time DESC LIMIT 1",
+            (paylink_id,),
+        )
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        conn.close()
+        if not rows:
+            return {}
+        return dict(zip(cols, rows[0]))
+    except Exception:
+        return {}
+
+
+_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
+
+
+def _extract_uuid(text: str) -> str:
+    """Возвращает первый UUID из строки или ''."""
+    m = _UUID_RE.search(text)
+    return m.group(0) if m else ""
 
 
 _PL_PATH = "/api/v1/payment-links"
@@ -802,7 +857,7 @@ def test_payment_link_db_contact_info_mapping():
     link_id = resp.json().get("link_id")
     db = _query_pl_db(link_id)
     if db:
-        pr = db.get("payment_request") or {}
+        pr = db.get("request") or {}
         ci = pr.get("CustomerInfo", {}) if isinstance(pr, dict) else {}
         assert ci.get("Email") == "test@example.com", f"CustomerInfo.Email mismatch: {ci}"
         assert ci.get("Phone") == "+79991234567",     f"CustomerInfo.Phone mismatch: {ci}"
@@ -842,7 +897,7 @@ def test_payment_link_db_personal_info_mapping():
     link_id = resp.json().get("link_id")
     db = _query_pl_db(link_id)
     if db:
-        pr = db.get("payment_request") or {}
+        pr = db.get("request") or {}
         if isinstance(pr, dict):
             ci = pr.get("CustomerInfo", {})
             assert ci.get("FirstName") == "John",         f"CustomerInfo.FirstName: {ci}"
@@ -872,7 +927,7 @@ def test_payment_link_db_is_recurrent_mapping():
     link_id = resp.json().get("link_id")
     db = _query_pl_db(link_id)
     if db:
-        pr = db.get("payment_request") or {}
+        pr = db.get("request") or {}
         if isinstance(pr, dict):
             assert pr.get("RebillFlag") is True, f"PaymentRequest.RebillFlag must be true, got: {pr}"
 
@@ -893,7 +948,7 @@ def test_payment_link_db_challenge_window_size_mapping():
     link_id = resp.json().get("link_id")
     db = _query_pl_db(link_id)
     if db:
-        pr = db.get("payment_request") or {}
+        pr = db.get("request") or {}
         if isinstance(pr, dict):
             extra = pr.get("ExtraData", {})
             assert extra.get("ChallengeWindowSize") == "05", \
@@ -913,7 +968,7 @@ def test_payment_link_db_return_url_mapping():
     link_id = resp.json().get("link_id")
     db = _query_pl_db(link_id)
     if db:
-        pr = db.get("payment_request") or {}
+        pr = db.get("request") or {}
         if isinstance(pr, dict):
             extra = pr.get("ExtraData", {})
             assert extra.get("ReturnUrl") == return_url, \
@@ -933,7 +988,7 @@ def test_payment_link_db_payer_id_mapping():
     link_id = resp.json().get("link_id")
     db = _query_pl_db(link_id)
     if db:
-        pr = db.get("payment_request") or {}
+        pr = db.get("request") or {}
         if isinstance(pr, dict):
             ci = pr.get("CustomerInfo", {})
             assert ci.get("UserId") == "USER-001", \
@@ -1011,8 +1066,15 @@ def test_webpay_create_regression():
     resp = _post_webpay_create(body)
     assert resp.status_code in (200, 201), \
         f"Old /webpayments/create must still return 200/201, got {resp.status_code}: {resp.text}"
-    data = resp.json()
-    assert data, "Response body must not be empty"
+    # Ответ — plain-text URL вида https://host/pay/<uuid>
+    session_id = _extract_uuid(resp.text)
+    assert session_id, f"Expected UUID in response URL, got: {resp.text!r}"
+    db = _query_webpayv3_db(session_id)
+    if db:
+        assert db.get("state") is not None,   f"webpayv3.state is None: {db}"
+        req = db.get("request") or {}
+        if isinstance(req, dict):
+            assert req.get("Currency") == "RUB", f"webpayv3.request.Currency mismatch: {req}"
 
 
 # ─────────────────────────────────────────────
@@ -1076,9 +1138,18 @@ def test_payment_link_side_effects_match_webpay_create():
     link_id = resp_new.json().get("link_id")
     db_new = _query_pl_db(link_id)
     if db_new:
-        pr_new = db_new.get("payment_request") or {}
+        pr_new = db_new.get("request") or {}
         if isinstance(pr_new, dict):
             assert pr_new.get("Currency") == "RUB",  f"Currency mismatch in new: {pr_new}"
             assert pr_new.get("Amount") in (1000, "1000"), f"Amount mismatch in new: {pr_new}"
             ci = pr_new.get("CustomerInfo", {})
             assert ci.get("Email") == "test@example.com", f"CustomerInfo.Email mismatch: {ci}"
+
+    # ── webpayv3 по paylink_id (появится после открытия ссылки) ──
+    db_wv3 = _query_webpayv3_by_paylink(link_id)
+    if db_wv3:
+        assert str(db_wv3.get("paylink_id")) == link_id, \
+            f"webpayv3.paylink_id mismatch: {db_wv3}"
+        req_wv3 = db_wv3.get("request") or {}
+        if isinstance(req_wv3, dict):
+            assert req_wv3.get("Currency") == "RUB", f"webpayv3.request.Currency mismatch: {req_wv3}"
