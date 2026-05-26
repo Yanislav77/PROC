@@ -387,31 +387,34 @@ def test_payment_link_return_url_with_query_params():
 
 
 @pytest.mark.tcid("PL-032")
-def test_payment_link_idempotency_same_key_second_returns_409():
-    """Payment link с одним idempotency_key дважды — второй возвращает 409."""
+def test_payment_link_idempotency_same_key_returns_same_link():
+    """TC-03: Повторный запрос с тем же Api-Idempotency-Key возвращает тот же link_id (кэш XPI)."""
     body = copy.deepcopy(_VALID_LINK_BODY)
     body["merchant_data"] = {**MERCHANT_DATA, "order_id": gen_order_id("pl_idem")}
     raw = json.dumps(body, separators=(",", ":"))
     key = str(uuid.uuid4())
-    timestamp = str(int(time.time()))
-    sig = _sign(TERMINAL_ID, timestamp, raw)
 
+    ts1 = str(int(time.time()))
+    sig1 = _sign(TERMINAL_ID, ts1, raw)
     h = {
         "Content-Type": "application/json",
         "Api-Terminal-ID": TERMINAL_ID,
         "Api-Idempotency-Key": key,
-        "Api-Signature": sig,
-        "Api-Timestamp": timestamp,
+        "Api-Signature": sig1,
+        "Api-Timestamp": ts1,
     }
     r1 = requests.post(PAYMENT_LINKS_URL, data=raw, headers=h, timeout=30)
     assert r1.status_code == 201, f"First link creation failed: {r1.text}"
+    link_id_1 = r1.json().get("link_id")
 
     ts2 = str(int(time.time()))
     sig2 = _sign(TERMINAL_ID, ts2, raw)
     h["Api-Signature"] = sig2
     h["Api-Timestamp"] = ts2
     r2 = requests.post(PAYMENT_LINKS_URL, data=raw, headers=h, timeout=30)
-    assert r2.status_code == 409, f"Expected 409 for duplicate key, got {r2.status_code}"
+    assert r2.status_code in (200, 201), f"Expected 200/201 for idempotent request, got {r2.status_code}: {r2.text}"
+    link_id_2 = r2.json().get("link_id")
+    assert link_id_1 == link_id_2, f"Idempotent request returned different link_id: {link_id_1!r} vs {link_id_2!r}"
 
 
 @pytest.mark.tcid("PL-033")
@@ -484,3 +487,187 @@ def test_payment_link_financial_data_null_returns_400():
     resp = post_payment_link(body)
     assert resp.status_code == 400
     assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# TC-04: ИДЕМПОТЕНТНОСТЬ — тот же ключ, другое тело
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-039")
+def test_payment_link_idempotency_different_body_returns_cached():
+    """TC-04: Тот же Api-Idempotency-Key, другая сумма — возвращает кэшированный ответ первого запроса."""
+    order_id = gen_order_id("pl_idem_diff")
+    key = str(uuid.uuid4())
+
+    body1 = {**_VALID_LINK_BODY,
+             "merchant_data": {**MERCHANT_DATA, "order_id": order_id},
+             "financial_data": {"amount": 1000, "currency": "RUB"}}
+    raw1 = json.dumps(body1, separators=(",", ":"))
+    ts1 = str(int(time.time()))
+    h1 = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": key,
+        "Api-Signature": _sign(TERMINAL_ID, ts1, raw1),
+        "Api-Timestamp": ts1,
+    }
+    r1 = requests.post(PAYMENT_LINKS_URL, data=raw1, headers=h1, timeout=30)
+    assert r1.status_code == 201, f"First request failed: {r1.text}"
+    link_id_1 = r1.json().get("link_id")
+
+    body2 = {**_VALID_LINK_BODY,
+             "merchant_data": {**MERCHANT_DATA, "order_id": order_id},
+             "financial_data": {"amount": 9999, "currency": "RUB"}}
+    raw2 = json.dumps(body2, separators=(",", ":"))
+    ts2 = str(int(time.time()))
+    h2 = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": key,
+        "Api-Signature": _sign(TERMINAL_ID, ts2, raw2),
+        "Api-Timestamp": ts2,
+    }
+    r2 = requests.post(PAYMENT_LINKS_URL, data=raw2, headers=h2, timeout=30)
+    assert r2.status_code in (200, 201), f"Expected cached 200/201, got {r2.status_code}: {r2.text}"
+    link_id_2 = r2.json().get("link_id")
+    assert link_id_1 == link_id_2, \
+        f"Expected cached link_id from first request, got {link_id_1!r} vs {link_id_2!r}"
+
+
+# ─────────────────────────────────────────────
+# TC-05 / TC-06: ANTI-REPLAY — Api-Timestamp
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-040")
+def test_payment_link_expired_timestamp():
+    """TC-05: Api-Timestamp > 5 минут в прошлом — запрос должен отклоняться (anti-replay)."""
+    raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
+    old_ts = str(int(time.time()) - 601)
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature": _sign(TERMINAL_ID, old_ts, raw),
+        "Api-Timestamp": old_ts,
+    }
+    resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), \
+        f"Expected 4xx for expired timestamp, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PL-041")
+def test_payment_link_future_timestamp():
+    """TC-06: Api-Timestamp > 5 минут в будущем — запрос должен отклоняться (anti-replay)."""
+    raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
+    future_ts = str(int(time.time()) + 601)
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature": _sign(TERMINAL_ID, future_ts, raw),
+        "Api-Timestamp": future_ts,
+    }
+    resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), \
+        f"Expected 4xx for future timestamp, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# TC-09: ПОДПИСЬ БЕЗ ТЕЛА
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-042")
+def test_payment_link_signature_computed_without_body():
+    """TC-09: Подпись посчитана без тела запроса (неполный MESSAGE) → 4xx InvalidSignature."""
+    raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
+    ts = str(int(time.time()))
+    wrong_sig = _sign(TERMINAL_ID, ts, "")  # body не включён в подпись
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature": wrong_sig,
+        "Api-Timestamp": ts,
+    }
+    resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), \
+        f"Expected 4xx for signature without body, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# TC-12: НЕТ Api-Signature
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-043")
+def test_payment_link_missing_signature():
+    """TC-12: Запрос без заголовка Api-Signature → 4xx."""
+    raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Timestamp": str(int(time.time())),
+    }
+    resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), \
+        f"Expected 4xx for missing Api-Signature, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# TC-14: НЕСУЩЕСТВУЮЩИЙ Api-Terminal-ID
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-044")
+def test_payment_link_unknown_terminal_id():
+    """TC-14: Несуществующий Api-Terminal-ID → 4xx (InvalidSiteId)."""
+    raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
+    fake_id = "NONEXISTENT-99999"
+    ts = str(int(time.time()))
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": fake_id,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature": _sign(fake_id, ts, raw),
+        "Api-Timestamp": ts,
+    }
+    resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403, 404), \
+        f"Expected 4xx for unknown terminal, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# TC-29: ФОРМАТ link_data.url
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-045")
+def test_payment_link_url_path_contains_payment_sessions():
+    """TC-29: link_data.url содержит /payment-sessions/<id>, но не /api/v1/ в пути ссылки."""
+    body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_urlpath")}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    url = resp.json()["link_data"]["url"]
+    assert "/payment-sessions/" in url, f"Expected /payment-sessions/ in url, got: {url!r}"
+    assert "/api/v1/" not in url, f"Unexpected /api/v1/ in link_data.url: {url!r}"
+
+
+# ─────────────────────────────────────────────
+# OPTIONS PREFLIGHT — CORS
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-046")
+def test_payment_link_options_preflight_cors_headers():
+    """OPTIONS preflight возвращает CORS-заголовок с Api-Terminal-ID, Api-Idempotency-Key, Api-Signature, Api-Timestamp."""
+    resp = requests.options(
+        PAYMENT_LINKS_URL,
+        headers={
+            "Origin": "https://merchant.example.com",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": (
+                "Api-Terminal-ID, Api-Idempotency-Key, Api-Signature, Api-Timestamp"
+            ),
+        },
+        timeout=30,
+    )
+    assert resp.status_code in (200, 204), f"Expected 200/204 for OPTIONS, got {resp.status_code}: {resp.text}"
+    allow_headers = resp.headers.get("Access-Control-Allow-Headers", "")
+    for header in ("Api-Terminal-ID", "Api-Idempotency-Key", "Api-Signature", "Api-Timestamp"):
+        assert header.lower() in allow_headers.lower(), \
+            f"Expected {header!r} in Access-Control-Allow-Headers, got: {allow_headers!r}"
