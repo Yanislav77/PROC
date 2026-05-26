@@ -239,3 +239,108 @@ def test_get_merchant_balance_idempotency_key_ignored():
     }
     resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# MB-019…MB-025: граничные случаи заголовков
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("MB-019")
+def test_get_merchant_balance_missing_signature_header():
+    """GET /merchant/balance без заголовка Api-Signature (остальные есть). Ожидается 4xx."""
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Timestamp":   str(int(time.time())),
+    }
+    resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), \
+        f"Expected 4xx for missing Api-Signature, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("MB-020")
+def test_get_merchant_balance_empty_terminal_id():
+    """GET /merchant/balance с пустым Api-Terminal-ID. Ожидается 4xx."""
+    ts = str(int(time.time()))
+    headers = {
+        "Api-Terminal-ID": "",
+        "Api-Signature":   _sign("", ts),
+        "Api-Timestamp":   ts,
+    }
+    resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), \
+        f"Expected 4xx for empty Api-Terminal-ID, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("MB-021")
+def test_get_merchant_balance_invalid_terminal_id_format():
+    """GET /merchant/balance с нечисловым Api-Terminal-ID. Ожидается 4xx."""
+    fake = "abc-xyz-!!!"
+    ts = str(int(time.time()))
+    headers = {
+        "Api-Terminal-ID": fake,
+        "Api-Signature":   _sign(fake, ts),
+        "Api-Timestamp":   ts,
+    }
+    resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403, 404), \
+        f"Expected 4xx for invalid terminal format, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("MB-022")
+def test_get_merchant_balance_empty_signature():
+    """GET /merchant/balance с пустым Api-Signature. Ожидается 4xx."""
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   "",
+        "Api-Timestamp":   str(int(time.time())),
+    }
+    resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), \
+        f"Expected 4xx for empty Api-Signature, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("MB-023")
+def test_get_merchant_balance_empty_timestamp():
+    """GET /merchant/balance с пустым Api-Timestamp. Ожидается 4xx."""
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   _sign(TERMINAL_ID, ""),
+        "Api-Timestamp":   "",
+    }
+    resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), \
+        f"Expected 4xx for empty Api-Timestamp, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("MB-024")
+def test_get_merchant_balance_invalid_timestamp_format():
+    """GET /merchant/balance с нечисловым Api-Timestamp. Ожидается 4xx."""
+    bad_ts = "not-a-timestamp"
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   _sign(TERMINAL_ID, bad_ts),
+        "Api-Timestamp":   bad_ts,
+    }
+    resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), \
+        f"Expected 4xx for non-numeric timestamp, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("MB-025")
+def test_get_merchant_balance_future_timestamp():
+    """GET /merchant/balance с Api-Timestamp > 5 минут в будущем. Ожидается 4xx (anti-replay)."""
+    future_ts = str(int(time.time()) + 601)
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   _sign(TERMINAL_ID, future_ts),
+        "Api-Timestamp":   future_ts,
+    }
+    resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), \
+        f"Expected 4xx for future timestamp, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
