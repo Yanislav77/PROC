@@ -14,16 +14,16 @@ import pytest
 import requests
 from dotenv import load_dotenv
 
+load_dotenv()  # читает .env из корня проекта
+
 try:
     import psycopg2 as _psycopg2
-    _DB_HOST     = "dbcoretest-preprod.ctxmbfymfost.eu-west-1.rds.amazonaws.com"
-    _DB_USER     = "postgres"
-    _DB_PASSWORD = "pmsqla1234"
+    _DB_HOST     = os.environ.get("DB_HOST", "")
+    _DB_USER     = os.environ.get("DB_USER", "postgres")
+    _DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
     _DB_AVAILABLE = True
 except ImportError:
     _DB_AVAILABLE = False
-
-load_dotenv()  # читает .env из корня проекта
 
 _RUN_ID = uuid.uuid4().hex[:6]
 
