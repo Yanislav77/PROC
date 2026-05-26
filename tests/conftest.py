@@ -726,14 +726,14 @@ def log_http_calls(request):
 
     _http_captures[request.node.nodeid] = (entries, db_data)
 
-    bar = "━" * 64
+    bar = "-" * 64
     for prep, resp in captures:
         phrase = _status_phrase(resp.status_code)
         print(f"\n{bar}")
         print(f"  {prep.method} {prep.url}")
-        print(f"  ── Request body {'─' * 46}")
+        print(f"  -- Request body {'-' * 46}")
         print(_fmt_body(prep.body))
-        print(f"  ── Response: {resp.status_code} {phrase} {'─' * max(0, 44 - len(phrase))}")
+        print(f"  -- Response: {resp.status_code} {phrase} {'-' * max(0, 44 - len(phrase))}")
         print(_fmt_body(resp.text))
         print(bar)
 
