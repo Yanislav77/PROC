@@ -3,7 +3,7 @@
 Интеграционные тесты для CORE REST API платёжного шлюза.
 Тесты делают реальные HTTP-запросы к препрод-окружению — никаких моков.
 
-**821 тест** в 13 файлах, покрывают все эндпоинты API.
+**823 теста** в 13 файлах, покрывают все эндпоинты API.
 
 ---
 
@@ -186,17 +186,17 @@ MERCHANT_BALANCE_URL = f"{_API_BASE}/merchant/balance"
 
 | Конфигурация | Файл | Тестов |
 |---|---|---|
-| **All Tests** | все файлы | 821 |
+| **All Tests** | все файлы | 823 |
 | **Auth** | `test_auth.py` | 25 |
-| **Payin Card** | `test_payin_card.py` | 165 |
+| **Payin Card** | `test_payin_card.py` | 171 |
 | **Payin Other** | `test_payin_other.py` | 30 |
-| **Payout** | `test_payout.py` | 120 |
-| **Customer Data** | `test_customer_data.py` | 250 |
+| **Payout** | `test_payout.py` | 141 |
+| **Customer Data** | `test_customer_data.py` | 231 |
 | **Get Transactions** | `test_get_transactions.py` | 30 |
-| **Capture** | `test_capture.py` | 30 |
-| **Cancel** | `test_cancel.py` | 30 |
+| **Capture** | `test_capture.py` | 31 |
+| **Cancel** | `test_cancel.py` | 31 |
 | **Confirm** | `test_confirm.py` | 32 |
-| **Refund** | `test_refund.py` | 35 |
+| **Refund** | `test_refund.py` | 27 |
 | **Payment Links** | `test_payment_links.py` | 38 |
 | **Merchant** | `test_merchant.py` | 18 |
 | **Subscriptions** | `test_subscriptions.py` | 18 |
@@ -212,24 +212,52 @@ MERCHANT_BALANCE_URL = f"{_API_BASE}/merchant/balance"
 # все тесты
 pytest
 
-# один файл
-pytest tests/test_payin_card.py
-pytest tests/test_payout.py
+# один файл целиком
+pytest tests/test_refund.py
+pytest tests/test_capture.py
 
-# один конкретный тест
-pytest tests/test_payin_card.py::test_payin_card_auto_capture
+# один конкретный тест по имени функции
+pytest tests/test_refund.py::test_refund_partial
+pytest tests/test_capture.py::test_capture_full
+
+# параметризованный тест — нужен node-id с параметром в квадратных скобках
+pytest "tests/test_customer_data.py::test_browser_info_optional_field_missing[accept_header]"
 
 # по ID тест-кейса (маркер @pytest.mark.tcid)
-pytest -k "PC-001"
+pytest -k "RF-001"
+pytest -k "CAP-031"
+pytest -k "CD-082"
 
 # остановиться на первой ошибке
 pytest -x
 
-# полный вывод при падении
+# подробный вывод (имена всех тестов)
+pytest -v
+
+# показать print/HTTP-вывод внутри тестов
+pytest -s
+
+# полный traceback при падении
 pytest --tb=long
 
-# показать HTTP-запросы и ответы внутри тестов
-pytest -s
+# комбинация флагов
+pytest tests/test_refund.py -v -s --tb=long
+```
+
+#### Параметризованные тесты
+
+Некоторые тесты в `test_customer_data.py` параметризованы — один тест-метод
+запускается с несколькими наборами данных и получает отдельный ID кейса для каждого параметра.
+Например, `test_browser_info_optional_field_missing` запускается 9 раз (CD-082…CD-110).
+
+Node-id такого теста выглядит как:
+```
+tests/test_customer_data.py::test_browser_info_optional_field_missing[accept_header]
+```
+
+Чтобы запустить только нужный параметр:
+```bash
+pytest "tests/test_customer_data.py::test_browser_info_optional_field_missing[language]"
 ```
 
 ---
@@ -259,7 +287,7 @@ pytest -s
 
 ---
 
-### `test_payin_card.py` — Payin картой (165 тестов, PC-001…PC-165)
+### `test_payin_card.py` — Payin картой (171 тест, PC-001…PC-171)
 
 Самый большой файл. Покрывает создание транзакций через карту: happy path, валидация полей карты, параметры потока (`capture_mode`, `is_recurrent`, `threed_secure`), граничные значения сумм и форматов.
 
@@ -287,7 +315,7 @@ Payin через P2P, QR-код, мобильный платёж и токен (
 
 ---
 
-### `test_payout.py` — Выплаты (120 тестов, PY-001…PY-120)
+### `test_payout.py` — Выплаты (141 тест, PY-001…PY-141)
 
 Покрывает все методы выплат: карта, SBP, кошелёк, банковский счёт, мобильный, токен.
 
@@ -303,9 +331,21 @@ Payin через P2P, QR-код, мобильный платёж и токен (
 
 ---
 
-### `test_customer_data.py` — Данные клиента (250 тестов, CD-001…CD-250)
+### `test_customer_data.py` — Данные клиента (231 тест, CD-001…CD-251)
 
 Детальная валидация всех полей `customer_data`: контакты, персональные данные, данные браузера, паспортные данные. Граничные значения, форматы, обязательность полей.
+
+Многие тесты параметризованы — проверяют одно правило сразу по нескольким полям.
+Например, тест `test_browser_info_optional_field_missing` запускается 9 раз:
+по одному для каждого необязательного поля `browser_info`.
+
+| Группа | Примеры сценариев |
+|---|---|
+| Обязательные поля | CD-001…CD-020: отсутствие type, financial_data, flow_data и т.д. |
+| browser_info | CD-082…CD-110: необязательные поля — каждое можно опустить |
+| contact | CD-120…CD-149: email, phone, имя — обязательность и форматы |
+| personal | CD-168…CD-195: birth_date, gender, nationality — форматы |
+| document_details | CD-205…CD-251: тип документа, номер, даты |
 
 ---
 
@@ -327,7 +367,7 @@ GET `/api/v1/transactions/{id}` и GET `/api/v1/transactions?order_id=`.
 
 ---
 
-### `test_capture.py` — Списание заблокированных средств (30 тестов, CAP-001…CAP-030)
+### `test_capture.py` — Списание заблокированных средств (31 тест, CAP-001…CAP-031)
 
 POST `/api/v1/transactions/{id}/capture`.
 
@@ -342,10 +382,11 @@ POST `/api/v1/transactions/{id}/capture`.
 | Нулевая / отрицательная сумма | 400 / 422 |
 | Auto-capture Payin → повторный capture | 409 |
 | Ответ содержит merchant_data, created_at | 200 / 201 |
+| description в ответе — из запроса capture, не из родительской транзы | 200 / 201 |
 
 ---
 
-### `test_cancel.py` — Отмена транзакции (30 тестов, CAN-001…CAN-030)
+### `test_cancel.py` — Отмена транзакции (31 тест, CAN-001…CAN-031)
 
 POST `/api/v1/transactions/{id}/cancel`.
 
@@ -358,6 +399,7 @@ POST `/api/v1/transactions/{id}/cancel`.
 | Отсутствует idempotency key | 400 |
 | Auto-capture Payin → cancel | 409 |
 | Пустые financial_data / merchant_data | 400 |
+| description в ответе — из запроса cancel, не из родительской транзы | 200 / 201 |
 
 ---
 
@@ -379,7 +421,7 @@ POST `/api/v1/transactions/{id}/confirm` — используется после
 
 ---
 
-### `test_refund.py` — Возвраты (35 тестов, RF-001…RF-035)
+### `test_refund.py` — Возвраты (27 тестов, RF-001…RF-036)
 
 POST `/api/v1/transactions/{id}/refund`.
 
@@ -396,6 +438,7 @@ POST `/api/v1/transactions/{id}/refund`.
 | Отсутствует idempotency key | 400 |
 | amount = null | 400 |
 | Минимальная сумма = 1 | 200 / 201 |
+| description в ответе — из запроса refund, не из родительской транзы | 200 / 201 |
 
 ---
 
@@ -476,7 +519,7 @@ DELETE `/api/v1/subscriptions/{token}`.
 ```
 tests/test_payin_card.py::test_payin_card_auto_capture   PASSED
 ...
-821 passed in 410.32s
+823 passed in 410.32s
 ```
 
 Упавший тест:
@@ -558,9 +601,15 @@ pytest tests/test_payin_card.py::test_payin_card_auto_capture -s --tb=long
 
 ### Тесты работают слишком медленно
 
-Между тестами есть задержка 3 секунды (защита от rate-limiting препрода).
-Изменить её можно через переменную окружения:
+Между тестами есть задержка (защита от rate-limiting препрода).
+Управляется через переменные окружения или `.env`:
 
+```
+TEST_DELAY=1.0    # пауза между тестами, секунд (по умолчанию 3.0)
+SETUP_DELAY=0.5   # пауза после создания родительской транзакции (по умолчанию 1.0)
+```
+
+Пример запуска с уменьшенной задержкой:
 ```
 TEST_DELAY=1.0 pytest tests/test_merchant.py
 ```
@@ -568,4 +617,5 @@ TEST_DELAY=1.0 pytest tests/test_merchant.py
 или в `.env`:
 ```
 TEST_DELAY=1.0
+SETUP_DELAY=0.5
 ```
