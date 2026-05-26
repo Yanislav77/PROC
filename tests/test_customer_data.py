@@ -3,6 +3,8 @@
 POST /api/v1/transactions — type:payin, method:card
 Секции 31–64 из manual_cases/payment.txt.
 """
+import copy
+from datetime import datetime, date, timedelta
 import pytest
 
 from conftest import (
@@ -26,7 +28,6 @@ _BASE = {
 
 def _with_customer(**overrides) -> dict:
     """Возвращает тело запроса с обновлёнными полями customer_data."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"].update(overrides)
     return body
@@ -34,7 +35,6 @@ def _with_customer(**overrides) -> dict:
 
 def _with_browser(**overrides) -> dict:
     """Обновляет browser_info внутри customer_data."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"]["browser_info"].update(overrides)
     return body
@@ -42,7 +42,6 @@ def _with_browser(**overrides) -> dict:
 
 def _with_contact(**overrides) -> dict:
     """Обновляет contact_info внутри customer_data."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"]["contact_info"].update(overrides)
     return body
@@ -50,7 +49,6 @@ def _with_contact(**overrides) -> dict:
 
 def _with_personal(**overrides) -> dict:
     """Обновляет personal_info внутри customer_data."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"]["personal_info"].update(overrides)
     return body
@@ -58,9 +56,16 @@ def _with_personal(**overrides) -> dict:
 
 def _with_doc(**overrides) -> dict:
     """Обновляет document_details внутри personal_info."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"]["personal_info"]["document_details"].update(overrides)
+    return body
+
+
+def _with_payer(**overrides) -> dict:
+    """Добавляет/обновляет payer_info внутри customer_data."""
+    body = copy.deepcopy(_BASE)
+    body["customer_data"].setdefault("payer_info", {})
+    body["customer_data"]["payer_info"].update(overrides)
     return body
 
 
@@ -70,7 +75,6 @@ def _with_doc(**overrides) -> dict:
 @pytest.mark.tcid("CD-001")
 def test_browser_info_missing():
     """browser_info не передан. Ожидается 201 (browser_info опционален по спеке)."""
-    import copy
     body = copy.deepcopy(_BASE)
     del body["customer_data"]["browser_info"]
     resp = post_transaction(body)
@@ -131,7 +135,6 @@ def test_ip_null():
 @pytest.mark.tcid("CD-008")
 def test_ip_missing():
     """ip не передан при наличии browser_info. Ожидается 400 (ip обязателен внутри browser_info)."""
-    import copy
     body = copy.deepcopy(_BASE)
     del body["customer_data"]["browser_info"]["ip"]
     resp = post_transaction(body)
@@ -312,7 +315,6 @@ def test_language_null():
 @pytest.mark.tcid("CD-030")
 def test_contact_info_missing():
     """contact_info не передан. Ожидается 201 (необязательный объект)."""
-    import copy
     body = copy.deepcopy(_BASE)
     del body["customer_data"]["contact_info"]
     resp = post_transaction(body)
@@ -509,7 +511,6 @@ def test_phone_null():
 @pytest.mark.tcid("CD-054")
 def test_personal_info_missing():
     """personal_info не передан. Ожидается 201."""
-    import copy
     body = copy.deepcopy(_BASE)
     del body["customer_data"]["personal_info"]
     resp = post_transaction(body)
@@ -545,7 +546,6 @@ def test_date_of_birth_wrong_format():
 @pytest.mark.tcid("CD-058")
 def test_date_of_birth_under_18():
     """date_of_birth, при которой возраст < 18 лет. Ожидается 400."""
-    from datetime import datetime, timedelta
     dob = (datetime.now() - timedelta(days=17 * 365)).strftime("%Y-%m-%d")
     resp = post_transaction(_with_personal(date_of_birth=dob))
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
@@ -722,25 +722,12 @@ def test_doc_issue_date_null():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
-from datetime import date, timedelta
-
-
-def _with_payer(**overrides) -> dict:
-    """Добавляет/обновляет payer_info внутри customer_data."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"].setdefault("payer_info", {})
-    body["customer_data"]["payer_info"].update(overrides)
-    return body
-
-
 # ─────────────────────────────────────────────
 # CUSTOMER_DATA (30.x)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CD-080")
 def test_customer_data_missing():
     """customer_data не передан. Ожидается 400."""
-    import copy
     body = copy.deepcopy(_BASE)
     body.pop("customer_data", None)
     resp = post_transaction(body)
@@ -751,7 +738,6 @@ def test_customer_data_missing():
 @pytest.mark.tcid("CD-081")
 def test_customer_data_empty_object():
     """customer_data передан как пустой объект {}. Ожидается 400."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"] = {}
     resp = post_transaction(body)
@@ -760,14 +746,23 @@ def test_customer_data_empty_object():
 
 
 # ─────────────────────────────────────────────
-# ACCEPT_HEADER (33.x)
+# BROWSER_INFO OPTIONAL SUB-FIELDS — missing → 201 (33.x–41.x)
 # ─────────────────────────────────────────────
-@pytest.mark.tcid("CD-082")
-def test_accept_header_missing():
-    """accept_header не передан. Ожидается 201."""
-    import copy
+@pytest.mark.parametrize("field", [
+    pytest.param("accept_header", marks=pytest.mark.tcid("CD-082"), id="accept_header"),
+    pytest.param("color_depth", marks=pytest.mark.tcid("CD-084"), id="color_depth"),
+    pytest.param("java_enabled", marks=pytest.mark.tcid("CD-086"), id="java_enabled"),
+    pytest.param("java_script_enabled", marks=pytest.mark.tcid("CD-089"), id="java_script_enabled"),
+    pytest.param("language", marks=pytest.mark.tcid("CD-092"), id="language"),
+    pytest.param("screen_height", marks=pytest.mark.tcid("CD-096"), id="screen_height"),
+    pytest.param("screen_width", marks=pytest.mark.tcid("CD-100"), id="screen_width"),
+    pytest.param("time_zone", marks=pytest.mark.tcid("CD-106"), id="time_zone"),
+    pytest.param("user_agent", marks=pytest.mark.tcid("CD-110"), id="user_agent"),
+])
+def test_browser_info_optional_field_missing(field):
+    """browser_info sub-field не передан. Ожидается 201 (поле опционально)."""
     body = copy.deepcopy(_BASE)
-    body["customer_data"]["browser_info"].pop("accept_header", None)
+    body["customer_data"]["browser_info"].pop(field, None)
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
@@ -783,16 +778,6 @@ def test_color_depth_empty_string():
     assert_error_response(resp)
 
 
-@pytest.mark.tcid("CD-084")
-def test_color_depth_missing():
-    """color_depth не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["browser_info"].pop("color_depth", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
 # ─────────────────────────────────────────────
 # JAVA_ENABLED (35.x)
 # ─────────────────────────────────────────────
@@ -802,16 +787,6 @@ def test_java_enabled_empty_string():
     resp = post_transaction(_with_browser(java_enabled=""))
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
-
-
-@pytest.mark.tcid("CD-086")
-def test_java_enabled_missing():
-    """java_enabled не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["browser_info"].pop("java_enabled", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 # ─────────────────────────────────────────────
@@ -833,16 +808,6 @@ def test_java_script_enabled_empty_string():
     assert_error_response(resp)
 
 
-@pytest.mark.tcid("CD-089")
-def test_java_script_enabled_missing():
-    """java_script_enabled не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["browser_info"].pop("java_script_enabled", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
 # ─────────────────────────────────────────────
 # LANGUAGE (37.x)
 # ─────────────────────────────────────────────
@@ -858,16 +823,6 @@ def test_language_lowercase():
     """language — строчный код 'ru'. Ожидается 201 или 400."""
     resp = post_transaction(_with_browser(language="ru"))
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
-
-
-@pytest.mark.tcid("CD-092")
-def test_language_missing():
-    """language не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["browser_info"].pop("language", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("CD-251")
@@ -903,16 +858,6 @@ def test_screen_height_null():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
-@pytest.mark.tcid("CD-096")
-def test_screen_height_missing():
-    """screen_height не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["browser_info"].pop("screen_height", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
 # ─────────────────────────────────────────────
 # SCREEN_WIDTH (39.x)
 # ─────────────────────────────────────────────
@@ -936,16 +881,6 @@ def test_screen_width_null():
     """screen_width=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_browser(screen_width=None))
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
-
-
-@pytest.mark.tcid("CD-100")
-def test_screen_width_missing():
-    """screen_width не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["browser_info"].pop("screen_width", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 # ─────────────────────────────────────────────
@@ -987,16 +922,6 @@ def test_time_zone_null():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
-@pytest.mark.tcid("CD-106")
-def test_time_zone_missing():
-    """time_zone не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["browser_info"].pop("time_zone", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
 # ─────────────────────────────────────────────
 # USER_AGENT (41.x)
 # ─────────────────────────────────────────────
@@ -1019,16 +944,6 @@ def test_user_agent_null():
     """user_agent=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_browser(user_agent=None))
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
-
-
-@pytest.mark.tcid("CD-110")
-def test_user_agent_missing():
-    """user_agent не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["browser_info"].pop("user_agent", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 # ─────────────────────────────────────────────
@@ -1097,12 +1012,18 @@ def test_city_null():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
-@pytest.mark.tcid("CD-120")
-def test_city_missing():
-    """city не передан. Ожидается 201."""
-    import copy
+# ─────────────────────────────────────────────
+# CONTACT_INFO OPTIONAL SUB-FIELDS — missing → 201 (43.x, 47.x, 48.x)
+# ─────────────────────────────────────────────
+@pytest.mark.parametrize("field", [
+    pytest.param("city", marks=pytest.mark.tcid("CD-120"), id="city"),
+    pytest.param("state", marks=pytest.mark.tcid("CD-140"), id="state"),
+    pytest.param("zip", marks=pytest.mark.tcid("CD-149"), id="zip"),
+])
+def test_contact_info_optional_field_missing(field):
+    """contact_info sub-field не передан. Ожидается 201 (поле опционально)."""
     body = copy.deepcopy(_BASE)
-    body["customer_data"]["contact_info"].pop("city", None)
+    body["customer_data"]["contact_info"].pop(field, None)
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
@@ -1121,7 +1042,6 @@ def test_country_cyrillic_two_chars():
 @pytest.mark.tcid("CD-122")
 def test_country_missing():
     """country не передан. Ожидается 201 или 400."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"]["contact_info"].pop("country", None)
     resp = post_transaction(body)
@@ -1158,7 +1078,6 @@ def test_email_without_local_part():
 @pytest.mark.tcid("CD-126")
 def test_email_missing():
     """email не передан. Ожидается 201 или 400."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"]["contact_info"].pop("email", None)
     resp = post_transaction(body)
@@ -1195,7 +1114,6 @@ def test_phone_with_special_chars():
 @pytest.mark.tcid("CD-130")
 def test_phone_missing():
     """phone не передан. Ожидается 201 или 400."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"]["contact_info"].pop("phone", None)
     resp = post_transaction(body)
@@ -1268,16 +1186,6 @@ def test_state_null():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
-@pytest.mark.tcid("CD-140")
-def test_state_missing():
-    """state не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["contact_info"].pop("state", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
 # ─────────────────────────────────────────────
 # ZIP (48.x)
 # ─────────────────────────────────────────────
@@ -1337,23 +1245,12 @@ def test_zip_null():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
-@pytest.mark.tcid("CD-149")
-def test_zip_missing():
-    """zip не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["contact_info"].pop("zip", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
 # ─────────────────────────────────────────────
 # PAYER_INFO (49.x)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CD-150")
 def test_payer_info_missing():
     """payer_info не передан. Ожидается 201."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"].pop("payer_info", None)
     resp = post_transaction(body)
@@ -1494,25 +1391,20 @@ def test_date_of_birth_empty_string():
     assert_error_response(resp)
 
 
-@pytest.mark.tcid("CD-168")
-def test_date_of_birth_missing():
-    """date_of_birth не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"].pop("date_of_birth", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
 # ─────────────────────────────────────────────
-# DOCUMENT_TYPE missing (53.x)
+# PERSONAL_INFO OPTIONAL SUB-FIELDS — missing → 201 (52.x–56.x)
 # ─────────────────────────────────────────────
-@pytest.mark.tcid("CD-169")
-def test_document_type_missing():
-    """document_type не передан. Ожидается 201."""
-    import copy
+@pytest.mark.parametrize("field", [
+    pytest.param("date_of_birth", marks=pytest.mark.tcid("CD-168"), id="date_of_birth"),
+    pytest.param("document_type", marks=pytest.mark.tcid("CD-169"), id="document_type"),
+    pytest.param("first_name", marks=pytest.mark.tcid("CD-177"), id="first_name"),
+    pytest.param("last_name", marks=pytest.mark.tcid("CD-185"), id="last_name"),
+    pytest.param("nationality", marks=pytest.mark.tcid("CD-195"), id="nationality"),
+])
+def test_personal_info_optional_field_missing(field):
+    """personal_info sub-field не передан. Ожидается 201 (поле опционально)."""
     body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"].pop("document_type", None)
+    body["customer_data"]["personal_info"].pop(field, None)
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
@@ -1569,16 +1461,6 @@ def test_first_name_null():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
-@pytest.mark.tcid("CD-177")
-def test_first_name_missing():
-    """first_name не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"].pop("first_name", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
 # ─────────────────────────────────────────────
 # LAST_NAME (55.x)
 # ─────────────────────────────────────────────
@@ -1629,16 +1511,6 @@ def test_last_name_null():
     """last_name=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_personal(last_name=None))
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
-
-
-@pytest.mark.tcid("CD-185")
-def test_last_name_missing():
-    """last_name не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"].pop("last_name", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 # ─────────────────────────────────────────────
@@ -1714,23 +1586,12 @@ def test_nationality_null():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
-@pytest.mark.tcid("CD-195")
-def test_nationality_missing():
-    """nationality не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"].pop("nationality", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
 # ─────────────────────────────────────────────
 # DOCUMENT_DETAILS (57.x)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CD-196")
 def test_document_details_missing():
     """document_details не передан. Ожидается 201."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"]["personal_info"].pop("document_details", None)
     resp = post_transaction(body)
@@ -1796,12 +1657,22 @@ def test_department_code_null():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
-@pytest.mark.tcid("CD-205")
-def test_department_code_missing():
-    """department_code не передан. Ожидается 201."""
-    import copy
+# ─────────────────────────────────────────────
+# DOCUMENT_DETAILS OPTIONAL SUB-FIELDS — missing → 201 (58.x–64.x)
+# ─────────────────────────────────────────────
+@pytest.mark.parametrize("field", [
+    pytest.param("department_code", marks=pytest.mark.tcid("CD-205"), id="department_code"),
+    pytest.param("expiry_date", marks=pytest.mark.tcid("CD-211"), id="expiry_date"),
+    pytest.param("gender", marks=pytest.mark.tcid("CD-212"), id="gender"),
+    pytest.param("issue_date", marks=pytest.mark.tcid("CD-219"), id="issue_date"),
+    pytest.param("issuer", marks=pytest.mark.tcid("CD-229"), id="issuer"),
+    pytest.param("number", marks=pytest.mark.tcid("CD-237"), id="number"),
+    pytest.param("series", marks=pytest.mark.tcid("CD-247"), id="series"),
+])
+def test_document_details_optional_field_missing(field):
+    """document_details sub-field не передан. Ожидается 201 (поле опционально)."""
     body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"]["document_details"].pop("department_code", None)
+    body["customer_data"]["personal_info"]["document_details"].pop(field, None)
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
@@ -1846,29 +1717,6 @@ def test_doc_expiry_date_empty_string():
     resp = post_transaction(_with_doc(expiry_date=""))
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
-
-
-@pytest.mark.tcid("CD-211")
-def test_doc_expiry_date_missing():
-    """document expiry_date не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"]["document_details"].pop("expiry_date", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
-# ─────────────────────────────────────────────
-# GENDER missing (60.x)
-# ─────────────────────────────────────────────
-@pytest.mark.tcid("CD-212")
-def test_gender_missing():
-    """gender не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"]["document_details"].pop("gender", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 # ─────────────────────────────────────────────
@@ -1919,16 +1767,6 @@ def test_doc_issue_date_empty_string():
     resp = post_transaction(_with_doc(issue_date=""))
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
-
-
-@pytest.mark.tcid("CD-219")
-def test_doc_issue_date_missing():
-    """document issue_date не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"]["document_details"].pop("issue_date", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 # ─────────────────────────────────────────────
@@ -1997,16 +1835,6 @@ def test_issuer_null():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
-@pytest.mark.tcid("CD-229")
-def test_issuer_missing():
-    """issuer не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"]["document_details"].pop("issuer", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
 # ─────────────────────────────────────────────
 # NUMBER (63.x)
 # ─────────────────────────────────────────────
@@ -2057,16 +1885,6 @@ def test_doc_number_null():
     """number=null. Ожидается 201 или 400."""
     resp = post_transaction(_with_doc(number=None))
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
-
-
-@pytest.mark.tcid("CD-237")
-def test_doc_number_missing():
-    """number не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"]["document_details"].pop("number", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
 # ─────────────────────────────────────────────
@@ -2135,23 +1953,12 @@ def test_doc_series_null():
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
 
-@pytest.mark.tcid("CD-247")
-def test_doc_series_missing():
-    """series не передан. Ожидается 201."""
-    import copy
-    body = copy.deepcopy(_BASE)
-    body["customer_data"]["personal_info"]["document_details"].pop("series", None)
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-
-
 # ─────────────────────────────────────────────
 # PAYER_ID missing (50.9)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CD-248")
 def test_payer_id_missing():
     """50.9 payer_id не передан в payer_info. Ожидается 201."""
-    import copy
     body = copy.deepcopy(_BASE)
     body["customer_data"]["payer_info"].pop("payer_id", None)
     resp = post_transaction(body)

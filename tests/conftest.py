@@ -581,6 +581,7 @@ def _status_phrase(code: int) -> str:
 
 
 _INTER_TEST_DELAY = float(os.environ.get("TEST_DELAY", "3.0"))
+SETUP_DELAY       = float(os.environ.get("SETUP_DELAY", "1.0"))
 
 
 def gen_order_id(name: str) -> str:
