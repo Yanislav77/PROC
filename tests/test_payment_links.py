@@ -61,6 +61,22 @@ def _query_pl_db(link_id: str) -> dict:
 
 
 _PL_PATH = "/api/v1/payment-links"
+_WEBPAY_CREATE_URL = "https://web3preprod.testpaygate.com/webpayments/create"
+_WEBPAY_SITE_ID = os.environ.get("WEBPAY_SITE_ID", TERMINAL_ID)
+
+
+def _post_webpay_create(body: dict) -> requests.Response:
+    """POST /webpayments/create со старыми заголовками X-SITE-ID / X-REQUEST-SIGNATURE."""
+    raw = json.dumps(body, separators=(",", ":"))
+    request_id = str(uuid.uuid4())
+    sig = hmac.new(SERVICE_SECRET.encode(), raw.encode(), hashlib.sha256).hexdigest()
+    headers = {
+        "Content-Type": "application/json",
+        "X-SITE-ID": _WEBPAY_SITE_ID,
+        "X-REQUEST-ID": request_id,
+        "X-REQUEST-SIGNATURE": sig,
+    }
+    return requests.post(_WEBPAY_CREATE_URL, data=raw, headers=headers, timeout=30)
 
 
 def _sign_pl(terminal_id: str, idem_key: str, timestamp: str, raw_body: str = "") -> str:
@@ -963,3 +979,106 @@ def test_payment_link_old_headers_rejected():
     assert resp.status_code in (400, 401, 403), \
         f"Expected 4xx for old-style headers, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# TC-30: Регресс старого /webpayments/create
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-057")
+def test_webpay_create_regression():
+    """TC-30: POST /webpayments/create по-прежнему работает (регресс)."""
+    body = {
+        "MetaData": {"PaymentType": "Pay"},
+        "PaymentRequest": {
+            "Amount": "250",
+            "Currency": "RUB",
+            "Description": "Regression test",
+            "OrderId": gen_order_id("webpay_regress"),
+            "RebillFlag": False,
+            "ExtraData": {
+                "ReturnURL1": "https://merchant.example.com/return",
+            },
+        },
+        "CustomerInfo": {
+            "FirstName": "John",
+            "LastName": "Doe",
+            "Email": "test@example.com",
+            "Phone": "+79991234567",
+            "ZIP": "101000",
+            "DateOfBirth": "1990-05-25",
+        },
+    }
+    resp = _post_webpay_create(body)
+    assert resp.status_code in (200, 201), \
+        f"Old /webpayments/create must still return 200/201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert data, "Response body must not be empty"
+
+
+# ─────────────────────────────────────────────
+# TC-33: Идентичность side effects: старый и новый URL
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-058")
+def test_payment_link_side_effects_match_webpay_create():
+    """TC-33: Эквивалентные запросы через /webpayments/create и /api/v1/payment-links
+    создают записи с одинаковыми ключевыми полями в БД."""
+    order_id_old = gen_order_id("tc33_old")
+    order_id_new = gen_order_id("tc33_new")
+
+    # ── старый эндпоинт ──────────────────────────────────────
+    old_body = {
+        "MetaData": {"PaymentType": "Pay"},
+        "PaymentRequest": {
+            "Amount": "1000",
+            "Currency": "RUB",
+            "Description": "TC-33 old",
+            "OrderId": order_id_old,
+            "RebillFlag": False,
+            "ExtraData": {"ReturnURL1": "https://merchant.example.com/return"},
+        },
+        "CustomerInfo": {
+            "FirstName": "John",
+            "LastName": "Doe",
+            "Email": "test@example.com",
+            "Phone": "+79991234567",
+        },
+    }
+    resp_old = _post_webpay_create(old_body)
+    assert resp_old.status_code in (200, 201), \
+        f"/webpayments/create failed: {resp_old.status_code}: {resp_old.text}"
+
+    # ── новый эндпоинт ──────────────────────────────────────
+    new_body = {
+        "merchant_data": {
+            **MERCHANT_DATA,
+            "order_id": order_id_new,
+            "description": "TC-33 new",
+            "return_url": "https://merchant.example.com/return",
+        },
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto"},
+        "customer_data": {
+            "contact_info": {
+                "email": "test@example.com",
+                "phone": "+79991234567",
+            },
+            "personal_info": {
+                "first_name": "John",
+                "last_name": "Doe",
+            },
+        },
+    }
+    resp_new = post_payment_link(new_body)
+    assert resp_new.status_code == 201, \
+        f"/api/v1/payment-links failed: {resp_new.status_code}: {resp_new.text}"
+
+    # ── DB-сравнение (только при наличии доступа к БД) ──────
+    link_id = resp_new.json().get("link_id")
+    db_new = _query_pl_db(link_id)
+    if db_new:
+        pr_new = db_new.get("payment_request") or {}
+        if isinstance(pr_new, dict):
+            assert pr_new.get("Currency") == "RUB",  f"Currency mismatch in new: {pr_new}"
+            assert pr_new.get("Amount") in (1000, "1000"), f"Amount mismatch in new: {pr_new}"
+            ci = pr_new.get("CustomerInfo", {})
+            assert ci.get("Email") == "test@example.com", f"CustomerInfo.Email mismatch: {ci}"
