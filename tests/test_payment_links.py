@@ -134,9 +134,9 @@ def _post_webpay_create(body: dict) -> requests.Response:
     return requests.post(_WEBPAY_CREATE_URL, data=raw, headers=headers, timeout=30)
 
 
-def _sign_pl(terminal_id: str, idem_key: str, timestamp: str, raw_body: str = "") -> str:
-    """HMAC-SHA256 по спеке: POST\n<path>\n<terminal_id>\n<idem_key>\n<timestamp>\n<body>"""
-    msg = "\n".join(("POST", _PL_PATH, terminal_id, idem_key, timestamp, raw_body))
+def _sign_pl(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
+    """HMAC-SHA256 по спеке: Api-Timestamp + Api-Terminal-ID + raw_body (без разделителей)."""
+    msg = timestamp + terminal_id + raw_body
     return hmac.new(SERVICE_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest()
 
 
@@ -149,7 +149,7 @@ def _make_pl_headers(raw_body: str = "", terminal_id: str = None,
         "Content-Type": "application/json",
         "Api-Terminal-ID": tid,
         "Api-Idempotency-Key": key,
-        "Api-Signature": _sign_pl(tid, key, ts, raw_body),
+        "Api-Signature": _sign_pl(tid, ts, raw_body),
         "Api-Timestamp": ts,
     }
 
@@ -528,7 +528,7 @@ def test_payment_link_idempotency_same_key_returns_same_link():
         "Content-Type": "application/json",
         "Api-Terminal-ID": TERMINAL_ID,
         "Api-Idempotency-Key": key,
-        "Api-Signature": _sign_pl(TERMINAL_ID, key, ts1, raw),
+        "Api-Signature": _sign_pl(TERMINAL_ID, ts1, raw),
         "Api-Timestamp": ts1,
     }
     r1 = requests.post(PAYMENT_LINKS_URL, data=raw, headers=h, timeout=30)
@@ -536,7 +536,7 @@ def test_payment_link_idempotency_same_key_returns_same_link():
     link_id_1 = r1.json().get("link_id")
 
     ts2 = str(int(time.time()))
-    h["Api-Signature"] = _sign_pl(TERMINAL_ID, key, ts2, raw)
+    h["Api-Signature"] = _sign_pl(TERMINAL_ID, ts2, raw)
     h["Api-Timestamp"] = ts2
     r2 = requests.post(PAYMENT_LINKS_URL, data=raw, headers=h, timeout=30)
     assert r2.status_code in (200, 201), f"Expected 200/201 for idempotent request, got {r2.status_code}: {r2.text}"
@@ -553,7 +553,7 @@ def test_payment_link_missing_idempotency_key_returns_400():
     headers = {
         "Content-Type": "application/json",
         "Api-Terminal-ID": TERMINAL_ID,
-        "Api-Signature": _sign_pl(TERMINAL_ID, "", timestamp, raw),
+        "Api-Signature": _sign_pl(TERMINAL_ID, timestamp, raw),
         "Api-Timestamp": timestamp,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
@@ -633,7 +633,7 @@ def test_payment_link_idempotency_different_body_returns_cached():
         "Content-Type": "application/json",
         "Api-Terminal-ID": TERMINAL_ID,
         "Api-Idempotency-Key": key,
-        "Api-Signature": _sign_pl(TERMINAL_ID, key, ts1, raw1),
+        "Api-Signature": _sign_pl(TERMINAL_ID, ts1, raw1),
         "Api-Timestamp": ts1,
     }
     r1 = requests.post(PAYMENT_LINKS_URL, data=raw1, headers=h1, timeout=30)
@@ -649,7 +649,7 @@ def test_payment_link_idempotency_different_body_returns_cached():
         "Content-Type": "application/json",
         "Api-Terminal-ID": TERMINAL_ID,
         "Api-Idempotency-Key": key,
-        "Api-Signature": _sign_pl(TERMINAL_ID, key, ts2, raw2),
+        "Api-Signature": _sign_pl(TERMINAL_ID, ts2, raw2),
         "Api-Timestamp": ts2,
     }
     r2 = requests.post(PAYMENT_LINKS_URL, data=raw2, headers=h2, timeout=30)
@@ -672,7 +672,7 @@ def test_payment_link_expired_timestamp():
         "Content-Type": "application/json",
         "Api-Terminal-ID": TERMINAL_ID,
         "Api-Idempotency-Key": key,
-        "Api-Signature": _sign_pl(TERMINAL_ID, key, old_ts, raw),
+        "Api-Signature": _sign_pl(TERMINAL_ID, old_ts, raw),
         "Api-Timestamp": old_ts,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
@@ -691,7 +691,7 @@ def test_payment_link_future_timestamp():
         "Content-Type": "application/json",
         "Api-Terminal-ID": TERMINAL_ID,
         "Api-Idempotency-Key": key,
-        "Api-Signature": _sign_pl(TERMINAL_ID, key, future_ts, raw),
+        "Api-Signature": _sign_pl(TERMINAL_ID, future_ts, raw),
         "Api-Timestamp": future_ts,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
@@ -705,12 +705,11 @@ def test_payment_link_future_timestamp():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-042")
 def test_payment_link_signature_computed_without_timestamp():
-    """TC-09: Подпись посчитана без Api-Timestamp (5 строк вместо 6) → 4xx InvalidSignature."""
+    """TC-09: Подпись посчитана без Api-Timestamp (terminal_id + body вместо timestamp + terminal_id + body) → 4xx."""
     raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
     ts = str(int(time.time()))
     key = str(uuid.uuid4())
-    msg_5_lines = "\n".join(("POST", _PL_PATH, TERMINAL_ID, key, raw))
-    wrong_sig = hmac.new(SERVICE_SECRET.encode(), msg_5_lines.encode(), hashlib.sha256).hexdigest()
+    wrong_sig = hmac.new(SERVICE_SECRET.encode(), (TERMINAL_ID + raw).encode(), hashlib.sha256).hexdigest()
     headers = {
         "Content-Type": "application/json",
         "Api-Terminal-ID": TERMINAL_ID,
@@ -757,7 +756,7 @@ def test_payment_link_unknown_terminal_id():
         "Content-Type": "application/json",
         "Api-Terminal-ID": fake_id,
         "Api-Idempotency-Key": key,
-        "Api-Signature": _sign_pl(fake_id, key, ts, raw),
+        "Api-Signature": _sign_pl(fake_id, ts, raw),
         "Api-Timestamp": ts,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
@@ -819,7 +818,7 @@ def test_payment_link_timestamp_at_minus_60s():
         "Content-Type": "application/json",
         "Api-Terminal-ID": TERMINAL_ID,
         "Api-Idempotency-Key": key,
-        "Api-Signature": _sign_pl(TERMINAL_ID, key, ts, raw),
+        "Api-Signature": _sign_pl(TERMINAL_ID, ts, raw),
         "Api-Timestamp": ts,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
