@@ -252,8 +252,9 @@ def test_refund_no_auth():
 
 @pytest.mark.tcid("RF-019")
 def test_refund_invalid_signature():
-    """Refund с подписью из нулей. Ожидается 401 или 403."""
-    url = f"{BASE_URL}/000000000000/refund"
+    """Refund с подписью из нулей по реальной транзакции. Ожидается 401 или 403."""
+    tid = _make_auto_payin(gen_order_id("rf_bad_sig"))
+    url = f"{BASE_URL}/{tid}/refund"
     body = {
         "merchant_data": {"order_id": "order_refund_test"},
         "financial_data": {"amount": 100, "currency": "RUB"},
