@@ -682,8 +682,7 @@ def log_http_calls(request):
                 poll_headers = make_headers(TERMINAL_ID, method="GET")
                 poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
                 entries.append((poll_resp.request, poll_resp, poll_title, "poll"))
-                if not db_data:
-                    db_data = _query_transaction_from_db(tr_id)
+                db_data = _query_transaction_from_db(tr_id)
             except Exception:
                 pass
 
