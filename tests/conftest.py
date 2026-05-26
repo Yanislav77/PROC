@@ -33,7 +33,7 @@ _RUN_ID = uuid.uuid4().hex[:6]
 _API_BASE            = "https://papiv3preprod.testpaygate.com/api/v1"
 BASE_URL             = f"{_API_BASE}/transactions"
 SUBSCRIPTIONS_URL    = f"{_API_BASE}/subscriptions"
-PAYMENT_LINKS_URL    = f"{_API_BASE}/payment-links"
+PAYMENT_LINKS_URL    = "https://web3preprod.testpaygate.com/api/v1/payment-links"
 MERCHANT_BALANCE_URL = f"{_API_BASE}/merchant/balance"
 
 SERVICE_SECRET = os.environ["SERVICE_SECRET"]   # обязательно: задать в .env
