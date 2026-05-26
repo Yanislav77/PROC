@@ -502,6 +502,35 @@ def test_refund_null_field(refund_tid, body):
     assert_error_response(resp)
 
 
+@pytest.mark.tcid("RF-036")
+def test_refund_description_comes_from_refund_not_parent():
+    """description в ответе refund должен быть из запроса refund, а не из родительской транзакции."""
+    oid = gen_order_id("rf_desc_check")
+    parent_body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": oid, "description": "Parent description"},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp_parent = post_transaction(parent_body)
+    assert resp_parent.status_code == 201, f"Parent payin failed: {resp_parent.text}"
+    time.sleep(SETUP_DELAY)
+    tid = resp_parent.json()["transaction_id"]
+
+    refund_body = {
+        "merchant_data": {"order_id": oid, "description": "Refund description"},
+        "financial_data": {"amount": 100, "currency": "RUB"},
+    }
+    resp = post_operation(tid, "refund", refund_body)
+    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    actual = data.get("merchant_data", {}).get("description")
+    assert actual == "Refund description", \
+        f"Expected description from refund request, got {actual!r}"
+
+
 @pytest.mark.tcid("RF-034")
 def test_refund_payout_transaction_returns_409():
     """Refund по payout-транзакции. Ожидается 409."""

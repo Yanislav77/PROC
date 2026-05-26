@@ -54,11 +54,14 @@ def _op_body(order_id: str, amount: int = 1000) -> dict:
     }
 
 
-def _make_block_payin(order_id: str = "order_block_cancel") -> str:
+def _make_block_payin(order_id: str = "order_block_cancel", description: str = None) -> str:
     """Создаёт Payin с холдом (capture_mode=manual) и возвращает transaction_id."""
+    md = {**MERCHANT_DATA, "order_id": order_id}
+    if description is not None:
+        md["description"] = description
     body = {
         "type": "payin",
-        "merchant_data": {**MERCHANT_DATA, "order_id": order_id},
+        "merchant_data": md,
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
         "customer_data": CUSTOMER_DATA,
@@ -485,6 +488,23 @@ def test_cancel_merchant_data_empty_object():
     resp = post_operation("000000000000", "cancel", body)
     assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}"
     assert_error_response(resp)
+
+
+@pytest.mark.tcid("CAN-031")
+def test_cancel_description_comes_from_cancel_not_parent():
+    """description в ответе cancel должен быть из запроса cancel, а не из родительской транзакции."""
+    oid = gen_order_id("can_desc_check")
+    tid = _make_block_payin(oid, description="Parent description")
+    body = {
+        "merchant_data": {"order_id": oid, "description": "Cancel description"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+    }
+    resp = post_operation(tid, "cancel", body)
+    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    actual = data.get("merchant_data", {}).get("description")
+    assert actual == "Cancel description", \
+        f"Expected description from cancel request, got {actual!r}"
 
 
 @pytest.mark.tcid("CAN-030")

@@ -65,11 +65,14 @@ def _op_body(order_id: str, amount: int = 1000) -> dict:
     }
 
 
-def _make_block_payin(order_id: str = "order_block_capture") -> str:
+def _make_block_payin(order_id: str = "order_block_capture", description: str = None) -> str:
     """Создаёт Payin с холдом (capture_mode=manual) и возвращает transaction_id."""
+    md = {**MERCHANT_DATA, "order_id": order_id}
+    if description is not None:
+        md["description"] = description
     body = {
         "type": "payin",
-        "merchant_data": {**MERCHANT_DATA, "order_id": order_id},
+        "merchant_data": md,
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
         "customer_data": CUSTOMER_DATA,
@@ -488,6 +491,23 @@ def test_capture_auto_payin_returns_409():
     resp = post_operation(tid, "capture", _op_body(order_id))
     assert resp.status_code == 409, f"Expected 409, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
+
+
+@pytest.mark.tcid("CAP-031")
+def test_capture_description_comes_from_capture_not_parent():
+    """description в ответе capture должен быть из запроса capture, а не из родительской транзакции."""
+    oid = gen_order_id("cap_desc_check")
+    tid = _make_block_payin(oid, description="Parent description")
+    body = {
+        "merchant_data": {"order_id": oid, "description": "Capture description"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+    }
+    resp = post_operation(tid, "capture", body)
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    actual = data.get("merchant_data", {}).get("description")
+    assert actual == "Capture description", \
+        f"Expected description from capture request, got {actual!r}"
 
 
 @pytest.mark.tcid("CAP-030")
