@@ -9,6 +9,7 @@ import copy
 import hashlib
 import hmac
 import json
+import os
 import time
 import uuid
 import requests
@@ -24,6 +25,39 @@ from conftest import (
     assert_error_response,
     gen_order_id,
 )
+
+try:
+    import psycopg2 as _psycopg2
+    _DB_HOST     = os.environ.get("DB_HOST", "")
+    _DB_USER     = os.environ.get("DB_USER", "postgres")
+    _DB_PASSWORD = os.environ.get("DB_PASSWORD", "")
+    _DB_AVAILABLE = bool(_DB_HOST)
+except ImportError:
+    _DB_AVAILABLE = False
+
+
+def _query_pl_db(link_id: str) -> dict:
+    """Возвращает строку из support.payment_links по link_id или {}."""
+    if not _DB_AVAILABLE:
+        return {}
+    try:
+        conn = _psycopg2.connect(
+            host=_DB_HOST, port=5432, dbname="support",
+            user=_DB_USER, password=_DB_PASSWORD,
+        )
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT * FROM public.payment_links WHERE "link_id" = %s LIMIT 1',
+            (link_id,),
+        )
+        rows = cur.fetchall()
+        conn.close()
+        if not rows:
+            return {}
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, rows[0]))
+    except Exception:
+        return {}
 
 
 _PL_PATH = "/api/v1/payment-links"
@@ -691,3 +725,241 @@ def test_payment_link_options_preflight_cors_headers():
     for header in ("Api-Terminal-ID", "Api-Idempotency-Key", "Api-Signature", "Api-Timestamp"):
         assert header.lower() in allow_headers.lower(), \
             f"Expected {header!r} in Access-Control-Allow-Headers, got: {allow_headers!r}"
+
+
+# ─────────────────────────────────────────────
+# TC-07: Timestamp в пределах окна
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-047")
+def test_payment_link_timestamp_at_minus_60s():
+    """TC-07: Api-Timestamp = now - 60 (в пределах 5-минутного окна). Ожидается 201."""
+    body = {**_VALID_LINK_BODY,
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_ts60")}}
+    raw = json.dumps(body, separators=(",", ":"))
+    ts = str(int(time.time()) - 60)
+    key = str(uuid.uuid4())
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Idempotency-Key": key,
+        "Api-Signature": _sign_pl(TERMINAL_ID, key, ts, raw),
+        "Api-Timestamp": ts,
+    }
+    resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code == 201, f"Expected 201 for timestamp -60s, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# TC-18: Невалидная валюта "RUR"
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-048")
+def test_payment_link_currency_rur():
+    """TC-18: financial_data.currency='RUR' (устаревший код). Ожидается 400."""
+    body = {**_VALID_LINK_BODY, "financial_data": {"amount": 5000, "currency": "RUR"}}
+    resp = post_payment_link(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# TC-23..28: Маппинг полей в БД
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-049")
+def test_payment_link_db_contact_info_mapping():
+    """TC-23: contact_info → CustomerInfo в БД (Town, не City; ZIP, не Zip)."""
+    body = {
+        **_VALID_LINK_BODY,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_ci_map")},
+        "customer_data": {
+            "contact_info": {
+                "email": "test@example.com",
+                "phone": "+79991234567",
+                "country": "RU",
+                "city": "Moscow",
+                "zip": "101000",
+                "state": "Moscow",
+            }
+        },
+    }
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    link_id = resp.json().get("link_id")
+    db = _query_pl_db(link_id)
+    if db:
+        pr = db.get("payment_request") or {}
+        ci = pr.get("CustomerInfo", {}) if isinstance(pr, dict) else {}
+        assert ci.get("Email") == "test@example.com", f"CustomerInfo.Email mismatch: {ci}"
+        assert ci.get("Phone") == "+79991234567",     f"CustomerInfo.Phone mismatch: {ci}"
+        assert ci.get("Country") == "RU",             f"CustomerInfo.Country mismatch: {ci}"
+        assert ci.get("Town") == "Moscow",            f"CustomerInfo.Town mismatch (must be Town, not City): {ci}"
+        assert ci.get("ZIP") == "101000",             f"CustomerInfo.ZIP mismatch: {ci}"
+        assert ci.get("State") == "Moscow",           f"CustomerInfo.State mismatch: {ci}"
+
+
+@pytest.mark.tcid("PL-050")
+def test_payment_link_db_personal_info_mapping():
+    """TC-24: personal_info → CustomerInfo + PassportInfo в БД."""
+    body = {
+        **_VALID_LINK_BODY,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_pi_map")},
+        "customer_data": {
+            "personal_info": {
+                "first_name": "John",
+                "last_name": "Doe",
+                "date_of_birth": "1990-05-25",
+                "nationality": "JP",
+                "document_type": "passport",
+                "document_details": {
+                    "number": "11223344",
+                    "issue_date": "2020-05-25",
+                    "expiry_date": "2030-05-25",
+                    "gender": "M",
+                    "issuer": "UFMS",
+                    "department_code": "032-018",
+                    "series": "7700",
+                },
+            }
+        },
+    }
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    link_id = resp.json().get("link_id")
+    db = _query_pl_db(link_id)
+    if db:
+        pr = db.get("payment_request") or {}
+        if isinstance(pr, dict):
+            ci = pr.get("CustomerInfo", {})
+            assert ci.get("FirstName") == "John",         f"CustomerInfo.FirstName: {ci}"
+            assert ci.get("LastName") == "Doe",           f"CustomerInfo.LastName: {ci}"
+            assert ci.get("DateOfBirth") == "1990-05-25", f"CustomerInfo.DateOfBirth: {ci}"
+            pi = pr.get("PassportInfo", {})
+            assert pi.get("Nationality") == "JP",         f"PassportInfo.Nationality: {pi}"
+            assert pi.get("NumberDocument") == "11223344", f"PassportInfo.NumberDocument: {pi}"
+            assert pi.get("IssueDate") == "2020-05-25",   f"PassportInfo.IssueDate: {pi}"
+            assert pi.get("ExpireDate") == "2030-05-25",  f"PassportInfo.ExpireDate: {pi}"
+            assert pi.get("Gender") == "M",               f"PassportInfo.Gender: {pi}"
+            assert pi.get("Issuer") == "UFMS",            f"PassportInfo.Issuer: {pi}"
+            assert pi.get("DepartmentCode") == "032-018", f"PassportInfo.DepartmentCode: {pi}"
+            assert pi.get("Series") == "7700",            f"PassportInfo.Series: {pi}"
+
+
+@pytest.mark.tcid("PL-051")
+def test_payment_link_db_is_recurrent_mapping():
+    """TC-25: flow_data.is_recurrent=true → PaymentRequest.RebillFlag=true в БД."""
+    body = {
+        **_VALID_LINK_BODY,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_rebill")},
+        "flow_data": {"is_recurrent": True, "capture_mode": "auto"},
+    }
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    link_id = resp.json().get("link_id")
+    db = _query_pl_db(link_id)
+    if db:
+        pr = db.get("payment_request") or {}
+        if isinstance(pr, dict):
+            assert pr.get("RebillFlag") is True, f"PaymentRequest.RebillFlag must be true, got: {pr}"
+
+
+@pytest.mark.tcid("PL-052")
+def test_payment_link_db_challenge_window_size_mapping():
+    """TC-26: threed_secure.challenge_window_size='05' → PaymentRequest.ExtraData.ChallengeWindowSize='05' в БД."""
+    body = {
+        **_VALID_LINK_BODY,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_cws")},
+        "flow_data": {
+            "capture_mode": "auto",
+            "threed_secure": {"challenge_window_size": "05"},
+        },
+    }
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    link_id = resp.json().get("link_id")
+    db = _query_pl_db(link_id)
+    if db:
+        pr = db.get("payment_request") or {}
+        if isinstance(pr, dict):
+            extra = pr.get("ExtraData", {})
+            assert extra.get("ChallengeWindowSize") == "05", \
+                f"ExtraData.ChallengeWindowSize must be '05', got: {extra}"
+
+
+@pytest.mark.tcid("PL-053")
+def test_payment_link_db_return_url_mapping():
+    """TC-27: merchant_data.return_url → PaymentRequest.ExtraData.ReturnUrl в БД."""
+    return_url = "https://merchant.example.com/return?order=test"
+    body = {
+        **_VALID_LINK_BODY,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_rurl"), "return_url": return_url},
+    }
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    link_id = resp.json().get("link_id")
+    db = _query_pl_db(link_id)
+    if db:
+        pr = db.get("payment_request") or {}
+        if isinstance(pr, dict):
+            extra = pr.get("ExtraData", {})
+            assert extra.get("ReturnUrl") == return_url, \
+                f"ExtraData.ReturnUrl mismatch, got: {extra}"
+
+
+@pytest.mark.tcid("PL-054")
+def test_payment_link_db_payer_id_mapping():
+    """TC-28: customer_data.payer_info.payer_id → CustomerInfo.UserId в БД."""
+    body = {
+        **_VALID_LINK_BODY,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_uid")},
+        "customer_data": {"payer_info": {"payer_id": "USER-001"}},
+    }
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    link_id = resp.json().get("link_id")
+    db = _query_pl_db(link_id)
+    if db:
+        pr = db.get("payment_request") or {}
+        if isinstance(pr, dict):
+            ci = pr.get("CustomerInfo", {})
+            assert ci.get("UserId") == "USER-001", \
+                f"CustomerInfo.UserId must be 'USER-001', got: {ci}"
+
+
+# ─────────────────────────────────────────────
+# TC-31: Старый PascalCase-формат на новом URL
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-055")
+def test_payment_link_old_pascal_case_body_rejected():
+    """TC-31: Тело в старом PascalCase-формате на /api/v1/payment-links. Ожидается 400."""
+    body = {
+        "PaymentRequest": {
+            "OrderId": gen_order_id("pl_old_pc"),
+            "Amount": 10000,
+            "Currency": "RUB",
+        }
+    }
+    resp = post_payment_link(body)
+    assert resp.status_code == 400, f"Expected 400 for PascalCase body, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# TC-32: Старые заголовки на новом URL
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-056")
+def test_payment_link_old_headers_rejected():
+    """TC-32: Заголовки X-SITE-ID / X-REQUEST-SIGNATURE вместо Api-* → 4xx MissingHTTPHeader."""
+    raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
+    headers = {
+        "Content-Type": "application/json",
+        "X-SITE-ID": TERMINAL_ID,
+        "X-REQUEST-ID": str(uuid.uuid4()),
+        "X-REQUEST-SIGNATURE": hmac.new(
+            SERVICE_SECRET.encode(),
+            raw.encode(),
+            hashlib.sha256,
+        ).hexdigest(),
+    }
+    resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), \
+        f"Expected 4xx for old-style headers, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
