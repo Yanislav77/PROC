@@ -285,20 +285,18 @@ def test_refund_missing_timestamp():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RF-022")
 def test_refund_exceeds_remaining():
-    """Второй возврат превышает оставшуюся сумму. Ожидается 400 или 409."""
+    """Платёж 10000: первый возврат 5000 (успех), второй возврат 6000 > остаток 5000 (ошибка)."""
     oid = gen_order_id("refund_exceed_remain")
-    tid = make_completed_payin(oid)
-    body_first = {
+    tid = make_completed_payin(oid)  # 10000 RUB
+    resp1 = post_operation(tid, "refund", {
         "merchant_data": {"order_id": oid},
-        "financial_data": {"amount": 9500, "currency": "RUB"},
-    }
-    resp1 = post_operation(tid, "refund", body_first)
-    assert resp1.status_code in (200, 201), f"First refund failed: {resp1.text}"
-    body_second = {
+        "financial_data": {"amount": 5000, "currency": "RUB"},
+    })
+    assert resp1.status_code in (200, 201), f"First refund (5000) failed: {resp1.text}"
+    resp2 = post_operation(tid, "refund", {
         "merchant_data": {"order_id": oid},
-        "financial_data": {"amount": 1000, "currency": "RUB"},
-    }
-    resp2 = post_operation(tid, "refund", body_second)
+        "financial_data": {"amount": 6000, "currency": "RUB"},
+    })
     assert resp2.status_code in (400, 409), f"Expected 400/409, got {resp2.status_code}: {resp2.text}"
     assert_error_response(resp2)
 
