@@ -2,8 +2,8 @@
 Тесты для создания платёжных ссылок.
 POST /api/v1/payment-links
 
-Обязательные поля: merchant_data (с order_id), financial_data (amount + currency), customer_data
-Необязательные: flow_data
+Обязательные поля: merchant_data (с order_id), financial_data (amount + currency)
+Необязательные: customer_data, flow_data
 """
 import copy
 import hashlib
@@ -245,8 +245,8 @@ def test_create_payment_link_without_return_url():
 
 
 @pytest.mark.tcid("PL-008")
-def test_create_payment_link_minimal_customer_data():
-    """Создание ссылки с пустым customer_data — все поля CustomerData необязательны."""
+def test_create_payment_link_empty_customer_data():
+    """Создание ссылки с customer_data={} — пустой объект принимается, ожидается 201."""
     body = {**_VALID_LINK_BODY, "customer_data": {}}
     resp = post_payment_link(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
@@ -263,14 +263,22 @@ def test_create_payment_link_rub():
 # ─────────────────────────────────────────────
 # НЕГАТИВНЫЕ СЦЕНАРИИ — обязательные поля верхнего уровня
 # ─────────────────────────────────────────────
-@pytest.mark.parametrize("missing_field", ["merchant_data", "financial_data", "customer_data"])
+@pytest.mark.parametrize("missing_field", ["merchant_data", "financial_data"])
 @pytest.mark.tcid("PL-010")
 def test_payment_link_missing_required_field(missing_field):
-    """Отсутствие одного из трёх обязательных полей верхнего уровня. Ожидается 400."""
+    """Отсутствие одного из обязательных полей верхнего уровня. Ожидается 400."""
     body = {k: v for k, v in _VALID_LINK_BODY.items() if k != missing_field}
     resp = post_payment_link(body)
     assert resp.status_code == 400, f"Expected 400 for missing {missing_field}, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
+
+
+@pytest.mark.tcid("PL-010b")
+def test_payment_link_missing_customer_data_is_ok():
+    """customer_data не передан — поле необязательное, ожидается 201."""
+    body = {k: v for k, v in _VALID_LINK_BODY.items() if k != "customer_data"}
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201 for missing customer_data, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("PL-011")
