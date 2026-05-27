@@ -597,10 +597,22 @@ def pytest_unconfigure(config):
 </div>
 <script>
 (function(){{
-  var panels=document.querySelectorAll('.panel');
+  function parseTcid(t){{
+    if(!t)return['ZZZZ',99999];
+    var m=t.match(/^([A-Z0-9]+)-(\\d+)$/);
+    return m?[m[1],parseInt(m[2])]:[t,0];
+  }}
+  var main=document.getElementById('main');
   var sidebar=document.getElementById('sidebar');
+  var panels=Array.from(document.querySelectorAll('.panel'));
+  panels.sort(function(a,b){{
+    var ta=parseTcid(a.dataset.tcid),tb=parseTcid(b.dataset.tcid);
+    if(ta[0]!==tb[0])return ta[0]<tb[0]?-1:1;
+    return ta[1]-tb[1];
+  }});
+  panels.forEach(function(p){{main.appendChild(p);}});
   var passed=0,failed=0,firstFailed=null,navItems=[];
-  panels.forEach(function(p,i){{
+  panels.forEach(function(p){{
     var st=p.dataset.status,nm=p.dataset.name;
     if(st==='passed')passed++;else{{failed++;if(!firstFailed)firstFailed=p;}}
     var tcid=p.dataset.tcid;
@@ -621,7 +633,7 @@ def pytest_unconfigure(config):
   var toShow=firstFailed||panels[0];
   if(toShow){{
     toShow.classList.add('active');
-    navItems[Array.from(panels).indexOf(toShow)].classList.add('active');
+    navItems[panels.indexOf(toShow)].classList.add('active');
   }}
   var total=passed+failed;
   document.getElementById('summary').innerHTML=
