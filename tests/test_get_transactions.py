@@ -27,6 +27,7 @@ from conftest import (
     make_block_payin,
     make_completed_payin,
     gen_order_id,
+    query_transaction_from_redis,
 )
 
 
@@ -362,9 +363,18 @@ def test_get_by_order_id_special_chars_in_param():
 # ─────────────────────────────────────────────
 # СТАТУСЫ ТРАНЗАКЦИЙ (GT-031 … GT-034)
 # ─────────────────────────────────────────────
+def _assert_redis_status_matches(tid: int, api_status: str) -> None:
+    """Проверяет, что статус в Redis совпадает с api_status (если Redis доступен)."""
+    redis = query_transaction_from_redis(tid)
+    if redis:
+        assert redis.get("status") == api_status, (
+            f"Redis status mismatch: expected {api_status!r}, got {redis.get('status')!r}"
+        )
+
+
 @pytest.mark.tcid("GT-031")
 def test_get_cancelled_transaction_status():
-    """GET /{id} — отменённая транзакция имеет status='cancelled'."""
+    """GET /{id} — отменённая транзакция имеет status='cancelled', Redis совпадает."""
     oid = gen_order_id("gt_cancelled")
     tid = make_block_payin(oid)
     cancel = post_operation(tid, "cancel", {
@@ -374,23 +384,25 @@ def test_get_cancelled_transaction_status():
     assert cancel.status_code in (200, 201), f"Cancel failed: {cancel.text}"
     resp = get_request(f"{BASE_URL}/{tid}")
     assert resp.status_code == 200
-    assert resp.json().get("status") == "cancelled", \
-        f"Expected 'cancelled', got {resp.json().get('status')!r}"
+    api_status = resp.json().get("status")
+    assert api_status == "cancelled", f"Expected 'cancelled', got {api_status!r}"
+    _assert_redis_status_matches(tid, api_status)
 
 
 @pytest.mark.tcid("GT-032")
 def test_get_authorized_transaction_status():
-    """GET /{id} — hold-транзакция (manual capture, до capture) имеет status='authorized'."""
+    """GET /{id} — hold-транзакция (manual capture, до capture) имеет status='authorized', Redis совпадает."""
     tid = make_block_payin(gen_order_id("gt_auth"))
     resp = get_request(f"{BASE_URL}/{tid}")
     assert resp.status_code == 200
-    assert resp.json().get("status") == "authorized", \
-        f"Expected 'authorized', got {resp.json().get('status')!r}"
+    api_status = resp.json().get("status")
+    assert api_status == "authorized", f"Expected 'authorized', got {api_status!r}"
+    _assert_redis_status_matches(tid, api_status)
 
 
 @pytest.mark.tcid("GT-033")
 def test_get_refunded_transaction_status():
-    """GET /{id} — полностью возвращённая транзакция имеет status='refunded' или 'completed'."""
+    """GET /{id} — полностью возвращённая транзакция имеет status='refunded'/'completed', Redis совпадает."""
     oid = gen_order_id("gt_refunded")
     tid = make_completed_payin(oid)
     refund = post_operation(tid, "refund", {
@@ -400,13 +412,15 @@ def test_get_refunded_transaction_status():
     assert refund.status_code in (200, 201), f"Refund failed: {refund.text}"
     resp = get_request(f"{BASE_URL}/{tid}")
     assert resp.status_code == 200
-    assert resp.json().get("status") in ("refunded", "completed"), \
-        f"Expected 'refunded' or 'completed', got {resp.json().get('status')!r}"
+    api_status = resp.json().get("status")
+    assert api_status in ("refunded", "completed"), \
+        f"Expected 'refunded' or 'completed', got {api_status!r}"
+    _assert_redis_status_matches(tid, api_status)
 
 
 @pytest.mark.tcid("GT-034")
 def test_get_payout_transaction_type():
-    """GET /{id} — payout-транзакция имеет type='payout'."""
+    """GET /{id} — payout-транзакция имеет type='payout', Redis совпадает."""
     body = {
         "type": "payout",
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("gt_payout")},
@@ -423,3 +437,4 @@ def test_get_payout_transaction_type():
     data = resp.json()
     assert data.get("type") == "payout", f"Expected type='payout', got {data.get('type')!r}"
     assert_transaction_response(data)
+    _assert_redis_status_matches(tid, data.get("status"))
