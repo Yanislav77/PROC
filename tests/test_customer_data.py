@@ -74,11 +74,12 @@ def _with_payer(**overrides) -> dict:
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CD-001")
 def test_browser_info_missing():
-    """browser_info не передан. Ожидается 201 (browser_info опционален по спеке)."""
+    """browser_info не передан. Ожидается 400."""
     body = copy.deepcopy(_BASE)
     del body["customer_data"]["browser_info"]
     resp = post_transaction(body)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("CD-002")
@@ -1612,9 +1613,10 @@ def test_document_details_empty_object():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CD-198")
 def test_department_code_latin():
-    """department_code='ABC' (латиница). Ожидается 201."""
+    """department_code='ABC' (латиница). Ожидается 400."""
     resp = post_transaction(_with_doc(department_code="ABC"))
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("CD-199")
@@ -1626,9 +1628,10 @@ def test_department_code_cyrillic():
 
 @pytest.mark.tcid("CD-200")
 def test_department_code_digits():
-    """department_code='123' (цифры). Ожидается 201."""
+    """department_code='123' (цифры). Ожидается 400."""
     resp = post_transaction(_with_doc(department_code="123"))
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("CD-201")
@@ -1640,9 +1643,10 @@ def test_department_code_special_chars():
 
 @pytest.mark.tcid("CD-202")
 def test_department_code_one_char():
-    """department_code='A' (1 символ). Ожидается 201."""
+    """department_code='A' (1 символ). Ожидается 400."""
     resp = post_transaction(_with_doc(department_code="A"))
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("CD-203")

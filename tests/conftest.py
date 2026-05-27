@@ -80,13 +80,14 @@ def make_headers(terminal_id: str, raw_body: str = "", method: str = "POST") -> 
 
 
 def make_get_headers(terminal_id: str) -> dict:
-    """Заголовки для GET и DELETE запросов (без тела, без Idempotency-Key)."""
+    """Заголовки для GET и DELETE запросов (без тела)."""
     timestamp = str(int(time.time()))
     signature = calc_signature(terminal_id, timestamp, "")
     return {
-        "Api-Terminal-ID": terminal_id,
-        "Api-Signature":   signature,
-        "Api-Timestamp":   timestamp,
+        "Api-Terminal-ID":     terminal_id,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       signature,
+        "Api-Timestamp":       timestamp,
     }
 
 
@@ -849,6 +850,7 @@ def log_http_calls(request):
     ungrouped: list = []
     groups: list = []
     seen: set = set()
+    tr_id_type_violations: list = []
 
     for prep, resp in captures:
         url = prep.url or ""
@@ -871,6 +873,20 @@ def log_http_calls(request):
         if resp.status_code in (200, 201):
             try:
                 body = resp.json()
+
+                # List response (e.g. GET ?order_id=): check each item
+                if isinstance(body, list):
+                    for item in body:
+                        if isinstance(item, dict):
+                            item_tr_id = item.get("transaction_id")
+                            if item_tr_id is not None and not isinstance(item_tr_id, int):
+                                tr_id_type_violations.append(
+                                    f"{prep.method} {prep.url} → item transaction_id={item_tr_id!r}"
+                                    f" ({type(item_tr_id).__name__})"
+                                )
+                    ungrouped.append((prep, resp, label, css_class))
+                    continue
+
                 tr_id   = body.get("transaction_id")
                 link_id = body.get("link_id")
 
@@ -909,6 +925,14 @@ def log_http_calls(request):
                     else:
                         ungrouped.append((prep, resp, label, css_class))
 
+                elif tr_id is not None:
+                    # transaction_id present but wrong type — API type bug
+                    tr_id_type_violations.append(
+                        f"{prep.method} {prep.url} → transaction_id={tr_id!r}"
+                        f" ({type(tr_id).__name__})"
+                    )
+                    ungrouped.append((prep, resp, label, css_class))
+
                 elif isinstance(link_id, str) and link_id:
                     key = ("link", link_id)
                     if key not in seen:
@@ -933,6 +957,12 @@ def log_http_calls(request):
             ungrouped.append((prep, resp, label, css_class))
 
     _http_captures[request.node.nodeid] = (ungrouped, groups)
+
+    if tr_id_type_violations:
+        pytest.fail(
+            "transaction_id type violation — expected int, got:\n"
+            + "\n".join(f"  {v}" for v in tr_id_type_violations)
+        )
 
     bar = "-" * 64
     for prep, resp in captures:
