@@ -841,6 +841,7 @@ def test_payment_link_db_contact_info_mapping():
         **_VALID_LINK_BODY,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_ci_map")},
         "customer_data": {
+            **CUSTOMER_DATA,
             "contact_info": {
                 "email": "test@example.com",
                 "phone": "+79991234567",
@@ -848,7 +849,7 @@ def test_payment_link_db_contact_info_mapping():
                 "city": "Moscow",
                 "zip": "101000",
                 "state": "Moscow",
-            }
+            },
         },
     }
     resp = post_payment_link(body)
