@@ -851,6 +851,7 @@ def log_http_calls(request):
     groups: list = []
     seen: set = set()
     tr_id_type_violations: list = []
+    redis_status_violations: list = []
 
     for prep, resp in captures:
         url = prep.url or ""
@@ -911,6 +912,11 @@ def log_http_calls(request):
                             except Exception:
                                 api_status = None
                             redis_entry = {"tr_id": tr_id, "api_status": api_status, "data": rdata}
+                            redis_status = rdata.get("status")
+                            if redis_status and api_status and redis_status != api_status:
+                                redis_status_violations.append(
+                                    f"tr_id={tr_id}: API={api_status!r}, Redis={redis_status!r}"
+                                )
                         groups.append({
                             "title": label,
                             "css_class": css_class,
@@ -962,6 +968,12 @@ def log_http_calls(request):
         pytest.fail(
             "transaction_id type violation — expected int, got:\n"
             + "\n".join(f"  {v}" for v in tr_id_type_violations)
+        )
+
+    if redis_status_violations:
+        pytest.fail(
+            "Redis status mismatch:\n"
+            + "\n".join(f"  {v}" for v in redis_status_violations)
         )
 
     bar = "-" * 64
