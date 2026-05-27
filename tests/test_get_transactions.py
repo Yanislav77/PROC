@@ -12,14 +12,21 @@ import pytest
 from conftest import (
     get_request,
     make_get_headers,
+    post_transaction,
+    post_operation,
     BASE_URL,
     TERMINAL_ID,
     MERCHANT_DATA,
+    CUSTOMER_DATA,
+    THREED,
     SERVICE_SECRET,
     CARD_DETAILS,
     MERCHANT_BALANCE_URL,
     assert_transaction_response,
     assert_error_response,
+    make_block_payin,
+    make_completed_payin,
+    gen_order_id,
 )
 
 
@@ -350,3 +357,69 @@ def test_get_by_order_id_special_chars_in_param():
     """GET ?order_id= со спецсимволами в значении параметра. Ожидается 400 или 404."""
     resp = get_request(BASE_URL, params={"order_id": "order<script>alert(1)</script>"})
     assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}"
+
+
+# ─────────────────────────────────────────────
+# СТАТУСЫ ТРАНЗАКЦИЙ (GT-031 … GT-034)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("GT-031")
+def test_get_cancelled_transaction_status():
+    """GET /{id} — отменённая транзакция имеет status='cancelled'."""
+    oid = gen_order_id("gt_cancelled")
+    tid = make_block_payin(oid)
+    cancel = post_operation(tid, "cancel", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+    })
+    assert cancel.status_code in (200, 201), f"Cancel failed: {cancel.text}"
+    resp = get_request(f"{BASE_URL}/{tid}")
+    assert resp.status_code == 200
+    assert resp.json().get("status") == "cancelled", \
+        f"Expected 'cancelled', got {resp.json().get('status')!r}"
+
+
+@pytest.mark.tcid("GT-032")
+def test_get_authorized_transaction_status():
+    """GET /{id} — hold-транзакция (manual capture, до capture) имеет status='authorized'."""
+    tid = make_block_payin(gen_order_id("gt_auth"))
+    resp = get_request(f"{BASE_URL}/{tid}")
+    assert resp.status_code == 200
+    assert resp.json().get("status") == "authorized", \
+        f"Expected 'authorized', got {resp.json().get('status')!r}"
+
+
+@pytest.mark.tcid("GT-033")
+def test_get_refunded_transaction_status():
+    """GET /{id} — полностью возвращённая транзакция имеет status='refunded' или 'completed'."""
+    oid = gen_order_id("gt_refunded")
+    tid = make_completed_payin(oid)
+    refund = post_operation(tid, "refund", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+    })
+    assert refund.status_code in (200, 201), f"Refund failed: {refund.text}"
+    resp = get_request(f"{BASE_URL}/{tid}")
+    assert resp.status_code == 200
+    assert resp.json().get("status") in ("refunded", "completed"), \
+        f"Expected 'refunded' or 'completed', got {resp.json().get('status')!r}"
+
+
+@pytest.mark.tcid("GT-034")
+def test_get_payout_transaction_type():
+    """GET /{id} — payout-транзакция имеет type='payout'."""
+    body = {
+        "type": "payout",
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("gt_payout")},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
+    }
+    payout = post_transaction(body)
+    assert payout.status_code == 201, f"Payout creation failed: {payout.text}"
+    tid = payout.json()["transaction_id"]
+    resp = get_request(f"{BASE_URL}/{tid}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data.get("type") == "payout", f"Expected type='payout', got {data.get('type')!r}"
+    assert_transaction_response(data)
