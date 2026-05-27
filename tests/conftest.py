@@ -171,8 +171,11 @@ CARD_DETAILS = {
 
 # Заглушка для нескольких карт. Сейчас используется только "default" (= CARD_DETAILS).
 # Когда понадобится — добавьте новую карту по образцу и используйте CARDS["visa"] и т.д.
+CARD_3DS = {**CARD_DETAILS, "cvv": "550"}
+
 CARDS = {
     "default": CARD_DETAILS,
+    "3ds": CARD_3DS,
     # "visa": {
     #     "pan": "...",
     #     "holder": "...",
@@ -725,8 +728,15 @@ def log_http_calls(request):
     for prep, resp in captures:
         url = prep.url or ""
 
-        label = "Создание транзакции"
-        css_class = "create"
+        if prep.method == "GET":
+            label = "Опрос статуса"
+            css_class = "poll"
+        elif prep.method == "DELETE":
+            label = "Удаление"
+            css_class = "operation"
+        else:
+            label = "Создание транзакции"
+            css_class = "create"
         for suffix, op_label in _OP_LABELS.items():
             if suffix in url:
                 label = op_label
