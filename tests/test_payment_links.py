@@ -1161,3 +1161,126 @@ def test_payment_link_side_effects_match_webpay_create():
         req_wv3 = db_wv3.get("request") or {}
         if isinstance(req_wv3, dict):
             assert req_wv3.get("PaymentRequest", {}).get("Currency") == "RUB", f"webpayv3.request.PaymentRequest.Currency mismatch: {req_wv3}"
+
+
+# ─────────────────────────────────────────────
+# TC-02: Полный набор полей → полная структура БД
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-059")
+def test_payment_link_db_full_mapping():
+    """TC-02: POST со всеми полями — в БД PaymentRequest, CustomerInfo, PassportInfo заполнены корректно."""
+    body = {
+        "merchant_data": {
+            **MERCHANT_DATA,
+            "order_id": gen_order_id("pl_full_map"),
+            "description": "Full mapping test",
+            "return_url": "https://merchant.example.com/return",
+        },
+        "financial_data": {"amount": 5000, "currency": "RUB"},
+        "flow_data": {
+            "is_recurrent": True,
+            "capture_mode": "auto",
+            "threed_secure": {"challenge_window_size": "05"},
+        },
+        "customer_data": {
+            **CUSTOMER_DATA,
+            "contact_info": {
+                "email": "full@example.com",
+                "phone": "+79991234567",
+                "country": "RU",
+                "city": "Moscow",
+                "zip": "101000",
+                "state": "Moscow",
+            },
+            "personal_info": {
+                "first_name": "Ivan",
+                "last_name": "Petrov",
+                "date_of_birth": "1985-03-15",
+                "nationality": "RU",
+                "document_type": "passport",
+                "document_details": {
+                    "number": "4512123456",
+                    "issue_date": "2015-06-01",
+                    "expiry_date": "2030-06-01",
+                    "gender": "M",
+                    "issuer": "UFMS",
+                    "department_code": "770-001",
+                    "series": "4512",
+                },
+            },
+            "payer_info": {"payer_id": "USER-FULL-001"},
+        },
+    }
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    link_id = resp.json().get("link_id")
+    db = _query_pl_db(link_id)
+    if db:
+        pr = db.get("request") or {}
+        if not isinstance(pr, dict):
+            return
+        pl_req = pr.get("PaymentRequest", {})
+        assert pl_req.get("Currency") == "RUB",     f"PaymentRequest.Currency: {pl_req}"
+        assert pl_req.get("RebillFlag") is True,    f"PaymentRequest.RebillFlag: {pl_req}"
+        extra = pl_req.get("ExtraData", {})
+        assert extra.get("ChallengeWindowSize") == "05", f"ExtraData.ChallengeWindowSize: {extra}"
+        assert extra.get("ReturnUrl"),               f"ExtraData.ReturnUrl missing: {extra}"
+        ci = pr.get("CustomerInfo", {})
+        assert ci.get("Email") == "full@example.com",   f"CustomerInfo.Email: {ci}"
+        assert ci.get("Phone") == "+79991234567",        f"CustomerInfo.Phone: {ci}"
+        assert ci.get("Country") == "RU",                f"CustomerInfo.Country: {ci}"
+        assert ci.get("Town") == "Moscow",               f"CustomerInfo.Town: {ci}"
+        assert ci.get("ZIP") == "101000",                f"CustomerInfo.ZIP: {ci}"
+        assert ci.get("FirstName") == "Ivan",            f"CustomerInfo.FirstName: {ci}"
+        assert ci.get("LastName") == "Petrov",           f"CustomerInfo.LastName: {ci}"
+        assert ci.get("DateOfBirth") == "1985-03-15",    f"CustomerInfo.DateOfBirth: {ci}"
+        assert ci.get("Nationality") == "RU",            f"CustomerInfo.Nationality: {ci}"
+        assert ci.get("NumberDocument") == "4512123456", f"CustomerInfo.NumberDocument: {ci}"
+        assert ci.get("IssueDate") == "2015-06-01",      f"CustomerInfo.IssueDate: {ci}"
+        assert ci.get("ExpireDate") == "2030-06-01",     f"CustomerInfo.ExpireDate: {ci}"
+        assert ci.get("UserId") == "USER-FULL-001",      f"CustomerInfo.UserId: {ci}"
+
+
+# ─────────────────────────────────────────────
+# TC-20/21: capture_mode в БД
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PL-060")
+def test_payment_link_db_capture_mode_auto():
+    """TC-20: capture_mode='auto' сохраняется в PaymentRequest.ExtraData.CaptureMode в БД."""
+    body = {
+        **_VALID_LINK_BODY,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_cap_auto")},
+        "flow_data": {"capture_mode": "auto"},
+    }
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    link_id = resp.json().get("link_id")
+    db = _query_pl_db(link_id)
+    if db:
+        pr = db.get("request") or {}
+        if isinstance(pr, dict):
+            extra = pr.get("PaymentRequest", {}).get("ExtraData", {})
+            capture = extra.get("CaptureMode")
+            assert capture in ("auto", "Auto"), \
+                f"Expected ExtraData.CaptureMode='auto', got: {capture!r} in {extra}"
+
+
+@pytest.mark.tcid("PL-061")
+def test_payment_link_db_capture_mode_manual():
+    """TC-21: capture_mode='manual' сохраняется в PaymentRequest.ExtraData.CaptureMode в БД."""
+    body = {
+        **_VALID_LINK_BODY,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_cap_man")},
+        "flow_data": {"capture_mode": "manual"},
+    }
+    resp = post_payment_link(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    link_id = resp.json().get("link_id")
+    db = _query_pl_db(link_id)
+    if db:
+        pr = db.get("request") or {}
+        if isinstance(pr, dict):
+            extra = pr.get("PaymentRequest", {}).get("ExtraData", {})
+            capture = extra.get("CaptureMode")
+            assert capture in ("manual", "Manual"), \
+                f"Expected ExtraData.CaptureMode='manual', got: {capture!r} in {extra}"

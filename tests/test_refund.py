@@ -320,8 +320,8 @@ def test_refund_response_fields(refund_tid):
 # ДОПОЛНИТЕЛЬНЫЕ (RF-024 … RF-035)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RF-024")
-def test_refund_idempotency_same_key_second_returns_409(refund_tid):
-    """Refund с одним idempotency_key дважды — второй возвращает 409."""
+def test_refund_idempotency_same_key_returns_cached_response(refund_tid):
+    """Refund с одним idempotency_key дважды — второй возвращает кэшированный ответ первого (200)."""
     body = {
         "merchant_data": {"order_id": MERCHANT_DATA["order_id"]},
         "financial_data": {"amount": 100, "currency": "RUB"},
@@ -343,7 +343,9 @@ def test_refund_idempotency_same_key_second_returns_409(refund_tid):
     r1 = _do(str(int(time.time())))
     assert r1.status_code in (200, 201), f"First refund failed: {r1.text}"
     r2 = _do(str(int(time.time())))
-    assert r2.status_code == 409, f"Expected 409 for duplicate key, got {r2.status_code}"
+    assert r2.status_code in (200, 201), f"Expected cached 200/201 for duplicate key, got {r2.status_code}"
+    assert r1.json().get("transaction_id") == r2.json().get("transaction_id"), \
+        f"Cached response must return same transaction_id: {r1.json()} vs {r2.json()}"
 
 
 @pytest.mark.tcid("RF-025")
