@@ -451,3 +451,70 @@ def test_cancel_content_type_is_json_in_response():
     resp = post_operation("000000000000", "cancel", body)
     assert "application/json" in resp.headers.get("Content-Type", ""), \
         f"Content-Type не json: {resp.headers.get('Content-Type')}"
+
+
+# ─────────────────────────────────────────────
+# ИДЕМПОТЕНТНОСТЬ
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CAN-032")
+def test_cancel_idempotency_same_key_returns_cached_response():
+    """Два cancel с одинаковым Idempotency-Key и одинаковым телом — второй возвращает кэшированный ответ."""
+    order_id = gen_order_id("can_idem_same")
+    tid = make_block_payin(order_id)
+    body = make_op_body(order_id)
+    raw = json.dumps(body, separators=(",", ":"))
+    key = str(uuid.uuid4())
+
+    def _do(ts: str) -> requests.Response:
+        sig = calc_signature(TERMINAL_ID, ts, raw)
+        h = {
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        }
+        return requests.post(f"{BASE_URL}/{tid}/cancel", data=raw, headers=h, timeout=30)
+
+    r1 = _do(str(int(time.time())))
+    assert r1.status_code in (200, 201), f"First cancel failed: {r1.text}"
+    tid1 = r1.json().get("transaction_id")
+
+    r2 = _do(str(int(time.time())))
+    assert r2.status_code in (200, 201), f"Expected cached response, got {r2.status_code}: {r2.text}"
+    assert r2.json().get("transaction_id") == tid1, \
+        f"Cached response должен вернуть тот же transaction_id: {tid1!r}, got {r2.json().get('transaction_id')!r}"
+
+
+@pytest.mark.tcid("CAN-033")
+def test_cancel_idempotency_same_key_different_body():
+    """Два cancel с одинаковым Idempotency-Key, но разными суммами — второй возвращает кэшированный ответ первого."""
+    order_id = gen_order_id("can_idem_diff")
+    tid = make_block_payin(order_id)
+    key = str(uuid.uuid4())
+
+    def _do(amount: int, ts: str) -> requests.Response:
+        body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": amount, "currency": "RUB"}}
+        raw = json.dumps(body, separators=(",", ":"))
+        sig = calc_signature(TERMINAL_ID, ts, raw)
+        h = {
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        }
+        return requests.post(f"{BASE_URL}/{tid}/cancel", data=raw, headers=h, timeout=30)
+
+    r1 = _do(1000, str(int(time.time())))
+    assert r1.status_code in (200, 201), f"First cancel failed: {r1.text}"
+    tid1 = r1.json().get("transaction_id")
+
+    r2 = _do(500, str(int(time.time())))
+    if r2.status_code in (200, 201):
+        assert r2.json().get("transaction_id") == tid1, \
+            f"Кэшированный ответ должен вернуть тот же transaction_id: {tid1!r}"
+    else:
+        assert r2.status_code in (400, 409), \
+            f"Expected cached response or conflict error, got {r2.status_code}: {r2.text}"
+        assert_error_response(r2)

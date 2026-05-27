@@ -360,8 +360,8 @@ def test_capture_response_fields():
 # ДОПОЛНИТЕЛЬНЫЕ (CAP-024 … CAP-030)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CAP-024")
-def test_capture_idempotency_same_key_second_returns_409():
-    """Capture с одним idempotency_key дважды — второй возвращает 409."""
+def test_capture_idempotency_same_key_returns_cached_response():
+    """Capture с одним idempotency_key дважды — второй возвращает кэшированный ответ."""
     order_id = gen_order_id("cap_idem")
     tid = make_block_payin(order_id)
     body = make_op_body(order_id)
@@ -371,18 +371,22 @@ def test_capture_idempotency_same_key_second_returns_409():
     def _do(ts: str) -> requests.Response:
         sig = calc_signature(TERMINAL_ID, ts, raw)
         h = {
-            "Content-Type": "application/json",
-            "Api-Terminal-ID": TERMINAL_ID,
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
             "Api-Idempotency-Key": key,
-            "Api-Signature": sig,
-            "Api-Timestamp": ts,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
         }
         return requests.post(f"{BASE_URL}/{tid}/capture", data=raw, headers=h, timeout=30)
 
     r1 = _do(str(int(time.time())))
     assert r1.status_code == 200, f"First capture failed: {r1.text}"
+    tid1 = r1.json().get("transaction_id")
+
     r2 = _do(str(int(time.time())))
-    assert r2.status_code == 409, f"Expected 409, got {r2.status_code}"
+    assert r2.status_code == 200, f"Expected cached 200, got {r2.status_code}: {r2.text}"
+    assert r2.json().get("transaction_id") == tid1, \
+        f"Кэшированный ответ должен вернуть тот же transaction_id: {tid1!r}, got {r2.json().get('transaction_id')!r}"
 
 
 @pytest.mark.tcid("CAP-025")
@@ -467,3 +471,37 @@ def test_capture_min_amount_one():
     body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": 1, "currency": "RUB"}}
     resp = post_operation(tid, "capture", body)
     assert resp.status_code in (200, 400), f"Expected 200 or 400, got {resp.status_code}"
+
+
+@pytest.mark.tcid("CAP-032")
+def test_capture_idempotency_same_key_different_body():
+    """Capture с одним Idempotency-Key, но разными суммами — второй возвращает кэшированный ответ первого."""
+    order_id = gen_order_id("cap_idem_diff")
+    tid = make_block_payin(order_id)
+    key = str(uuid.uuid4())
+
+    def _do(amount: int, ts: str) -> requests.Response:
+        body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": amount, "currency": "RUB"}}
+        raw = json.dumps(body, separators=(",", ":"))
+        sig = calc_signature(TERMINAL_ID, ts, raw)
+        h = {
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        }
+        return requests.post(f"{BASE_URL}/{tid}/capture", data=raw, headers=h, timeout=30)
+
+    r1 = _do(1000, str(int(time.time())))
+    assert r1.status_code == 200, f"First capture failed: {r1.text}"
+    tid1 = r1.json().get("transaction_id")
+
+    r2 = _do(500, str(int(time.time())))
+    if r2.status_code == 200:
+        assert r2.json().get("transaction_id") == tid1, \
+            f"Кэшированный ответ должен вернуть тот же transaction_id: {tid1!r}"
+    else:
+        assert r2.status_code in (400, 409), \
+            f"Expected cached response or conflict error, got {r2.status_code}: {r2.text}"
+        assert_error_response(r2)
