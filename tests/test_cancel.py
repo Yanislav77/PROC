@@ -349,8 +349,8 @@ def test_cancel_response_type_payin():
 # ДОПОЛНИТЕЛЬНЫЕ (CAN-023 … CAN-030)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CAN-023")
-def test_cancel_idempotency_same_key_returns_409():
-    """Cancel с одним idempotency_key дважды — второй запрос должен вернуть 409."""
+def test_cancel_idempotency_same_key_returns_400():
+    """Cancel с одним idempotency_key дважды — второй запрос должен вернуть 400."""
     order_id = gen_order_id("can_idem")
     tid = make_block_payin(order_id)
     body = make_op_body(order_id)
@@ -371,7 +371,8 @@ def test_cancel_idempotency_same_key_returns_409():
     r1 = _do(str(int(time.time())))
     assert r1.status_code in (200, 201), f"First cancel failed: {r1.text}"
     r2 = _do(str(int(time.time())))
-    assert r2.status_code == 409, f"Expected 409 for duplicate idempotency key, got {r2.status_code}"
+    assert r2.status_code == 400, f"Expected 400 for duplicate idempotency key, got {r2.status_code}"
+    assert_error_response(r2)
 
 
 @pytest.mark.tcid("CAN-024")
