@@ -3,8 +3,6 @@
 POST /api/v1/transactions/{id}/capture
 Применимо только к транзакциям с capture_mode=manual в статусе authorized.
 """
-import hashlib
-import hmac
 import json
 import time
 import uuid
@@ -13,24 +11,17 @@ import pytest
 import requests
 
 from conftest import (
-    post_transaction,
+    calc_signature,
     post_operation,
     BASE_URL,
     TERMINAL_ID,
-    MERCHANT_DATA,
-    CUSTOMER_DATA,
-    CARD_DETAILS,
-    THREED,
-    SERVICE_SECRET,
     assert_transaction_response,
     assert_error_response,
     gen_order_id,
+    make_block_payin,
+    make_completed_payin,
+    make_op_body,
 )
-
-
-def _sign(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
-    message = f"{timestamp}{terminal_id}{raw_body}"
-    return hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
 
 _OP_BODY = {
     "merchant_data": {
@@ -40,48 +31,6 @@ _OP_BODY = {
     },
     "financial_data": {"amount": 1000, "currency": "RUB"},
 }
-
-
-def _make_completed_payin(order_id: str = None) -> str:
-    """Создаёт auto-capture payin и возвращает transaction_id."""
-    body = {
-        "type": "payin",
-        "merchant_data": {**MERCHANT_DATA, "order_id": order_id or f"order_{uuid.uuid4().hex[:8]}"},
-        "financial_data": {"amount": 10000, "currency": "RUB"},
-        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
-        "customer_data": CUSTOMER_DATA,
-        "transaction_data": {"method": "card", "details": CARD_DETAILS},
-    }
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Setup auto payin failed: {resp.text}"
-    time.sleep(1)
-    return resp.json()["transaction_id"]
-
-
-def _op_body(order_id: str, amount: int = 1000) -> dict:
-    return {
-        "merchant_data": {"order_id": order_id},
-        "financial_data": {"amount": amount, "currency": "RUB"},
-    }
-
-
-def _make_block_payin(order_id: str = "order_block_capture", description: str = None) -> str:
-    """Создаёт Payin с холдом (capture_mode=manual) и возвращает transaction_id."""
-    md = {**MERCHANT_DATA, "order_id": order_id}
-    if description is not None:
-        md["description"] = description
-    body = {
-        "type": "payin",
-        "merchant_data": md,
-        "financial_data": {"amount": 1000, "currency": "RUB"},
-        "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
-        "customer_data": CUSTOMER_DATA,
-        "transaction_data": {"method": "card", "details": CARD_DETAILS},
-    }
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"Setup Block Payin failed: {resp.text}"
-    time.sleep(1)
-    return resp.json()["transaction_id"]
 
 
 # ─────────────────────────────────────────────
@@ -101,7 +50,7 @@ def test_capture_full(payin_block_transaction_id):
 def test_capture_partial():
     """Частичное списание (500 из 1000). Ожидается 200."""
     oid = gen_order_id("capture_partial")
-    tid = _make_block_payin(oid)
+    tid = make_block_payin(oid)
     body = {
         "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 500, "currency": "RUB"},
@@ -115,7 +64,7 @@ def test_capture_partial():
 def test_capture_without_webhook_url():
     """Capture без необязательного webhook_url в merchant_data. Ожидается 200."""
     oid = gen_order_id("capture_no_wh")
-    tid = _make_block_payin(oid)
+    tid = make_block_payin(oid)
     body = {
         "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
@@ -347,7 +296,7 @@ def test_capture_currency_lowercase():
 def test_capture_amount_exceeds_authorized():
     """Capture с суммой, превышающей заблокированную (1000). Ожидается 400 или 409."""
     oid = gen_order_id("capture_exceed")
-    tid = _make_block_payin(oid)
+    tid = make_block_payin(oid)
     body = {
         "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 999999, "currency": "RUB"},
@@ -361,7 +310,7 @@ def test_capture_amount_exceeds_authorized():
 def test_capture_already_captured():
     """Повторный capture уже захваченной транзакции. Ожидается 409."""
     oid = gen_order_id("capture_twice")
-    tid = _make_block_payin(oid)
+    tid = make_block_payin(oid)
     body = {
         "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
@@ -377,7 +326,7 @@ def test_capture_already_captured():
 def test_capture_with_description():
     """Capture с опциональным description в merchant_data. Ожидается 200."""
     oid = gen_order_id("capture_desc")
-    tid = _make_block_payin(oid)
+    tid = make_block_payin(oid)
     body = {
         "merchant_data": {
             "order_id": oid,
@@ -394,7 +343,7 @@ def test_capture_with_description():
 def test_capture_response_fields():
     """Capture успешной транзакции — ответ содержит все обязательные поля."""
     oid = gen_order_id("capture_resp_check")
-    tid = _make_block_payin(oid)
+    tid = make_block_payin(oid)
     body = {
         "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
@@ -414,13 +363,13 @@ def test_capture_response_fields():
 def test_capture_idempotency_same_key_second_returns_409():
     """Capture с одним idempotency_key дважды — второй возвращает 409."""
     order_id = gen_order_id("cap_idem")
-    tid = _make_block_payin(order_id)
-    body = _op_body(order_id)
+    tid = make_block_payin(order_id)
+    body = make_op_body(order_id)
     raw = json.dumps(body, separators=(",", ":"))
     key = str(uuid.uuid4())
 
     def _do(ts: str) -> requests.Response:
-        sig = _sign(TERMINAL_ID, ts, raw)
+        sig = calc_signature(TERMINAL_ID, ts, raw)
         h = {
             "Content-Type": "application/json",
             "Api-Terminal-ID": TERMINAL_ID,
@@ -439,10 +388,10 @@ def test_capture_idempotency_same_key_second_returns_409():
 @pytest.mark.tcid("CAP-025")
 def test_capture_missing_idempotency_key_returns_400():
     """Capture без Api-Idempotency-Key. Ожидается 400."""
-    body = _op_body("order_capture_test")
+    body = make_op_body("order_capture_test")
     raw = json.dumps(body, separators=(",", ":"))
     timestamp = str(int(time.time()))
-    sig = _sign(TERMINAL_ID, timestamp, raw)
+    sig = calc_signature(TERMINAL_ID, timestamp, raw)
     headers = {
         "Content-Type": "application/json",
         "Api-Terminal-ID": TERMINAL_ID,
@@ -458,8 +407,8 @@ def test_capture_missing_idempotency_key_returns_400():
 def test_capture_response_has_merchant_data():
     """Capture успешной транзакции — ответ содержит merchant_data."""
     order_id = gen_order_id("cap_md")
-    tid = _make_block_payin(order_id)
-    resp = post_operation(tid, "capture", _op_body(order_id))
+    tid = make_block_payin(order_id)
+    resp = post_operation(tid, "capture", make_op_body(order_id))
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     assert "merchant_data" in resp.json()
 
@@ -468,8 +417,8 @@ def test_capture_response_has_merchant_data():
 def test_capture_response_has_created_at():
     """Capture успешной транзакции — ответ содержит created_at."""
     order_id = gen_order_id("cap_ca")
-    tid = _make_block_payin(order_id)
-    resp = post_operation(tid, "capture", _op_body(order_id))
+    tid = make_block_payin(order_id)
+    resp = post_operation(tid, "capture", make_op_body(order_id))
     assert resp.status_code == 200
     assert "created_at" in resp.json()
 
@@ -487,8 +436,8 @@ def test_capture_financial_data_empty_object():
 def test_capture_auto_payin_returns_409():
     """Capture по транзакции с capture_mode=auto. Ожидается 409."""
     order_id = gen_order_id("cap_auto")
-    tid = _make_completed_payin(order_id)
-    resp = post_operation(tid, "capture", _op_body(order_id))
+    tid = make_completed_payin(order_id)
+    resp = post_operation(tid, "capture", make_op_body(order_id))
     assert resp.status_code == 409, f"Expected 409, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
@@ -497,7 +446,7 @@ def test_capture_auto_payin_returns_409():
 def test_capture_description_comes_from_capture_not_parent():
     """description в ответе capture должен быть из запроса capture, а не из родительской транзакции."""
     oid = gen_order_id("cap_desc_check")
-    tid = _make_block_payin(oid, description="Parent description")
+    tid = make_block_payin(oid, description="Parent description")
     body = {
         "merchant_data": {"order_id": oid, "description": "Capture description"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
@@ -514,7 +463,7 @@ def test_capture_description_comes_from_capture_not_parent():
 def test_capture_min_amount_one():
     """Capture с суммой 1 (минимально допустимое). Ожидается 200 или 400."""
     order_id = gen_order_id("cap_min")
-    tid = _make_block_payin(order_id)
+    tid = make_block_payin(order_id)
     body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": 1, "currency": "RUB"}}
     resp = post_operation(tid, "capture", body)
     assert resp.status_code in (200, 400), f"Expected 200 or 400, got {resp.status_code}"

@@ -620,6 +620,48 @@ def gen_order_id(name: str) -> str:
     return f"{_RUN_ID}_{slug}"
 
 
+def make_block_payin(order_id: str = None, description: str = None) -> str:
+    """Creates Payin with capture_mode=manual (hold) and returns transaction_id."""
+    md = {**MERCHANT_DATA, "order_id": order_id or gen_order_id("block")}
+    if description is not None:
+        md["description"] = description
+    body = {
+        "type": "payin",
+        "merchant_data": md,
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Setup Block Payin failed: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    return resp.json()["transaction_id"]
+
+
+def make_completed_payin(order_id: str = None) -> str:
+    """Creates auto-capture payin and returns transaction_id."""
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": order_id or gen_order_id("auto")},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Setup auto payin failed: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    return resp.json()["transaction_id"]
+
+
+def make_op_body(order_id: str, amount: int = 1000) -> dict:
+    return {
+        "merchant_data": {"order_id": order_id},
+        "financial_data": {"amount": amount, "currency": "RUB"},
+    }
+
+
 @pytest.fixture(autouse=True)
 def _inter_test_delay():
     yield

@@ -4,8 +4,6 @@ POST /api/v1/transactions/{id}/confirm
 Типы: threed_secure, redirect, transfer_card, transfer_phone, transfer_qr, transfer_account, top_up_mobile.
 Happy path требует транзакцию в статусе waiting_action — покрыты только негативные сценарии.
 """
-import hashlib
-import hmac
 import json
 import time
 import uuid
@@ -13,12 +11,7 @@ import uuid
 import pytest
 import requests
 
-from conftest import post_operation, BASE_URL, TERMINAL_ID, SERVICE_SECRET, assert_error_response
-
-
-def _sign(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
-    message = f"{timestamp}{terminal_id}{raw_body}"
-    return hmac.new(SERVICE_SECRET.encode(), message.encode(), hashlib.sha256).hexdigest()
+from conftest import calc_signature, post_operation, BASE_URL, TERMINAL_ID, assert_error_response
 
 
 # ─────────────────────────────────────────────
@@ -409,7 +402,7 @@ def test_confirm_idempotency_same_key_second_returns_409():
     key = str(uuid.uuid4())
 
     def _do(ts: str) -> requests.Response:
-        sig = _sign(TERMINAL_ID, ts, raw)
+        sig = calc_signature(TERMINAL_ID, ts, raw)
         h = {
             "Content-Type": "application/json",
             "Api-Terminal-ID": TERMINAL_ID,
@@ -435,7 +428,7 @@ def test_confirm_missing_idempotency_key_returns_400():
     }
     raw = json.dumps(body, separators=(",", ":"))
     timestamp = str(int(time.time()))
-    sig = _sign(TERMINAL_ID, timestamp, raw)
+    sig = calc_signature(TERMINAL_ID, timestamp, raw)
     headers = {
         "Content-Type": "application/json",
         "Api-Terminal-ID": TERMINAL_ID,
