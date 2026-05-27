@@ -62,8 +62,9 @@ def test_idempotency_key_deduplication():
     resp2 = _send(str(int(time.time())))
 
     assert resp1.status_code == 201
-    assert resp2.status_code == 409, f"Expected 409 Conflict for duplicate idempotency key, got {resp2.status_code}"
-    assert_error_response(resp2)
+    assert resp2.status_code == 201, f"Expected cached 201 for duplicate idempotency key, got {resp2.status_code}"
+    assert resp1.json().get("transaction_id") == resp2.json().get("transaction_id"), \
+        f"Cached response must return same transaction_id: {resp1.json()} vs {resp2.json()}"
 
 
 # ─────────────────────────────────────────────
