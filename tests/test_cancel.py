@@ -313,7 +313,7 @@ def test_cancel_already_cancelled():
     resp1 = post_operation(tid, "cancel", body)
     assert resp1.status_code in (200, 201), f"First cancel failed: {resp1.text}"
     resp2 = post_operation(tid, "cancel", body)
-    assert resp2.status_code in (400, 409), f"Expected 400 or 409, got {resp2.status_code}: {resp2.text}"
+    assert resp2.status_code == 400, f"Expected 400, got {resp2.status_code}: {resp2.text}"
     assert_error_response(resp2)
 
 
@@ -349,29 +349,15 @@ def test_cancel_response_type_payin():
 # ДОПОЛНИТЕЛЬНЫЕ (CAN-023 … CAN-030)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CAN-023")
-def test_cancel_idempotency_same_key_returns_400():
-    """Cancel с одним idempotency_key дважды — второй запрос должен вернуть 400."""
+def test_cancel_second_request_different_key_returns_400():
+    """Два cancel на одну транзакцию с разными idempotency_key — второй должен вернуть 400."""
     order_id = gen_order_id("can_idem")
     tid = make_block_payin(order_id)
     body = make_op_body(order_id)
-    raw = json.dumps(body, separators=(",", ":"))
-    key = str(uuid.uuid4())
-
-    def _do(ts: str) -> requests.Response:
-        sig = calc_signature(TERMINAL_ID, ts, raw)
-        h = {
-            "Content-Type": "application/json",
-            "Api-Terminal-ID": TERMINAL_ID,
-            "Api-Idempotency-Key": key,
-            "Api-Signature": sig,
-            "Api-Timestamp": ts,
-        }
-        return requests.post(f"{BASE_URL}/{tid}/cancel", data=raw, headers=h, timeout=30)
-
-    r1 = _do(str(int(time.time())))
+    r1 = post_operation(tid, "cancel", body)
     assert r1.status_code in (200, 201), f"First cancel failed: {r1.text}"
-    r2 = _do(str(int(time.time())))
-    assert r2.status_code == 400, f"Expected 400 for duplicate idempotency key, got {r2.status_code}"
+    r2 = post_operation(tid, "cancel", body)
+    assert r2.status_code == 400, f"Expected 400 for second cancel, got {r2.status_code}: {r2.text}"
     assert_error_response(r2)
 
 
