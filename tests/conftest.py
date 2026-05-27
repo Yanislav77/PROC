@@ -209,7 +209,7 @@ THREED = {"challenge_window_size": "05"}
 # REPORT FILE (HTML)
 # ─────────────────────────────────────────────
 _report_file = None
-_http_captures: dict = {}  # nodeid -> (list[(PreparedRequest, Response, title, css_class)], list[db_records], list[{tr_id, api_status, redis_status, data}])
+_http_captures: dict = {}  # nodeid -> (ungrouped[(prep,resp,label,css)], groups[{title,tr_id,css_class,http_blocks,db_data,redis}])
 _call_reports:  dict = {}  # nodeid -> report (stored until teardown phase)
 _tc_ids:        dict = {}  # nodeid -> tcid string (from @pytest.mark.tcid)
 _test_counter = 0
@@ -362,7 +362,103 @@ def _sc_class(code: int) -> str:
     return "s5xx"
 
 
-def _write_report_entry(nodeid: str, status: str, error, entries: list, tc_id: str = "", db_data: list = None, redis_entries: list = None) -> None:
+def _render_http_block(f, prep, resp, title, css_class, indent="    ") -> None:
+    phrase = _status_phrase(resp.status_code)
+    sc = _sc_class(resp.status_code)
+    i = indent
+    f.write(f'{i}<div class="http-block">\n')
+    f.write(f'{i}  <div class="http-block-title {css_class}">{title}</div>\n')
+    f.write(f'{i}  <div class="http-block-body">\n')
+    f.write(f'{i}    <div class="section-label">Request</div>\n')
+    f.write(f'{i}    <p class="http-line"><span class="method">{_esc(prep.method)}</span>'
+            f' <span class="url">{_esc(prep.url)}</span></p>\n')
+    if prep.headers:
+        headers_text = "\n".join(f"{k}: {v}" for k, v in prep.headers.items())
+        f.write(f'{i}    <pre class="headers">{_esc(headers_text)}</pre>\n')
+    body_text = _fmt_body_plain(prep.body)
+    if body_text:
+        f.write(f'{i}    <pre class="body">{_esc(body_text)}</pre>\n')
+    f.write(f'{i}    <div class="section-label">Response</div>\n')
+    f.write(f'{i}    <p class="http-line"><span class="status-code {sc}">'
+            f'{resp.status_code} {_esc(phrase)}</span></p>\n')
+    resp_text = _fmt_body_plain(resp.text)
+    if resp_text:
+        f.write(f'{i}    <pre class="body">{_esc(resp_text)}</pre>\n')
+    f.write(f'{i}  </div>\n{i}</div>\n')
+
+
+def _render_db_section(f, db_data: list, indent="    ") -> None:
+    if not db_data:
+        return
+    i = indent
+    f.write(f'{i}<div class="section-label">Database</div>\n')
+    f.write(f'{i}<div class="db-section">\n')
+    grouped: dict = {}
+    for record in db_data:
+        grouped.setdefault(record["db"], []).append(record)
+    order = [db for db in ("secure", "support") if db in grouped]
+    order += [db for db in grouped if db not in order]
+    for db_name in order:
+        safe = _esc(db_name)
+        f.write(f'{i}  <div class="db-group">\n')
+        f.write(f'{i}    <div class="db-group-header {safe}">{safe}</div>\n')
+        f.write(f'{i}    <div class="db-group-body">\n')
+        for record in grouped[db_name]:
+            f.write(f'{i}      <div class="db-table-block">\n')
+            f.write(f'{i}        <div class="db-table-name">{_esc(record["table"])}</div>\n')
+            f.write(f'{i}        <div class="db-block">\n')
+            f.write(f'{i}          <table class="db-table"><thead><tr>\n')
+            for col in record["columns"]:
+                f.write(f'{i}            <th>{_esc(col)}</th>\n')
+            f.write(f'{i}          </tr></thead><tbody>\n')
+            for row in record["rows"]:
+                f.write(f'{i}          <tr>\n')
+                for val in row:
+                    if val is None:
+                        cell = "<span style='color:#555'>NULL</span>"
+                    else:
+                        s = str(val)
+                        cell = _esc(s[:200] + "…" if len(s) > 200 else s)
+                    f.write(f'{i}            <td>{cell}</td>\n')
+                f.write(f'{i}          </tr>\n')
+            f.write(f'{i}          </tbody></table>\n')
+            f.write(f'{i}        </div>\n{i}      </div>\n')
+        f.write(f'{i}    </div>\n{i}  </div>\n')
+    f.write(f'{i}</div>\n')
+
+
+def _render_redis_section(f, redis_entry: dict, indent="    ") -> None:
+    if not redis_entry:
+        return
+    i = indent
+    api_status = redis_entry.get("api_status") or ""
+    rdata      = redis_entry.get("data", {})
+    r_status   = rdata.get("status", "")
+    match      = (api_status == r_status) if (api_status and r_status) else None
+    rbadge     = ('<span class="redis-match">✓ match</span>' if match is True else
+                  '<span class="redis-mismatch">✗ mismatch</span>' if match is False else "")
+    f.write(f'{i}<div class="section-label">Redis</div>\n')
+    f.write(f'{i}<div class="db-section">\n')
+    f.write(f'{i}  <div class="db-group">\n')
+    f.write(f'{i}    <div class="db-group-header Redis">'
+            f'{"API: <b>" + _esc(api_status) + "</b>&nbsp;&nbsp;" if api_status else ""}'
+            f'{"Redis: <b>" + _esc(r_status) + "</b>" if r_status else ""}'
+            f'{"&nbsp;&nbsp;" + rbadge if rbadge else ""}'
+            f'</div>\n')
+    f.write(f'{i}    <div class="db-group-body">\n')
+    f.write(f'{i}      <div class="db-table-block"><div class="db-block">\n')
+    f.write(f'{i}        <table class="db-table"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>\n')
+    for k, v in rdata.items():
+        s = str(v)
+        cell = _esc(s[:300] + "…" if len(s) > 300 else s)
+        f.write(f'{i}          <tr><td>{_esc(k)}</td><td>{cell}</td></tr>\n')
+    f.write(f'{i}        </tbody></table>\n')
+    f.write(f'{i}      </div></div>\n')
+    f.write(f'{i}    </div>\n{i}  </div>\n')
+    f.write(f'{i}</div>\n')
+
+
+def _write_report_entry(nodeid: str, status: str, error, ungrouped: list, tc_id: str = "", groups: list = None) -> None:
     global _test_counter
     _test_counter += 1
     idx = _test_counter
@@ -384,106 +480,42 @@ def _write_report_entry(nodeid: str, status: str, error, entries: list, tc_id: s
         f.write('    <div class="section-label">Error</div>\n')
         f.write(f'    <div class="error-block"><pre>{_esc(error)}</pre></div>\n')
 
-    def _render_http_block(prep, resp, title, css_class):
-        phrase = _status_phrase(resp.status_code)
-        sc = _sc_class(resp.status_code)
-        f.write(f'    <div class="http-block">\n')
-        f.write(f'      <div class="http-block-title {css_class}">{title}</div>\n')
-        f.write(f'      <div class="http-block-body">\n')
-        f.write(f'        <div class="section-label">Request</div>\n')
-        f.write(f'        <p class="http-line"><span class="method">{_esc(prep.method)}</span>'
-                f' <span class="url">{_esc(prep.url)}</span></p>\n')
-        if prep.headers:
-            headers_text = "\n".join(f"{k}: {v}" for k, v in prep.headers.items())
-            f.write(f'        <pre class="headers">{_esc(headers_text)}</pre>\n')
-        body_text = _fmt_body_plain(prep.body)
-        if body_text:
-            f.write(f'        <pre class="body">{_esc(body_text)}</pre>\n')
-        f.write(f'        <div class="section-label">Response</div>\n')
-        f.write(f'        <p class="http-line"><span class="status-code {sc}">'
-                f'{resp.status_code} {_esc(phrase)}</span></p>\n')
-        resp_text = _fmt_body_plain(resp.text)
-        if resp_text:
-            f.write(f'        <pre class="body">{_esc(resp_text)}</pre>\n')
-        f.write(f'      </div>\n    </div>\n')
+    for prep, resp, title, css_class in (ungrouped or []):
+        _render_http_block(f, prep, resp, title, css_class)
 
-    for prep, resp, title, css_class in (entries or []):
-        _render_http_block(prep, resp, title, css_class)
+    for grp in (groups or []):
+        title      = grp.get("title", "")
+        tr_id      = grp.get("tr_id")
+        css_class  = grp.get("css_class", "create")
+        http_blocks = grp.get("http_blocks", [])
+        db_data    = grp.get("db_data") or []
+        redis_entry = grp.get("redis")
 
-    if db_data:
-        f.write('    <div class="section-label">Database</div>\n')
-        f.write('    <div class="db-section">\n')
-        grouped: dict = {}
-        for record in db_data:
-            grouped.setdefault(record["db"], []).append(record)
-        order = [db for db in ("secure", "support") if db in grouped]
-        order += [db for db in grouped if db not in order]
-        for db_name in order:
-            safe = _esc(db_name)
-            f.write(f'      <div class="db-group">\n')
-            f.write(f'        <div class="db-group-header {safe}">{safe}</div>\n')
-            f.write(f'        <div class="db-group-body">\n')
-            for record in grouped[db_name]:
-                f.write(f'          <div class="db-table-block">\n')
-                f.write(f'            <div class="db-table-name">{_esc(record["table"])}</div>\n')
-                f.write(f'            <div class="db-block">\n')
-                f.write('              <table class="db-table"><thead><tr>\n')
-                for col in record["columns"]:
-                    f.write(f'                <th>{_esc(col)}</th>\n')
-                f.write('              </tr></thead><tbody>\n')
-                for row in record["rows"]:
-                    f.write('              <tr>\n')
-                    for val in row:
-                        if val is None:
-                            cell = "<span style='color:#555'>NULL</span>"
-                        else:
-                            s = str(val)
-                            cell = _esc(s[:200] + "…" if len(s) > 200 else s)
-                        f.write(f'                <td>{cell}</td>\n')
-                    f.write('              </tr>\n')
-                f.write('              </tbody></table>\n')
-                f.write('            </div>\n')
-                f.write('          </div>\n')
-            f.write('        </div>\n')
-            f.write('      </div>\n')
-        f.write('    </div>\n')
+        final_status = ""
+        for _, resp, lbl, _ in reversed(http_blocks):
+            if lbl.startswith("Статус"):
+                try:
+                    final_status = resp.json().get("status", "")
+                except Exception:
+                    pass
+                break
 
-    if redis_entries:
-        f.write('    <div class="section-label">Redis</div>\n')
-        f.write('    <div class="db-section">\n')
-        for entry in redis_entries:
-            tr_id      = entry["tr_id"]
-            api_status = entry.get("api_status") or ""
-            rdata      = entry.get("data", {})
-            r_status   = rdata.get("status", "")
-            match      = (api_status == r_status) if (api_status and r_status) else None
-            if match is True:
-                badge = f'<span class="redis-match">✓ match</span>'
-            elif match is False:
-                badge = f'<span class="redis-mismatch">✗ mismatch</span>'
-            else:
-                badge = ""
-            f.write('      <div class="db-group">\n')
-            f.write(f'        <div class="db-group-header Redis">'
-                    f'tr_id: {_esc(str(tr_id))}'
-                    f'{"  API: <b>" + _esc(api_status) + "</b>" if api_status else ""}'
-                    f'{"  Redis: <b>" + _esc(r_status) + "</b>" if r_status else ""}'
-                    f'{"  " + badge if badge else ""}'
-                    f'</div>\n')
-            f.write('        <div class="db-group-body">\n')
-            f.write('          <div class="db-table-block">\n')
-            f.write('            <div class="db-block">\n')
-            f.write('              <table class="db-table"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>\n')
-            for k, v in rdata.items():
-                s = str(v)
-                cell = _esc(s[:300] + "…" if len(s) > 300 else s)
-                f.write(f'              <tr><td>{_esc(k)}</td><td>{cell}</td></tr>\n')
-            f.write('              </tbody></table>\n')
-            f.write('            </div>\n')
-            f.write('          </div>\n')
-            f.write('        </div>\n')
-            f.write('      </div>\n')
-        f.write('    </div>\n')
+        meta = f"tr_id: {tr_id}" if tr_id is not None else ""
+        status_span = (f'<span class="tx-status s2xx">{_esc(final_status)}</span>'
+                       if final_status else "")
+
+        f.write(f'  <details class="tx-group">\n')
+        f.write(f'    <summary>'
+                f'<span class="tx-title {css_class}">{_esc(title)}</span>'
+                f'{" · <span class=\"tx-meta\">" + _esc(meta) + "</span>" if meta else ""}'
+                f'{" · " + status_span if status_span else ""}'
+                f'</summary>\n')
+        f.write(f'    <div class="tx-body">\n')
+        for prep, resp, lbl, cc in http_blocks:
+            _render_http_block(f, prep, resp, lbl, cc, indent="      ")
+        _render_db_section(f, db_data, indent="      ")
+        _render_redis_section(f, redis_entry, indent="      ")
+        f.write(f'    </div>\n  </details>\n')
 
     f.write('  </div>\n</div>\n')
     f.flush()
@@ -557,6 +589,17 @@ pre.headers{{background:#0a0f1a;border:1px solid #1e2a3a;border-radius:4px;paddi
 .http-block-title{{background:#1a1a38;padding:6px 12px;font-size:.75em;font-weight:bold;letter-spacing:.07em;text-transform:uppercase;border-bottom:1px solid #2a2a4a}}
 .http-block-title.create{{color:#82aaff}}.http-block-title.operation{{color:#ffb74d}}.http-block-title.poll{{color:#c3e88d}}
 .http-block-body{{padding:10px 14px}}
+details.tx-group{{border:1px solid #2a2a4a;border-radius:6px;margin-top:12px;overflow:hidden}}
+details.tx-group>summary{{background:#1a1a38;padding:9px 14px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;user-select:none;border-bottom:1px solid transparent}}
+details.tx-group>summary::-webkit-details-marker{{display:none}}
+details.tx-group>summary::before{{content:'▶';font-size:.6em;color:#5c7aaa;flex-shrink:0;transition:transform .15s}}
+details[open].tx-group>summary{{border-bottom-color:#2a2a4a}}
+details[open].tx-group>summary::before{{transform:rotate(90deg)}}
+.tx-title{{font-weight:bold;text-transform:uppercase;letter-spacing:.06em;font-size:.75em}}
+.tx-title.create{{color:#82aaff}}.tx-title.operation{{color:#ffb74d}}.tx-title.poll{{color:#c3e88d}}
+.tx-meta{{color:#666;font-size:.78em;font-family:'Consolas',monospace}}
+.tx-status{{font-family:'Consolas',monospace;font-size:.78em;font-weight:bold;color:#cdd9e5}}
+.tx-body{{padding:10px 14px;background:#13192e}}
 .db-section{{margin-top:12px}}
 .db-group{{border-radius:6px;margin-top:10px;overflow:hidden;border:1px solid #2a2a4a}}
 .db-group-header{{padding:7px 14px;font-size:.76em;font-weight:bold;letter-spacing:.08em;text-transform:uppercase}}
@@ -663,11 +706,11 @@ def pytest_runtest_logreport(report):
         call = _call_reports.pop(report.nodeid, None)
         if call is None:
             return
-        entries, db_data, redis_entries = _http_captures.pop(report.nodeid, ([], [], []))
+        ungrouped, groups = _http_captures.pop(report.nodeid, ([], []))
         status = "PASSED" if call.passed else "FAILED"
         error = str(call.longrepr) if call.failed else None
         tc_id = _tc_ids.get(report.nodeid, "")
-        _write_report_entry(report.nodeid, status, error, entries, tc_id, db_data, redis_entries)
+        _write_report_entry(report.nodeid, status, error, ungrouped, tc_id, groups)
 
 
 # ─────────────────────────────────────────────
@@ -803,9 +846,8 @@ def log_http_calls(request):
         "/confirm": "Статус после подтверждения",
     }
 
-    entries = []
-    db_data = []
-    redis_entries: list = []
+    ungrouped: list = []
+    groups: list = []
     seen: set = set()
 
     for prep, resp in captures:
@@ -826,9 +868,6 @@ def log_http_calls(request):
                 css_class = "operation"
                 break
 
-        entries.append((prep, resp, label, css_class))
-
-        # Сразу после успешного запроса — опрос статуса / DB / Redis
         if resp.status_code in (200, 201):
             try:
                 body = resp.json()
@@ -841,32 +880,59 @@ def log_http_calls(request):
                         if suffix in url:
                             poll_title = pt
                             break
-                    key = (tr_id, poll_title)
+                    key = (tr_id, label)
                     if key not in seen:
                         seen.add(key)
                         time.sleep(1)
                         poll_headers = make_headers(TERMINAL_ID, method="GET")
                         poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
-                        entries.append((poll_resp.request, poll_resp, poll_title, "poll"))
                         db_data = _query_transaction_from_db(tr_id)
                         rdata = query_transaction_from_redis(tr_id)
+                        redis_entry = None
                         if rdata:
                             try:
                                 api_status = poll_resp.json().get("status")
                             except Exception:
                                 api_status = None
-                            redis_entries.append({"tr_id": tr_id, "api_status": api_status, "data": rdata})
+                            redis_entry = {"tr_id": tr_id, "api_status": api_status, "data": rdata}
+                        groups.append({
+                            "title": label,
+                            "css_class": css_class,
+                            "tr_id": tr_id,
+                            "http_blocks": [
+                                (prep, resp, label, css_class),
+                                (poll_resp.request, poll_resp, poll_title, "poll"),
+                            ],
+                            "db_data": db_data,
+                            "redis": redis_entry,
+                        })
+                    else:
+                        ungrouped.append((prep, resp, label, css_class))
 
                 elif isinstance(link_id, str) and link_id:
                     key = ("link", link_id)
                     if key not in seen:
                         seen.add(key)
                         time.sleep(1)
-                        db_data = _query_paylink_from_db(link_id)
+                        link_db = _query_paylink_from_db(link_id)
+                        groups.append({
+                            "title": label,
+                            "css_class": css_class,
+                            "tr_id": None,
+                            "http_blocks": [(prep, resp, label, css_class)],
+                            "db_data": link_db,
+                            "redis": None,
+                        })
+                    else:
+                        ungrouped.append((prep, resp, label, css_class))
+                else:
+                    ungrouped.append((prep, resp, label, css_class))
             except Exception:
-                pass
+                ungrouped.append((prep, resp, label, css_class))
+        else:
+            ungrouped.append((prep, resp, label, css_class))
 
-    _http_captures[request.node.nodeid] = (entries, db_data, redis_entries)
+    _http_captures[request.node.nodeid] = (ungrouped, groups)
 
     bar = "-" * 64
     for prep, resp in captures:
