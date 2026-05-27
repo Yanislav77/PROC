@@ -25,6 +25,16 @@ try:
 except ImportError:
     _DB_AVAILABLE = False
 
+try:
+    import redis as _redis_lib
+    _REDIS_HOST     = os.environ.get("REDIS_HOST", "")
+    _REDIS_PORT     = int(os.environ.get("REDIS_PORT", "6379"))
+    _REDIS_USER     = os.environ.get("REDIS_USER", "")
+    _REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "")
+    _REDIS_AVAILABLE = bool(_REDIS_HOST)
+except ImportError:
+    _REDIS_AVAILABLE = False
+
 _RUN_ID = uuid.uuid4().hex[:6]
 
 # ─────────────────────────────────────────────
@@ -199,7 +209,7 @@ THREED = {"challenge_window_size": "05"}
 # REPORT FILE (HTML)
 # ─────────────────────────────────────────────
 _report_file = None
-_http_captures: dict = {}  # nodeid -> (list[(PreparedRequest, Response, title, css_class)], list[db_records])
+_http_captures: dict = {}  # nodeid -> (list[(PreparedRequest, Response, title, css_class)], list[db_records], list[{tr_id, api_status, redis_status, data}])
 _call_reports:  dict = {}  # nodeid -> report (stored until teardown phase)
 _tc_ids:        dict = {}  # nodeid -> tcid string (from @pytest.mark.tcid)
 _test_counter = 0
@@ -235,6 +245,26 @@ def _query_paylink_from_db(link_id: str) -> list:
     except Exception:
         pass
     return results
+
+
+def query_transaction_from_redis(transaction_id) -> dict:
+    """Fetch Redis hash for *:*:{transaction_id} (tries tr_rest and tr prefixes). Returns {} if unavailable or not found."""
+    if not _REDIS_AVAILABLE:
+        return {}
+    try:
+        r = _redis_lib.Redis(
+            host=_REDIS_HOST, port=_REDIS_PORT,
+            username=_REDIS_USER, password=_REDIS_PASSWORD,
+            ssl=True, ssl_cert_reqs=None,
+            decode_responses=True, socket_connect_timeout=5,
+        )
+        for pattern in (f"tr_rest:*:{transaction_id}", f"tr:*:{transaction_id}"):
+            keys = r.keys(pattern)
+            if keys:
+                return r.hgetall(keys[0])
+        return {}
+    except Exception:
+        return {}
 
 
 def _query_transaction_from_db(tr_id: int) -> list:
@@ -332,7 +362,7 @@ def _sc_class(code: int) -> str:
     return "s5xx"
 
 
-def _write_report_entry(nodeid: str, status: str, error, entries: list, tc_id: str = "", db_data: list = None) -> None:
+def _write_report_entry(nodeid: str, status: str, error, entries: list, tc_id: str = "", db_data: list = None, redis_entries: list = None) -> None:
     global _test_counter
     _test_counter += 1
     idx = _test_counter
@@ -418,6 +448,43 @@ def _write_report_entry(nodeid: str, status: str, error, entries: list, tc_id: s
             f.write('      </div>\n')
         f.write('    </div>\n')
 
+    if redis_entries:
+        f.write('    <div class="section-label">Redis</div>\n')
+        f.write('    <div class="db-section">\n')
+        for entry in redis_entries:
+            tr_id      = entry["tr_id"]
+            api_status = entry.get("api_status") or ""
+            rdata      = entry.get("data", {})
+            r_status   = rdata.get("status", "")
+            match      = (api_status == r_status) if (api_status and r_status) else None
+            if match is True:
+                badge = f'<span class="redis-match">✓ match</span>'
+            elif match is False:
+                badge = f'<span class="redis-mismatch">✗ mismatch</span>'
+            else:
+                badge = ""
+            f.write('      <div class="db-group">\n')
+            f.write(f'        <div class="db-group-header Redis">'
+                    f'tr_id: {_esc(str(tr_id))}'
+                    f'{"  API: <b>" + _esc(api_status) + "</b>" if api_status else ""}'
+                    f'{"  Redis: <b>" + _esc(r_status) + "</b>" if r_status else ""}'
+                    f'{"  " + badge if badge else ""}'
+                    f'</div>\n')
+            f.write('        <div class="db-group-body">\n')
+            f.write('          <div class="db-table-block">\n')
+            f.write('            <div class="db-block">\n')
+            f.write('              <table class="db-table"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>\n')
+            for k, v in rdata.items():
+                s = str(v)
+                cell = _esc(s[:300] + "…" if len(s) > 300 else s)
+                f.write(f'              <tr><td>{_esc(k)}</td><td>{cell}</td></tr>\n')
+            f.write('              </tbody></table>\n')
+            f.write('            </div>\n')
+            f.write('          </div>\n')
+            f.write('        </div>\n')
+            f.write('      </div>\n')
+        f.write('    </div>\n')
+
     f.write('  </div>\n</div>\n')
     f.flush()
 
@@ -495,6 +562,9 @@ pre.headers{{background:#0a0f1a;border:1px solid #1e2a3a;border-radius:4px;paddi
 .db-group-header{{padding:7px 14px;font-size:.76em;font-weight:bold;letter-spacing:.08em;text-transform:uppercase}}
 .db-group-header.secure{{background:#1a1333;color:#c9a8ff;border-bottom:1px solid #3a2a5a}}
 .db-group-header.support{{background:#0f1f2a;color:#82aaff;border-bottom:1px solid #1e3a4a}}
+.db-group-header.Redis{{background:#1a1a0a;color:#e8cc60;border-bottom:1px solid #3a3a10;font-weight:normal;font-size:.8em;letter-spacing:.03em}}
+.redis-match{{color:#4caf50;font-weight:bold;margin-left:8px}}
+.redis-mismatch{{color:#f44336;font-weight:bold;margin-left:8px}}
 .db-group-body{{padding:10px 12px;display:flex;flex-direction:column;gap:10px}}
 .db-table-block{{border:1px solid #222240;border-radius:4px;overflow:hidden}}
 .db-table-name{{background:#16163a;padding:4px 10px;font-family:'Consolas',monospace;font-size:.74em;color:#aaa;border-bottom:1px solid #222240}}
@@ -581,11 +651,11 @@ def pytest_runtest_logreport(report):
         call = _call_reports.pop(report.nodeid, None)
         if call is None:
             return
-        entries, db_data = _http_captures.pop(report.nodeid, ([], []))
+        entries, db_data, redis_entries = _http_captures.pop(report.nodeid, ([], [], []))
         status = "PASSED" if call.passed else "FAILED"
         error = str(call.longrepr) if call.failed else None
         tc_id = _tc_ids.get(report.nodeid, "")
-        _write_report_entry(report.nodeid, status, error, entries, tc_id, db_data)
+        _write_report_entry(report.nodeid, status, error, entries, tc_id, db_data, redis_entries)
 
 
 # ─────────────────────────────────────────────
@@ -723,6 +793,7 @@ def log_http_calls(request):
 
     entries = []
     db_data = []
+    redis_entries: list = []
     seen: set = set()
 
     for prep, resp in captures:
@@ -745,7 +816,7 @@ def log_http_calls(request):
 
         entries.append((prep, resp, label, css_class))
 
-        # Сразу после успешного запроса — опрос статуса / DB
+        # Сразу после успешного запроса — опрос статуса / DB / Redis
         if resp.status_code in (200, 201):
             try:
                 body = resp.json()
@@ -766,6 +837,13 @@ def log_http_calls(request):
                         poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
                         entries.append((poll_resp.request, poll_resp, poll_title, "poll"))
                         db_data = _query_transaction_from_db(tr_id)
+                        rdata = query_transaction_from_redis(tr_id)
+                        if rdata:
+                            try:
+                                api_status = poll_resp.json().get("status")
+                            except Exception:
+                                api_status = None
+                            redis_entries.append({"tr_id": tr_id, "api_status": api_status, "data": rdata})
 
                 elif isinstance(link_id, str) and link_id:
                     key = ("link", link_id)
@@ -776,7 +854,7 @@ def log_http_calls(request):
             except Exception:
                 pass
 
-    _http_captures[request.node.nodeid] = (entries, db_data)
+    _http_captures[request.node.nodeid] = (entries, db_data, redis_entries)
 
     bar = "-" * 64
     for prep, resp in captures:

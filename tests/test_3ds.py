@@ -10,6 +10,7 @@ import requests
 from conftest import (
     post_transaction,
     make_headers,
+    query_transaction_from_redis,
     BASE_URL,
     TERMINAL_ID,
     MERCHANT_DATA,
@@ -49,3 +50,9 @@ def test_3ds_redirect_url_not_encoded():
     url = action_data.get("acs_url") or action_data.get("url")
     assert url, f"No redirect URL found in action.details.data: {action_data}"
     assert "://" in url, f"Redirect URL looks URL-encoded (action={action_type!r}): {url!r}"
+
+    redis = query_transaction_from_redis(tid)
+    if redis:
+        assert redis.get("status") == "waiting_action", (
+            f"Redis status mismatch: expected 'waiting_action', got {redis.get('status')!r}"
+        )
