@@ -520,3 +520,48 @@ def test_refund_payout_transaction_returns_409():
     resp = post_operation(tid, "refund", body)
     assert resp.status_code == 409, f"Expected 409 for refund on payout, got {resp.status_code}"
     assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-035")
+def test_refund_idempotency_same_key_different_body():
+    """Payin → refund → повторный refund с тем же Idempotency-Key, но другой суммой.
+    Сервер должен либо вернуть кэшированный ответ первого рефанда (200, та же transaction_id),
+    либо вернуть 4xx (конфликт идемпотентности). Новый рефанд создаваться не должен."""
+    oid = gen_order_id("rf_idem_diff")
+    tid = make_completed_payin(oid)
+
+    body1 = {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 500, "currency": "RUB"},
+    }
+    body2 = {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 999, "currency": "RUB"},
+    }
+    key = str(uuid.uuid4())
+
+    def _do(raw: str) -> requests.Response:
+        sig = calc_signature(TERMINAL_ID, str(int(time.time())), raw)
+        h = {
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       str(int(time.time())),
+        }
+        return requests.post(f"{BASE_URL}/{tid}/refund", data=raw, headers=h, timeout=30)
+
+    r1 = _do(json.dumps(body1, separators=(",", ":")))
+    assert r1.status_code in (200, 201), f"First refund failed: {r1.text}"
+    tid_r1 = r1.json().get("transaction_id")
+
+    r2 = _do(json.dumps(body2, separators=(",", ":")))
+    assert r2.status_code in (200, 201, 400, 409), \
+        f"Expected cached 200/201 or 4xx conflict, got {r2.status_code}: {r2.text}"
+
+    if r2.status_code in (200, 201):
+        assert r2.json().get("transaction_id") == tid_r1, (
+            f"Same key + different body returned a NEW transaction_id — "
+            f"server processed the second refund instead of returning cache: "
+            f"r1.tid={tid_r1}, r2.tid={r2.json().get('transaction_id')}"
+        )
