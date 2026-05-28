@@ -1,0 +1,138 @@
+"""
+Тесты выплат методом mobile (type=payout, method=mobile).
+"""
+import pytest
+
+from conftest import (
+    post_transaction,
+    MERCHANT_DATA,
+    CUSTOMER_DATA,
+    THREED,
+    assert_transaction_response,
+    assert_error_response,
+    gen_order_id,
+)
+
+_BASE = {
+    "type": "payout",
+    "merchant_data": {**MERCHANT_DATA, "order_id": "order_payout_test"},
+    "financial_data": {"amount": 1000, "currency": "RUB"},
+    "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+    "customer_data": CUSTOMER_DATA,
+}
+
+_VALID = {**_BASE, "transaction_data": {"method": "sbp"}}
+
+
+def _assert_payout_ok(resp):
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert_transaction_response(data)
+    assert data["type"] == "payout"
+    return data
+
+
+# ─────────────────────────────────────────────
+# HAPPY PATH
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-003")
+def test_payout_mobile():
+    """Выплата методом mobile — phone обязателен, provider необязателен."""
+    body = {**_BASE, "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567"}}}
+    _assert_payout_ok(post_transaction(body))
+
+
+@pytest.mark.tcid("PY-004")
+def test_payout_mobile_with_provider():
+    """Выплата mobile с необязательным полем provider."""
+    body = {
+        **_BASE,
+        "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567", "provider": "Beeline"}},
+    }
+    _assert_payout_ok(post_transaction(body))
+
+
+# ─────────────────────────────────────────────
+# НЕГАТИВНЫЕ — mobile
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-015")
+def test_payout_mobile_missing_phone():
+    """Выплата mobile без phone (обязательное). Ожидается 400."""
+    body = {**_BASE, "transaction_data": {"method": "mobile", "details": {"provider": "Beeline"}}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-016")
+def test_payout_mobile_missing_details():
+    """Выплата mobile без details. Ожидается 400."""
+    body = {**_BASE, "transaction_data": {"method": "mobile"}}
+    resp = post_transaction(body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# MOBILE DETAILS — граничные случаи (11.x)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-083")
+def test_payout_mobile_phone_empty():
+    """mobile.phone = '' (пустая строка). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": ""}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-084")
+def test_payout_mobile_phone_no_country_code():
+    """mobile.phone = '9991234567' (без кода страны). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "9991234567"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-085")
+def test_payout_mobile_phone_8_prefix():
+    """mobile.phone = '89991234567' (8 вместо +7). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "89991234567"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-086")
+def test_payout_mobile_phone_too_short():
+    """mobile.phone = '+7' (слишком короткий). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "+7"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-087")
+def test_payout_mobile_phone_too_long():
+    """mobile.phone = '+79991234567890' (слишком длинный). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567890"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-088")
+def test_payout_mobile_phone_with_spaces():
+    """mobile.phone = '+7 999 123-45-67' (с пробелами и дефисами). Ожидается 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "+7 999 123-45-67"}}})
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("PY-089")
+def test_payout_mobile_provider_mts():
+    """mobile.provider = 'MTS'. Ожидается 201."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567", "provider": "MTS"}}})
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("PY-090")
+def test_payout_mobile_provider_custom():
+    """mobile.provider = 'CustomOperator' (нестандартный). Ожидается 201 или 400."""
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "mobile", "details": {"phone": "+79991234567", "provider": "CustomOperator"}}})
+    assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
