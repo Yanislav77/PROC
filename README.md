@@ -1,4 +1,4 @@
-# PROC — CORE REST API Test Suite
+эт# PROC — CORE REST API Test Suite
 
 Интеграционные тесты для CORE REST API платёжного шлюза.
 Тесты делают реальные HTTP-запросы к препрод-окружению — никаких моков.
@@ -177,8 +177,57 @@ copy terminals.json.example terminals.json
 
 **Ключи** — пути к файлам тестов относительно папки `tests/`, через косую черту `/`.
 
+Полный список возможных ключей:
+
+| Ключ | Что тестирует |
+|---|---|
+| `payin/test_card.py` | Оплата картой |
+| `payin/test_3ds.py` | 3DS-аутентификация |
+| `payin/test_p2p.py` | P2P-переводы |
+| `payin/test_qr.py` | QR-оплата |
+| `payin/test_mobile.py` | Мобильные платежи (payin) |
+| `payin/test_token.py` | Токенизированные карты (payin) |
+| `payout/test_card.py` | Выплата на карту |
+| `payout/test_token.py` | Выплата по токену |
+| `payout/test_mobile.py` | Выплата на мобильный |
+| `payout/test_sbp.py` | Выплата по СБП |
+| `payout/test_wallet.py` | Выплата на кошелёк |
+| `payout/test_bank_account.py` | Выплата на банковский счёт |
+| `payout/test_validation.py` | Валидация полей payout |
+| `operations/test_capture.py` | Подтверждение (capture) |
+| `operations/test_cancel.py` | Отмена (cancel) |
+| `operations/test_refund.py` | Возврат (refund) |
+| `operations/test_confirm.py` | Подтверждение 3DS |
+| `general/test_auth.py` | Авторизация и подпись |
+| `general/test_customer_data.py` | Данные клиента |
+| `general/test_get_transactions.py` | Получение транзакций |
+| `general/test_merchant.py` | Мерчант API |
+| `general/test_payment_links.py` | Платёжные ссылки |
+| `general/test_subscriptions.py` | Подписки |
+
+**Пример: один основной терминал + отдельный для 3DS**
+
+`.env`:
+```
+TERMINAL_ID=1111
+SERVICE_SECRET=основной_секрет
+DB_HOST=...
+```
+
+`terminals.json`:
+```json
+{
+    "payin/test_3ds.py": {
+        "TERMINAL_ID": "3649",
+        "SERVICE_SECRET": "секрет_3ds_терминала"
+    }
+}
+```
+
+Все тесты, кроме `test_3ds.py`, будут использовать терминал `1111`. `test_3ds.py` — терминал `3649`.
+
 **Правила:**
-- Файлы, которых нет в `terminals.json`, используют дефолтные креды из `.env` (те самые `TERMINAL_ID` и `SERVICE_SECRET`, которые вы туда прописали)
+- Файлы, которых нет в `terminals.json`, используют дефолтные креды из `.env`
 - Если одно из полей (`TERMINAL_ID` или `SERVICE_SECRET`) оставить пустым — будет использовано дефолтное значение из `.env`
 - Переопределение действует на весь файл целиком: все тесты внутри него пойдут с указанным терминалом
 - Подмена происходит автоматически перед каждым тестом и восстанавливается после — другие тесты не затрагиваются
