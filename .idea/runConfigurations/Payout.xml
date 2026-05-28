@@ -1,4 +1,4 @@
-<component name="ProjectRunConfigurationManager">
+﻿<component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Payout" type="PythonTestRunnerRunConfigurationType" factoryName="py.test">
     <option name="INTERPRETER_OPTIONS" value="" />
     <option name="PARENT_ENVS" value="true" />
@@ -9,8 +9,8 @@
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="RUNNER" value="py.test" />
-    <option name="TEST_TYPE" value="TEST_SCRIPT" />
-    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tests/test_payout.py" />
+    <option name="TEST_TYPE" value="TEST_FOLDER" />
+    <option name="FOLDER" value="$PROJECT_DIR$/tests/payout" />
     <option name="ADDITIONAL_ARGS" value="-v --tb=short" />
     <method v="2" />
   </configuration>

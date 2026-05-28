@@ -3,7 +3,7 @@
 Интеграционные тесты для CORE REST API платёжного шлюза.
 Тесты делают реальные HTTP-запросы к препрод-окружению — никаких моков.
 
-**823 теста** в 13 файлах, покрывают все эндпоинты API.
+**823+ теста** в 23 файлах, покрывают все эндпоинты API.
 
 ---
 
@@ -151,7 +151,7 @@ MERCHANT_DATA = {
 
 ---
 
-### Токен для rebill → `tests/test_payin_other.py`
+### Токен для rebill → `tests/payin/test_token.py`
 
 В тестах `test_payin_token_rebill` используется токен карты:
 
@@ -184,22 +184,22 @@ MERCHANT_BALANCE_URL = f"{_API_BASE}/merchant/balance"
 В правом верхнем углу PyCharm есть выпадающий список конфигураций.
 Там готовы варианты для каждого файла тестов:
 
-| Конфигурация | Файл | Тестов |
-|---|---|---|
-| **All Tests** | все файлы | 823 |
-| **Auth** | `test_auth.py` | 25 |
-| **Payin Card** | `test_payin_card.py` | 171 |
-| **Payin Other** | `test_payin_other.py` | 30 |
-| **Payout** | `test_payout.py` | 141 |
-| **Customer Data** | `test_customer_data.py` | 231 |
-| **Get Transactions** | `test_get_transactions.py` | 30 |
-| **Capture** | `test_capture.py` | 31 |
-| **Cancel** | `test_cancel.py` | 31 |
-| **Confirm** | `test_confirm.py` | 32 |
-| **Refund** | `test_refund.py` | 27 |
-| **Payment Links** | `test_payment_links.py` | 38 |
-| **Merchant** | `test_merchant.py` | 18 |
-| **Subscriptions** | `test_subscriptions.py` | 18 |
+| Конфигурация | Папка / файл |
+|---|---|
+| **All Tests** | `tests/` |
+| **Payin** | `tests/payin/` |
+| **Payin Card** | `tests/payin/test_card.py` |
+| **Payout** | `tests/payout/` |
+| **Operations** | `tests/operations/` |
+| **Capture** | `tests/operations/test_capture.py` |
+| **Cancel** | `tests/operations/test_cancel.py` |
+| **Confirm** | `tests/operations/test_confirm.py` |
+| **Refund** | `tests/operations/test_refund.py` |
+| **Auth** | `tests/general/test_auth.py` |
+| **Get Transactions** | `tests/general/test_get_transactions.py` |
+| **Payment Links** | `tests/general/test_payment_links.py` |
+| **Merchant** | `tests/general/test_merchant.py` |
+| **Subscriptions** | `tests/general/test_subscriptions.py` |
 
 Выберите нужный → нажмите ▶.
 
@@ -212,16 +212,22 @@ MERCHANT_BALANCE_URL = f"{_API_BASE}/merchant/balance"
 # все тесты
 pytest
 
-# один файл целиком
-pytest tests/test_refund.py
-pytest tests/test_capture.py
+# папка целиком
+pytest tests/payin/
+pytest tests/payout/
+pytest tests/operations/
+
+# один файл
+pytest tests/operations/test_refund.py
+pytest tests/operations/test_capture.py
+pytest tests/payin/test_card.py
 
 # один конкретный тест по имени функции
-pytest tests/test_refund.py::test_refund_partial
-pytest tests/test_capture.py::test_capture_full
+pytest tests/operations/test_refund.py::test_refund_partial
+pytest tests/operations/test_capture.py::test_capture_full
 
 # параметризованный тест — нужен node-id с параметром в квадратных скобках
-pytest "tests/test_customer_data.py::test_browser_info_optional_field_missing[accept_header]"
+pytest "tests/general/test_customer_data.py::test_browser_info_optional_field_missing[accept_header]"
 
 # по ID тест-кейса (маркер @pytest.mark.tcid)
 pytest -k "RF-001"
@@ -241,7 +247,7 @@ pytest -s
 pytest --tb=long
 
 # комбинация флагов
-pytest tests/test_refund.py -v -s --tb=long
+pytest tests/operations/test_refund.py -v -s --tb=long
 ```
 
 #### Параметризованные тесты
@@ -252,12 +258,12 @@ pytest tests/test_refund.py -v -s --tb=long
 
 Node-id такого теста выглядит как:
 ```
-tests/test_customer_data.py::test_browser_info_optional_field_missing[accept_header]
+tests/general/test_customer_data.py::test_browser_info_optional_field_missing[accept_header]
 ```
 
 Чтобы запустить только нужный параметр:
 ```bash
-pytest "tests/test_customer_data.py::test_browser_info_optional_field_missing[language]"
+pytest "tests/general/test_customer_data.py::test_browser_info_optional_field_missing[language]"
 ```
 
 ---
@@ -267,9 +273,42 @@ pytest "tests/test_customer_data.py::test_browser_info_optional_field_missing[la
 Каждый тест помечен уникальным идентификатором вида `@pytest.mark.tcid("XX-NNN")`.
 Этот ID отображается в HTML-отчёте (папка `reports/`).
 
+Структура тестов:
+```
+tests/
+├── conftest.py            — общие фикстуры, хелперы, константы
+├── payin/                 — входящие платежи
+│   ├── test_card.py       — карточные Payin (PC-xxx)
+│   ├── test_3ds.py        — 3DS-флоу (3DS-xxx)
+│   ├── test_p2p.py        — метод p2p
+│   ├── test_qr.py         — метод qr
+│   ├── test_mobile.py     — метод mobile
+│   └── test_token.py      — метод token (rebill)
+├── payout/                — выплаты (PY-xxx)
+│   ├── test_card.py
+│   ├── test_token.py
+│   ├── test_mobile.py
+│   ├── test_sbp.py
+│   ├── test_wallet.py
+│   ├── test_bank_account.py
+│   └── test_validation.py — общая валидация полей
+├── operations/            — операции над транзакциями
+│   ├── test_capture.py    — списание (CAP-xxx)
+│   ├── test_cancel.py     — отмена (CAN-xxx)
+│   ├── test_confirm.py    — подтверждение (CON-xxx)
+│   └── test_refund.py     — возврат (RF-xxx)
+└── general/               — общие сценарии
+    ├── test_auth.py       — авторизация (A-xxx)
+    ├── test_get_transactions.py — GET статус (GT-xxx)
+    ├── test_customer_data.py   — данные клиента (CD-xxx)
+    ├── test_payment_links.py   — платёжные ссылки (PL-xxx)
+    ├── test_merchant.py        — баланс мерчанта (MB-xxx)
+    └── test_subscriptions.py  — подписки (SB-xxx)
+```
+
 ---
 
-### `test_auth.py` — авторизация и подпись запросов (25 тестов, A-001…A-025)
+### `general/test_auth.py` — авторизация и подпись запросов (25 тестов, A-001…A-025)
 
 Проверяют механизм HMAC-SHA256 подписи и заголовки авторизации.
 
@@ -287,7 +326,7 @@ pytest "tests/test_customer_data.py::test_browser_info_optional_field_missing[la
 
 ---
 
-### `test_payin_card.py` — Payin картой (171 тест, PC-001…PC-171)
+### `payin/test_card.py` — Payin картой (171 тест, PC-001…PC-171)
 
 Самый большой файл. Покрывает создание транзакций через карту: happy path, валидация полей карты, параметры потока (`capture_mode`, `is_recurrent`, `threed_secure`), граничные значения сумм и форматов.
 
@@ -302,7 +341,7 @@ pytest "tests/test_customer_data.py::test_browser_info_optional_field_missing[la
 
 ---
 
-### `test_payin_other.py` — Payin другими методами (30 тестов, PO-001…PO-030)
+### `payin/test_p2p.py`, `test_qr.py`, `test_mobile.py`, `test_token.py` — Payin другими методами
 
 Payin через P2P, QR-код, мобильный платёж и токен (rebill).
 
@@ -315,7 +354,7 @@ Payin через P2P, QR-код, мобильный платёж и токен (
 
 ---
 
-### `test_payout.py` — Выплаты (141 тест, PY-001…PY-141)
+### `payout/` — Выплаты (141 тест, PY-001…PY-141)
 
 Покрывает все методы выплат: карта, SBP, кошелёк, банковский счёт, мобильный, токен.
 
@@ -331,7 +370,7 @@ Payin через P2P, QR-код, мобильный платёж и токен (
 
 ---
 
-### `test_customer_data.py` — Данные клиента (231 тест, CD-001…CD-251)
+### `general/test_customer_data.py` — Данные клиента (231 тест, CD-001…CD-251)
 
 Детальная валидация всех полей `customer_data`: контакты, персональные данные, данные браузера, паспортные данные. Граничные значения, форматы, обязательность полей.
 
@@ -349,7 +388,7 @@ Payin через P2P, QR-код, мобильный платёж и токен (
 
 ---
 
-### `test_get_transactions.py` — Получение транзакций (30 тестов, GT-001…GT-030)
+### `general/test_get_transactions.py` — Получение транзакций (GT-001…GT-050)
 
 GET `/api/v1/transactions/{id}` и GET `/api/v1/transactions?order_id=`.
 
@@ -367,7 +406,7 @@ GET `/api/v1/transactions/{id}` и GET `/api/v1/transactions?order_id=`.
 
 ---
 
-### `test_capture.py` — Списание заблокированных средств (31 тест, CAP-001…CAP-031)
+### `operations/test_capture.py` — Списание заблокированных средств (31 тест, CAP-001…CAP-031)
 
 POST `/api/v1/transactions/{id}/capture`.
 
@@ -386,7 +425,7 @@ POST `/api/v1/transactions/{id}/capture`.
 
 ---
 
-### `test_cancel.py` — Отмена транзакции (31 тест, CAN-001…CAN-031)
+### `operations/test_cancel.py` — Отмена транзакции (31 тест, CAN-001…CAN-031)
 
 POST `/api/v1/transactions/{id}/cancel`.
 
@@ -403,7 +442,7 @@ POST `/api/v1/transactions/{id}/cancel`.
 
 ---
 
-### `test_confirm.py` — Подтверждение ожидающего действия (32 теста, CON-001…CON-032)
+### `operations/test_confirm.py` — Подтверждение ожидающего действия (32 теста, CON-001…CON-032)
 
 POST `/api/v1/transactions/{id}/confirm` — используется после 3DS или redirect.
 
@@ -421,7 +460,7 @@ POST `/api/v1/transactions/{id}/confirm` — используется после
 
 ---
 
-### `test_refund.py` — Возвраты (27 тестов, RF-001…RF-036)
+### `operations/test_refund.py` — Возвраты (27 тестов, RF-001…RF-036)
 
 POST `/api/v1/transactions/{id}/refund`.
 
@@ -442,7 +481,7 @@ POST `/api/v1/transactions/{id}/refund`.
 
 ---
 
-### `test_payment_links.py` — Платёжные ссылки (38 тестов, PL-001…PL-038)
+### `general/test_payment_links.py` — Платёжные ссылки (38 тестов, PL-001…PL-038)
 
 POST `/api/v1/payment-links`.
 
@@ -463,7 +502,7 @@ POST `/api/v1/payment-links`.
 
 ---
 
-### `test_merchant.py` — Баланс мерчанта (18 тестов, MB-001…MB-018)
+### `general/test_merchant.py` — Баланс мерчанта (18 тестов, MB-001…MB-018)
 
 GET `/api/v1/merchant/balance`.
 
@@ -478,7 +517,7 @@ GET `/api/v1/merchant/balance`.
 
 ---
 
-### `test_subscriptions.py` — Управление подписками (18 тестов, SB-001…SB-018)
+### `general/test_subscriptions.py` — Управление подписками (18 тестов, SB-001…SB-018)
 
 DELETE `/api/v1/subscriptions/{token}`.
 
@@ -517,14 +556,14 @@ DELETE `/api/v1/subscriptions/{token}`.
 
 Успешный прогон:
 ```
-tests/test_payin_card.py::test_payin_card_auto_capture   PASSED
+tests/payin/test_card.py::test_payin_card_auto_capture   PASSED
 ...
 823 passed in 410.32s
 ```
 
 Упавший тест:
 ```
-FAILED tests/test_payin_card.py::test_payin_card_auto_capture
+FAILED tests/payin/test_card.py::test_payin_card_auto_capture
 AssertionError: Expected 201, got 401: {"error":"invalid signature"}
 ```
 
@@ -570,13 +609,13 @@ AssertionError: Expected 201, got 422: {"error": "invalid pan format"}
 ### `ERROR at setup` на тестах с fixture `payin_transaction_id` или `payin_block_transaction_id`
 
 ```
-ERROR tests/test_payin_other.py::test_payin_token_rebill - AssertionError: Setup Payin failed: ...
+ERROR tests/payin/test_token.py::test_payin_token_rebill - AssertionError: Setup Payin failed: ...
 ```
 
 Перед этими тестами автоматически выполняется Payin, и он упал.
 Сначала запустите базовый тест отдельно:
 ```
-pytest tests/test_payin_card.py::test_payin_card_auto_capture -v --tb=long
+pytest tests/payin/test_card.py::test_payin_card_auto_capture -v --tb=long
 ```
 Исправьте причину его падения — остальные тесты тоже заработают.
 
@@ -592,7 +631,7 @@ pytest tests/test_payin_card.py::test_payin_card_auto_capture -v --tb=long
 
 Запустите с флагами `-s --tb=long`:
 ```
-pytest tests/test_payin_card.py::test_payin_card_auto_capture -s --tb=long
+pytest tests/payin/test_card.py::test_payin_card_auto_capture -s --tb=long
 ```
 
 Или откройте HTML-отчёт в `reports/` — там уже есть полный HTTP-запрос и ответ для каждого теста.

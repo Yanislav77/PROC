@@ -1,4 +1,4 @@
-<component name="ProjectRunConfigurationManager">
+﻿<component name="ProjectRunConfigurationManager">
   <configuration default="false" name="Refund" type="PythonTestRunnerRunConfigurationType" factoryName="py.test">
     <option name="INTERPRETER_OPTIONS" value="" />
     <option name="PARENT_ENVS" value="true" />
@@ -10,7 +10,7 @@
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="RUNNER" value="py.test" />
     <option name="TEST_TYPE" value="TEST_SCRIPT" />
-    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tests/test_refund.py" />
+    <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tests/operations/test_refund.py" />
     <option name="ADDITIONAL_ARGS" value="-v --tb=short" />
     <method v="2" />
   </configuration>
