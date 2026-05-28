@@ -49,6 +49,18 @@ MERCHANT_BALANCE_URL = f"{_API_BASE}/merchant/balance"
 SERVICE_SECRET = os.environ["SERVICE_SECRET"]   # обязательно: задать в .env
 TERMINAL_ID    = os.environ.get("TERMINAL_ID", "374")
 
+_DEFAULT_SECRET   = SERVICE_SECRET
+_DEFAULT_TERMINAL = TERMINAL_ID
+
+# Per-file credential overrides. Keys — пути относительно tests/ (forward slashes).
+_terminals_path = Path(__file__).parent.parent / "terminals.json"
+_TERMINAL_OVERRIDES: dict = {}
+if _terminals_path.exists():
+    try:
+        _TERMINAL_OVERRIDES = json.loads(_terminals_path.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+
 # ─────────────────────────────────────────────
 # SIGNATURE HELPERS
 # ─────────────────────────────────────────────
@@ -820,7 +832,38 @@ def _capture_tcid(request):
 
 
 @pytest.fixture(autouse=True)
-def log_http_calls(request):
+def _apply_terminal_override(request):
+    """Временно подменяет SERVICE_SECRET и TERMINAL_ID для тестов, у которых есть запись в terminals.json."""
+    global SERVICE_SECRET, TERMINAL_ID
+    try:
+        rel = Path(request.fspath).relative_to(Path(__file__).parent).as_posix()
+    except ValueError:
+        rel = ""
+    override = _TERMINAL_OVERRIDES.get(rel, {})
+    new_secret   = override.get("SERVICE_SECRET") or SERVICE_SECRET
+    new_terminal = override.get("TERMINAL_ID")    or TERMINAL_ID
+
+    prev_secret, prev_terminal = SERVICE_SECRET, TERMINAL_ID
+    SERVICE_SECRET = new_secret
+    TERMINAL_ID    = new_terminal
+
+    # Патчим и сам тест-модуль — если он импортировал эти имена напрямую
+    module = request.node.module
+    mod_orig_secret   = getattr(module, "SERVICE_SECRET", None)
+    mod_orig_terminal = getattr(module, "TERMINAL_ID",    None)
+    if mod_orig_secret   is not None: module.SERVICE_SECRET = new_secret
+    if mod_orig_terminal is not None: module.TERMINAL_ID    = new_terminal
+
+    yield
+
+    SERVICE_SECRET = prev_secret
+    TERMINAL_ID    = prev_terminal
+    if mod_orig_secret   is not None: module.SERVICE_SECRET = mod_orig_secret
+    if mod_orig_terminal is not None: module.TERMINAL_ID    = mod_orig_terminal
+
+
+@pytest.fixture(autouse=True)
+def log_http_calls(request, _apply_terminal_override):
     """Перехватывает HTTP-вызовы теста, печатает в stdout и сохраняет для файлового репорта."""
     captures = []
     orig = requests.Session.send

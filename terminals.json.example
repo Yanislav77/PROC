@@ -1,0 +1,10 @@
+{
+    "payin/test_3ds.py": {
+        "TERMINAL_ID": "3649",
+        "SERVICE_SECRET": "your_secret_here"
+    },
+    "general/test_auth.py": {
+        "TERMINAL_ID": "9999",
+        "SERVICE_SECRET": "another_secret"
+    }
+}

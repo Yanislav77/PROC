@@ -1,4 +1,5 @@
 .env
+terminals.json
 __pycache__/
 .pytest_cache/
 *.pyc
