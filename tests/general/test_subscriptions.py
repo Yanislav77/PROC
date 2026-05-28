@@ -302,23 +302,41 @@ def test_cancel_subscription_recancel_returns_conflict(_sub_token_recancel):
 
 
 @pytest.mark.tcid("SB-021")
-def test_cancelled_token_rejected_in_payin(_sub_token_payin_after_cancel):
-    """После отмены подписки попытка оплаты отменённым токеном → 400/404/409."""
+def test_rebill_blocked_after_subscription_cancel(_sub_token_payin_after_cancel):
+    """End-to-end: rebill работает до отмены подписки и блокируется после.
+
+    Шаги:
+    1. Rebill по активному recurrent_token → 201 (подписка работает)
+    2. DELETE /subscriptions/{token}       → 204 (отмена)
+    3. Rebill по тому же токену            → 4xx (подписка заблокирована)
+    """
     token = _sub_token_payin_after_cancel
-    cancel_resp = delete_request(f"{SUBSCRIPTIONS_URL}/{token}")
-    assert cancel_resp.status_code == 204, (
-        f"Cancel failed: {cancel_resp.status_code}: {cancel_resp.text}"
+
+    def _rebill_body(order_tag: str) -> dict:
+        return {
+            "type": "payin",
+            "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id(order_tag)},
+            "financial_data": {"amount": 10000, "currency": "RUB"},
+            "transaction_data": {"method": "token", "details": {"token": token}},
+            "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+            "customer_data": CUSTOMER_DATA,
+        }
+
+    # Шаг 1: rebill до отмены — должен пройти
+    before = post_transaction(_rebill_body("sb021_before_cancel"))
+    assert before.status_code == 201, (
+        f"Rebill before cancel failed: {before.status_code}: {before.text}"
     )
-    payin_body = {
-        "type": "payin",
-        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("cancelled_sub_payin")},
-        "financial_data": {"amount": 10000, "currency": "RUB"},
-        "transaction_data": {"method": "token", "details": {"token": token}},
-        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
-        "customer_data": CUSTOMER_DATA,
-    }
-    payin_resp = post_transaction(payin_body)
-    assert payin_resp.status_code in (400, 404, 409), (
-        f"Expected error using cancelled token, got {payin_resp.status_code}: {payin_resp.text}"
+
+    # Шаг 2: отмена подписки
+    cancel = delete_request(f"{SUBSCRIPTIONS_URL}/{token}")
+    assert cancel.status_code == 204, (
+        f"Cancel failed: {cancel.status_code}: {cancel.text}"
     )
-    assert_error_response(payin_resp)
+
+    # Шаг 3: rebill после отмены — должен быть отклонён
+    after = post_transaction(_rebill_body("sb021_after_cancel"))
+    assert after.status_code in (400, 404, 409), (
+        f"Expected error after cancel, got {after.status_code}: {after.text}"
+    )
+    assert_error_response(after)

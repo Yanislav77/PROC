@@ -235,8 +235,7 @@ def _query_subscription_from_db(token: str) -> list:
 
     Lookup chain:
       support.recurrent_token (token → tran_id)
-      → secure.recurrents_master, recurrents, recurrent_pending, recurring_pending (by tran_id)
-      → support.sub_transaction (by tran_id)
+      → secure.recurrents (subscription record: status, period, validity)
     """
     if not _DB_AVAILABLE or not _DB_HOST or not token:
         return []
@@ -259,29 +258,14 @@ def _query_subscription_from_db(token: str) -> list:
             sp.rollback()
 
         if tran_id:
-            for table, col in [
-                ("recurrents_master",  "transaction_id"),
-                ("recurrents",         "transaction_id"),
-                ("recurrent_pending",  "transaction_id"),
-                ("recurring_pending",  "transaction_id"),
-            ]:
-                try:
-                    sc_cur.execute(f'SELECT * FROM public."{table}" WHERE "{col}" = %s LIMIT 5', (tran_id,))
-                    rows = sc_cur.fetchall()
-                    if rows:
-                        cols = [d[0] for d in sc_cur.description]
-                        results.append({"db": "secure", "table": table, "columns": cols, "rows": rows})
-                except Exception:
-                    sc.rollback()
-
             try:
-                sp_cur.execute("SELECT * FROM public.sub_transaction WHERE transaction_id = %s LIMIT 5", (tran_id,))
-                rows = sp_cur.fetchall()
+                sc_cur.execute("SELECT * FROM public.recurrents WHERE transaction_id = %s LIMIT 5", (tran_id,))
+                rows = sc_cur.fetchall()
                 if rows:
-                    cols = [d[0] for d in sp_cur.description]
-                    results.append({"db": "support", "table": "sub_transaction", "columns": cols, "rows": rows})
+                    cols = [d[0] for d in sc_cur.description]
+                    results.append({"db": "secure", "table": "recurrents", "columns": cols, "rows": rows})
             except Exception:
-                sp.rollback()
+                sc.rollback()
 
         sp.close()
         sc.close()
