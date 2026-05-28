@@ -254,8 +254,10 @@ def _create_recurrent_token(tag: str) -> str:
     time.sleep(SETUP_DELAY)
     status = get_request(f"{BASE_URL}/{tr_id}")
     assert status.status_code == 200, f"Status poll failed: {status.text}"
-    token = status.json().get("recurrent_token")
-    assert token, f"recurrent_token not found in status response: {status.json()}"
+    data = status.json()
+    td = data.get("transaction_data") or {}
+    token = td.get("recurrent_token")
+    assert token, f"recurrent_token not found in transaction_data: {data}"
     return token
 
 

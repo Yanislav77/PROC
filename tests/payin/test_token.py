@@ -69,7 +69,8 @@ def _acquire_token(flow_data: dict) -> str:
     status = get_request(f"{BASE_URL}/{tr_id}")
     assert status.status_code == 200, f"Status poll failed: {status.text}"
     data = status.json()
-    token = data.get("recurrent_token") or data.get("withdrawal_token")
+    td = data.get("transaction_data") or {}
+    token = td.get("recurrent_token") or td.get("withdrawal_token")
     assert token, f"No token in status response: {data}"
     return token
 
