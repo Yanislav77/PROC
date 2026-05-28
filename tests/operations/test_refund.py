@@ -36,6 +36,46 @@ _REFUND_BODY = {
     "financial_data": {"amount": 1000, "currency": "RUB"},
 }
 
+_FAKE_TID = "000000000000"
+_SIMPLE_BODY = {
+    "merchant_data": {"order_id": "order_refund_test"},
+    "financial_data": {"amount": 100, "currency": "RUB"},
+}
+
+
+def _refund_url(tid) -> str:
+    return f"{BASE_URL}/{tid}/refund"
+
+
+def _raw_refund(tid, body: dict, **header_overrides) -> requests.Response:
+    """POST refund с произвольными заголовками поверх валидных (подпись по текущему времени)."""
+    raw = json.dumps(body, separators=(",", ":"))
+    ts = str(int(time.time()))
+    sig = calc_signature(TERMINAL_ID, ts, raw)
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+        **header_overrides,
+    }
+    return requests.post(_refund_url(tid), data=raw, headers=headers, timeout=30)
+
+
+def _raw_refund_with_ts(tid, body: dict, ts: str) -> requests.Response:
+    """POST refund с подписью, вычисленной по переданному timestamp."""
+    raw = json.dumps(body, separators=(",", ":"))
+    sig = calc_signature(TERMINAL_ID, ts, raw)
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    }
+    return requests.post(_refund_url(tid), data=raw, headers=headers, timeout=30)
+
 
 @pytest.fixture
 def refund_tid():
@@ -565,3 +605,196 @@ def test_refund_idempotency_same_key_different_body():
             f"server processed the second refund instead of returning cache: "
             f"r1.tid={tid_r1}, r2.tid={r2.json().get('transaction_id')}"
         )
+
+
+# ─────────────────────────────────────────────
+# ЗАГОЛОВКИ — ГРАНИЧНЫЕ КЕЙСЫ (RF-037 … RF-045)
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("RF-037")
+def test_refund_idempotency_key_non_uuid():
+    """Api-Idempotency-Key с произвольной строкой (не UUID) — принимается или отклоняется."""
+    resp = _raw_refund(_FAKE_TID, _SIMPLE_BODY, **{"Api-Idempotency-Key": "abc123"})
+    assert resp.status_code in (200, 201, 400, 404), f"Unexpected {resp.status_code}"
+
+
+@pytest.mark.tcid("RF-038")
+def test_refund_idempotency_key_empty():
+    """Пустой Api-Idempotency-Key принимается или отклоняется."""
+    resp = _raw_refund(_FAKE_TID, _SIMPLE_BODY, **{"Api-Idempotency-Key": ""})
+    assert resp.status_code in (200, 201, 400, 404), f"Unexpected {resp.status_code}"
+
+
+@pytest.mark.tcid("RF-039")
+def test_refund_nonexistent_terminal_id():
+    """Несуществующий Api-Terminal-ID отклоняется с ошибкой авторизации."""
+    resp = _raw_refund(_FAKE_TID, _SIMPLE_BODY, **{"Api-Terminal-ID": "99999999"})
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-040")
+def test_refund_empty_terminal_id():
+    """Пустой Api-Terminal-ID отклоняется с ошибкой авторизации."""
+    resp = _raw_refund(_FAKE_TID, _SIMPLE_BODY, **{"Api-Terminal-ID": ""})
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-041")
+def test_refund_empty_signature():
+    """Пустой Api-Signature отклоняется с ошибкой авторизации."""
+    resp = _raw_refund(_FAKE_TID, _SIMPLE_BODY, **{"Api-Signature": ""})
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-042")
+def test_refund_timestamp_invalid_string():
+    """Нечисловое значение Api-Timestamp отклоняется с ошибкой валидации."""
+    resp = _raw_refund(_FAKE_TID, _SIMPLE_BODY, **{"Api-Timestamp": "abc"})
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-043")
+def test_refund_timestamp_too_old():
+    """Api-Timestamp старше 5 минут отклоняется как просроченный."""
+    old_ts = str(int(time.time()) - 400)
+    resp = _raw_refund_with_ts(_FAKE_TID, _SIMPLE_BODY, old_ts)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-044")
+def test_refund_timestamp_near_future(refund_tid):
+    """Api-Timestamp 4 минуты в будущем — в пределах допустимого окна, запрос принимается."""
+    future_ts = str(int(time.time()) + 240)
+    resp = _raw_refund_with_ts(refund_tid, _SIMPLE_BODY, future_ts)
+    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("RF-045")
+def test_refund_timestamp_far_future():
+    """Api-Timestamp 10 минут в будущем — вне допустимого окна, запрос отклоняется."""
+    far_ts = str(int(time.time()) + 600)
+    resp = _raw_refund_with_ts(_FAKE_TID, _SIMPLE_BODY, far_ts)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# BODY — MERCHANT DATA / ORDER ID (RF-046 … RF-050)
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("RF-046")
+def test_refund_merchant_data_empty_object(refund_tid):
+    """merchant_data как пустой объект {} отклоняется из-за отсутствия order_id. Ожидается 400."""
+    body = {"merchant_data": {}, "financial_data": {"amount": 100, "currency": "RUB"}}
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-047")
+def test_refund_order_id_int_type(refund_tid):
+    """order_id с типом int отклоняется. Ожидается 400."""
+    body = {"merchant_data": {"order_id": 12345}, "financial_data": {"amount": 100, "currency": "RUB"}}
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-048")
+def test_refund_order_id_empty_string(refund_tid):
+    """order_id с пустым значением отклоняется. Ожидается 400."""
+    body = {"merchant_data": {"order_id": ""}, "financial_data": {"amount": 100, "currency": "RUB"}}
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-049")
+def test_refund_order_id_100_chars(refund_tid):
+    """order_id ровно 100 символов принимается. Ожидается 200 или 201."""
+    body = {"merchant_data": {"order_id": "a" * 100}, "financial_data": {"amount": 100, "currency": "RUB"}}
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("RF-050")
+def test_refund_order_id_over_100_chars(refund_tid):
+    """order_id длиннее 100 символов отклоняется. Ожидается 400."""
+    body = {"merchant_data": {"order_id": "a" * 101}, "financial_data": {"amount": 100, "currency": "RUB"}}
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# BODY — AMOUNT (RF-051 … RF-052)
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("RF-051")
+def test_refund_amount_very_large(refund_tid):
+    """amount = 10_000_000_000_000 — превышает оригинальную транзакцию. Ожидается 400."""
+    body = {"merchant_data": {"order_id": "order_refund_test"}, "financial_data": {"amount": 10_000_000_000_000, "currency": "RUB"}}
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-052")
+def test_refund_amount_above_max(refund_tid):
+    """amount > 10_000_000_000_000 — проверка поведения на превышении возможного максимума. Ожидается 400."""
+    body = {"merchant_data": {"order_id": "order_refund_test"}, "financial_data": {"amount": 99_999_999_999_999, "currency": "RUB"}}
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# BODY — CURRENCY (RF-053 … RF-056)
+# ─────────────────────────────────────────────
+
+@pytest.mark.parametrize("currency", [
+    pytest.param("840",  marks=pytest.mark.tcid("RF-053"), id="numeric_3_chars"),
+    pytest.param("RU",   marks=pytest.mark.tcid("RF-054"), id="alpha_2_chars"),
+    pytest.param("RUBR", marks=pytest.mark.tcid("RF-055"), id="alpha_4_chars"),
+    pytest.param("",     marks=pytest.mark.tcid("RF-056"), id="empty"),
+])
+def test_refund_invalid_currency_format(refund_tid, currency):
+    """Невалидный формат currency (не 3-буквенный ISO 4217) отклоняется. Ожидается 400."""
+    body = {"merchant_data": {"order_id": "order_refund_test"}, "financial_data": {"amount": 100, "currency": currency}}
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code == 400, f"Expected 400 for currency={currency!r}, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# BODY — WEBHOOK URL (RF-057 … RF-059)
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("RF-057")
+def test_refund_webhook_url_invalid_string(refund_tid):
+    """webhook_url с произвольной строкой (не URL) — принимается или отклоняется."""
+    body = {"merchant_data": {"order_id": "order_refund_test", "webhook_url": "not-a-url"}, "financial_data": {"amount": 100, "currency": "RUB"}}
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code in (200, 201, 400), f"Unexpected {resp.status_code}"
+
+
+@pytest.mark.tcid("RF-058")
+def test_refund_webhook_url_int_type(refund_tid):
+    """webhook_url с типом int отклоняется. Ожидается 400."""
+    body = {"merchant_data": {"order_id": "order_refund_test", "webhook_url": 12345}, "financial_data": {"amount": 100, "currency": "RUB"}}
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RF-059")
+def test_refund_webhook_url_empty_string(refund_tid):
+    """webhook_url с пустой строкой — принимается или отклоняется."""
+    body = {"merchant_data": {"order_id": "order_refund_test", "webhook_url": ""}, "financial_data": {"amount": 100, "currency": "RUB"}}
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code in (200, 201, 400), f"Unexpected {resp.status_code}"
