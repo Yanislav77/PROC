@@ -3,7 +3,6 @@
 DELETE /api/v1/subscriptions/{token}
 
 token — UUID, получается из поля recurrent_token в ответе на Payin с is_recurrent=True.
-Happy path (отмена реальной подписки) требует сохранённого recurrent_token — см. conftest.py.
 """
 import hashlib
 import hmac
@@ -15,11 +14,20 @@ import requests
 
 from conftest import (
     delete_request,
+    post_transaction,
+    get_request,
     make_get_headers,
     SUBSCRIPTIONS_URL,
+    BASE_URL,
     TERMINAL_ID,
     SERVICE_SECRET,
+    MERCHANT_DATA,
+    CUSTOMER_DATA,
+    CARD_DETAILS,
+    THREED,
+    SETUP_DELAY,
     assert_error_response,
+    gen_order_id,
 )
 
 
@@ -224,3 +232,91 @@ def test_cancel_subscription_idempotency_key_should_not_be_required():
     resp = requests.delete(url, headers=headers, timeout=30)
     assert resp.status_code in (404, 409), f"Expected 404/409, got {resp.status_code}"
     assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# SETUP HELPERS ДЛЯ ПОЗИТИВНЫХ ТЕСТОВ
+# ─────────────────────────────────────────────
+
+def _create_recurrent_token(tag: str) -> str:
+    """Создаёт card payin с is_recurrent=True и возвращает recurrent_token из ответа на опрос статуса."""
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id(tag)},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+        "flow_data": {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Payin setup failed: {resp.status_code}: {resp.text}"
+    tr_id = resp.json()["transaction_id"]
+    time.sleep(SETUP_DELAY)
+    status = get_request(f"{BASE_URL}/{tr_id}")
+    assert status.status_code == 200, f"Status poll failed: {status.text}"
+    token = status.json().get("recurrent_token")
+    assert token, f"recurrent_token not found in status response: {status.json()}"
+    return token
+
+
+@pytest.fixture(scope="session")
+def _sub_token_cancel():
+    return _create_recurrent_token("sub_cancel")
+
+
+@pytest.fixture(scope="session")
+def _sub_token_recancel():
+    return _create_recurrent_token("sub_recancel")
+
+
+@pytest.fixture(scope="session")
+def _sub_token_payin_after_cancel():
+    return _create_recurrent_token("sub_payin_after")
+
+
+# ─────────────────────────────────────────────
+# ПОЗИТИВНЫЕ СЦЕНАРИИ
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("SB-019")
+def test_cancel_subscription_returns_204(_sub_token_cancel):
+    """DELETE /subscriptions/{token} с действующим recurrent_token → 204, тело ответа пустое."""
+    resp = delete_request(f"{SUBSCRIPTIONS_URL}/{_sub_token_cancel}")
+    assert resp.status_code == 204, f"Expected 204, got {resp.status_code}: {resp.text}"
+    assert resp.content == b"", f"Expected empty body on 204, got: {resp.content!r}"
+
+
+@pytest.mark.tcid("SB-020")
+def test_cancel_subscription_recancel_returns_conflict(_sub_token_recancel):
+    """Повторная отмена уже отменённой подписки → 404 или 409 с JSON телом."""
+    url = f"{SUBSCRIPTIONS_URL}/{_sub_token_recancel}"
+    first = delete_request(url)
+    assert first.status_code == 204, f"First cancel failed: {first.status_code}: {first.text}"
+    second = delete_request(url)
+    assert second.status_code in (404, 409), (
+        f"Expected 404/409 on re-cancel, got {second.status_code}: {second.text}"
+    )
+    assert_error_response(second)
+
+
+@pytest.mark.tcid("SB-021")
+def test_cancelled_token_rejected_in_payin(_sub_token_payin_after_cancel):
+    """После отмены подписки попытка оплаты отменённым токеном → 400/404/409."""
+    token = _sub_token_payin_after_cancel
+    cancel_resp = delete_request(f"{SUBSCRIPTIONS_URL}/{token}")
+    assert cancel_resp.status_code == 204, (
+        f"Cancel failed: {cancel_resp.status_code}: {cancel_resp.text}"
+    )
+    payin_body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("cancelled_sub_payin")},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "transaction_data": {"method": "token", "details": {"token": token}},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+    }
+    payin_resp = post_transaction(payin_body)
+    assert payin_resp.status_code in (400, 404, 409), (
+        f"Expected error using cancelled token, got {payin_resp.status_code}: {payin_resp.text}"
+    )
+    assert_error_response(payin_resp)

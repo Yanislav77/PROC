@@ -230,6 +230,66 @@ _test_counter = 0
 _REPORTS_DIR = Path(__file__).parent.parent / "reports"
 
 
+def _query_subscription_from_db(token: str) -> list:
+    """Query DB for subscription data by recurrent_token UUID.
+
+    Lookup chain:
+      support.recurrent_token (token → tran_id)
+      → secure.recurrents_master, recurrents, recurrent_pending, recurring_pending (by tran_id)
+      → support.sub_transaction (by tran_id)
+    """
+    if not _DB_AVAILABLE or not _DB_HOST or not token:
+        return []
+    results = []
+    try:
+        sp = _psycopg2.connect(host=_DB_HOST, port=5432, dbname="support", user=_DB_USER, password=_DB_PASSWORD)
+        sc = _psycopg2.connect(host=_DB_HOST, port=5432, dbname="secure",  user=_DB_USER, password=_DB_PASSWORD)
+        sp_cur = sp.cursor()
+        sc_cur = sc.cursor()
+
+        tran_id = None
+        try:
+            sp_cur.execute("SELECT id, tran_id, token FROM public.recurrent_token WHERE token = %s LIMIT 1", (token,))
+            rows = sp_cur.fetchall()
+            if rows:
+                cols = [d[0] for d in sp_cur.description]
+                results.append({"db": "support", "table": "recurrent_token", "columns": cols, "rows": rows})
+                tran_id = rows[0][1]
+        except Exception:
+            sp.rollback()
+
+        if tran_id:
+            for table, col in [
+                ("recurrents_master",  "transaction_id"),
+                ("recurrents",         "transaction_id"),
+                ("recurrent_pending",  "transaction_id"),
+                ("recurring_pending",  "transaction_id"),
+            ]:
+                try:
+                    sc_cur.execute(f'SELECT * FROM public."{table}" WHERE "{col}" = %s LIMIT 5', (tran_id,))
+                    rows = sc_cur.fetchall()
+                    if rows:
+                        cols = [d[0] for d in sc_cur.description]
+                        results.append({"db": "secure", "table": table, "columns": cols, "rows": rows})
+                except Exception:
+                    sc.rollback()
+
+            try:
+                sp_cur.execute("SELECT * FROM public.sub_transaction WHERE transaction_id = %s LIMIT 5", (tran_id,))
+                rows = sp_cur.fetchall()
+                if rows:
+                    cols = [d[0] for d in sp_cur.description]
+                    results.append({"db": "support", "table": "sub_transaction", "columns": cols, "rows": rows})
+            except Exception:
+                sp.rollback()
+
+        sp.close()
+        sc.close()
+    except Exception:
+        pass
+    return results
+
+
 def _query_paylink_from_db(link_id: str) -> list:
     """Query support DB for payment link data. Returns list of {db, table, columns, rows}."""
     if not _DB_AVAILABLE or not _DB_HOST or not link_id:
@@ -1002,6 +1062,17 @@ def log_http_calls(request, _apply_terminal_override):
                     ungrouped.append((prep, resp, label, css_class))
             except Exception:
                 ungrouped.append((prep, resp, label, css_class))
+        elif prep.method == "DELETE" and resp.status_code == 204 and SUBSCRIPTIONS_URL in url:
+            token_part = url.rstrip("/").split("/")[-1].split("?")[0]
+            db_data = _query_subscription_from_db(token_part)
+            groups.append({
+                "title": "Отмена подписки",
+                "css_class": "operation",
+                "tr_id": None,
+                "http_blocks": [(prep, resp, "Отмена подписки", "operation")],
+                "db_data": db_data,
+                "redis": None,
+            })
         else:
             ungrouped.append((prep, resp, label, css_class))
 
