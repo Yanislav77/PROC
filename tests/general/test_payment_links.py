@@ -519,7 +519,7 @@ def test_payment_link_return_url_with_query_params():
 
 @pytest.mark.tcid("PL-032")
 def test_payment_link_idempotency_same_key_returns_same_link():
-    """TC-03: Повторный запрос с тем же Api-Idempotency-Key возвращает тот же link_id (кэш XPI)."""
+    """Повторный запрос с тем же Api-Idempotency-Key возвращает тот же link_id (кэш XPI)."""
     body = copy.deepcopy(_VALID_LINK_BODY)
     body["merchant_data"] = {**MERCHANT_DATA, "order_id": gen_order_id("pl_idem")}
     raw = json.dumps(body, separators=(",", ":"))
@@ -622,7 +622,7 @@ def test_payment_link_financial_data_null_returns_400():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-039")
 def test_payment_link_idempotency_different_body_returns_cached():
-    """TC-04: Тот же Api-Idempotency-Key, другая сумма — возвращает кэшированный ответ первого запроса."""
+    """Тот же Api-Idempotency-Key, другая сумма — возвращает кэшированный ответ первого запроса."""
     order_id = gen_order_id("pl_idem_diff")
     key = str(uuid.uuid4())
 
@@ -666,7 +666,7 @@ def test_payment_link_idempotency_different_body_returns_cached():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-040")
 def test_payment_link_expired_timestamp():
-    """TC-05: Api-Timestamp > 5 минут в прошлом — запрос должен отклоняться (anti-replay)."""
+    """Api-Timestamp > 5 минут в прошлом — запрос должен отклоняться (anti-replay)."""
     raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
     old_ts = str(int(time.time()) - 601)
     key = str(uuid.uuid4())
@@ -685,7 +685,7 @@ def test_payment_link_expired_timestamp():
 
 @pytest.mark.tcid("PL-041")
 def test_payment_link_future_timestamp():
-    """TC-06: Api-Timestamp > 5 минут в будущем — запрос должен отклоняться (anti-replay)."""
+    """Api-Timestamp > 5 минут в будущем — запрос должен отклоняться (anti-replay)."""
     raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
     future_ts = str(int(time.time()) + 601)
     key = str(uuid.uuid4())
@@ -707,7 +707,7 @@ def test_payment_link_future_timestamp():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-042")
 def test_payment_link_signature_computed_without_timestamp():
-    """TC-09: Подпись посчитана без Api-Timestamp (terminal_id + body вместо timestamp + terminal_id + body) → 4xx."""
+    """Подпись посчитана без Api-Timestamp (terminal_id + body вместо timestamp + terminal_id + body) → 4xx."""
     raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
     ts = str(int(time.time()))
     key = str(uuid.uuid4())
@@ -730,7 +730,7 @@ def test_payment_link_signature_computed_without_timestamp():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-043")
 def test_payment_link_missing_signature():
-    """TC-12: Запрос без заголовка Api-Signature → 4xx."""
+    """Запрос без заголовка Api-Signature → 4xx."""
     raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
     headers = {
         "Content-Type": "application/json",
@@ -749,7 +749,7 @@ def test_payment_link_missing_signature():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-044")
 def test_payment_link_unknown_terminal_id():
-    """TC-14: Несуществующий Api-Terminal-ID → 4xx (InvalidSiteId)."""
+    """Несуществующий Api-Terminal-ID → 4xx (InvalidSiteId)."""
     raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
     fake_id = "NONEXISTENT-99999"
     ts = str(int(time.time()))
@@ -772,7 +772,7 @@ def test_payment_link_unknown_terminal_id():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-045")
 def test_payment_link_url_path_contains_payment_sessions():
-    """TC-29: link_data.url содержит /payment-sessions/<id>, но не /api/v1/ в пути ссылки."""
+    """link_data.url содержит /payment-sessions/<id>, но не /api/v1/ в пути ссылки."""
     body = {**_VALID_LINK_BODY, "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_urlpath")}}
     resp = post_payment_link(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
@@ -810,7 +810,7 @@ def test_payment_link_options_preflight_cors_headers():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-047")
 def test_payment_link_timestamp_at_minus_60s():
-    """TC-07: Api-Timestamp = now - 60 (в пределах 5-минутного окна). Ожидается 201."""
+    """Api-Timestamp = now - 60 (в пределах 5-минутного окна). Ожидается 201."""
     body = {**_VALID_LINK_BODY,
             "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_ts60")}}
     raw = json.dumps(body, separators=(",", ":"))
@@ -832,7 +832,7 @@ def test_payment_link_timestamp_at_minus_60s():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-048")
 def test_payment_link_currency_rur():
-    """TC-18: financial_data.currency='RUR' (устаревший код). Ожидается 400."""
+    """financial_data.currency='RUR' (устаревший код). Ожидается 400."""
     body = {**_VALID_LINK_BODY, "financial_data": {"amount": 5000, "currency": "RUR"}}
     resp = post_payment_link(body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
@@ -844,7 +844,7 @@ def test_payment_link_currency_rur():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-049")
 def test_payment_link_db_contact_info_mapping():
-    """TC-23: contact_info → CustomerInfo в БД (Town, не City; ZIP, не Zip)."""
+    """contact_info → CustomerInfo в БД (Town, не City; ZIP, не Zip)."""
     body = {
         **_VALID_LINK_BODY,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_ci_map")},
@@ -877,7 +877,7 @@ def test_payment_link_db_contact_info_mapping():
 
 @pytest.mark.tcid("PL-050")
 def test_payment_link_db_personal_info_mapping():
-    """TC-24: personal_info → CustomerInfo + PassportInfo в БД."""
+    """personal_info → CustomerInfo + PassportInfo в БД."""
     body = {
         **_VALID_LINK_BODY,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_pi_map")},
@@ -923,7 +923,7 @@ def test_payment_link_db_personal_info_mapping():
 
 @pytest.mark.tcid("PL-051")
 def test_payment_link_db_is_recurrent_mapping():
-    """TC-25: flow_data.is_recurrent=true → PaymentRequest.RebillFlag=true в БД."""
+    """flow_data.is_recurrent=true → PaymentRequest.RebillFlag=true в БД."""
     body = {
         **_VALID_LINK_BODY,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_rebill")},
@@ -941,7 +941,7 @@ def test_payment_link_db_is_recurrent_mapping():
 
 @pytest.mark.tcid("PL-052")
 def test_payment_link_db_challenge_window_size_mapping():
-    """TC-26: threed_secure.challenge_window_size='05' → PaymentRequest.ExtraData.ChallengeWindowSize='05' в БД."""
+    """threed_secure.challenge_window_size='05' → PaymentRequest.ExtraData.ChallengeWindowSize='05' в БД."""
     body = {
         **_VALID_LINK_BODY,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_cws")},
@@ -964,7 +964,7 @@ def test_payment_link_db_challenge_window_size_mapping():
 
 @pytest.mark.tcid("PL-053")
 def test_payment_link_db_return_url_mapping():
-    """TC-27: merchant_data.return_url → PaymentRequest.ExtraData.ReturnUrl в БД."""
+    """merchant_data.return_url → PaymentRequest.ExtraData.ReturnUrl в БД."""
     return_url = "https://merchant.example.com/return?order=test"
     body = {
         **_VALID_LINK_BODY,
@@ -984,7 +984,7 @@ def test_payment_link_db_return_url_mapping():
 
 @pytest.mark.tcid("PL-054")
 def test_payment_link_db_payer_id_mapping():
-    """TC-28: customer_data.payer_info.payer_id → CustomerInfo.UserId в БД."""
+    """customer_data.payer_info.payer_id → CustomerInfo.UserId в БД."""
     body = {
         **_VALID_LINK_BODY,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_uid")},
@@ -1007,7 +1007,7 @@ def test_payment_link_db_payer_id_mapping():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-055")
 def test_payment_link_old_pascal_case_body_rejected():
-    """TC-31: Тело в старом PascalCase-формате на /api/v1/payment-links. Ожидается 400."""
+    """Тело в старом PascalCase-формате на /api/v1/payment-links. Ожидается 400."""
     body = {
         "PaymentRequest": {
             "OrderId": gen_order_id("pl_old_pc"),
@@ -1025,7 +1025,7 @@ def test_payment_link_old_pascal_case_body_rejected():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-056")
 def test_payment_link_old_headers_rejected():
-    """TC-32: Заголовки X-SITE-ID / X-REQUEST-SIGNATURE вместо Api-* → 4xx MissingHTTPHeader."""
+    """Заголовки X-SITE-ID / X-REQUEST-SIGNATURE вместо Api-* → 4xx MissingHTTPHeader."""
     raw = json.dumps(_VALID_LINK_BODY, separators=(",", ":"))
     headers = {
         "Content-Type": "application/json",
@@ -1048,7 +1048,7 @@ def test_payment_link_old_headers_rejected():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-057")
 def test_webpay_create_regression():
-    """TC-30: POST /webpayments/create по-прежнему работает (регресс)."""
+    """POST /webpayments/create по-прежнему работает (регресс)."""
     body = {
         "MetaData": {"PaymentType": "Pay"},
         "PaymentRequest": {
@@ -1089,7 +1089,7 @@ def test_webpay_create_regression():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-058")
 def test_payment_link_side_effects_match_webpay_create():
-    """TC-33: Эквивалентные запросы через /webpayments/create и /api/v1/payment-links
+    """Эквивалентные запросы через /webpayments/create и /api/v1/payment-links
     создают записи с одинаковыми ключевыми полями в БД."""
     order_id_old = gen_order_id("tc33_old")
     order_id_new = gen_order_id("tc33_new")
@@ -1168,7 +1168,7 @@ def test_payment_link_side_effects_match_webpay_create():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-059")
 def test_payment_link_db_full_mapping():
-    """TC-02: POST со всеми полями — в БД PaymentRequest, CustomerInfo, PassportInfo заполнены корректно."""
+    """POST со всеми полями — в БД PaymentRequest, CustomerInfo, PassportInfo заполнены корректно."""
     body = {
         "merchant_data": {
             **MERCHANT_DATA,
@@ -1246,7 +1246,7 @@ def test_payment_link_db_full_mapping():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("PL-060")
 def test_payment_link_db_capture_mode_auto():
-    """TC-20: capture_mode='auto' сохраняется в PaymentRequest.ExtraData.CaptureMode в БД."""
+    """capture_mode='auto' сохраняется в PaymentRequest.ExtraData.CaptureMode в БД."""
     body = {
         **_VALID_LINK_BODY,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_cap_auto")},
@@ -1267,7 +1267,7 @@ def test_payment_link_db_capture_mode_auto():
 
 @pytest.mark.tcid("PL-061")
 def test_payment_link_db_capture_mode_manual():
-    """TC-21: capture_mode='manual' сохраняется в PaymentRequest.ExtraData.CaptureMode в БД."""
+    """capture_mode='manual' сохраняется в PaymentRequest.ExtraData.CaptureMode в БД."""
     body = {
         **_VALID_LINK_BODY,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("pl_cap_man")},

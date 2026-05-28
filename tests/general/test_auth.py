@@ -103,7 +103,7 @@ def test_missing_signature_header():
 
 @pytest.mark.tcid("A-004")
 def test_missing_terminal_id_header():
-    """Заголовок Api-Terminal-ID отсутствует. Ожидается 400, 401 или 403."""
+    """Отсутствующий Api-Terminal-ID отклоняется как невалидный запрос."""
     raw = json.dumps(_VALID_BODY, separators=(",", ":"))
     headers = {
         "Content-Type":        "application/json",
