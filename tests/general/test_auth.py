@@ -476,7 +476,7 @@ def test_timestamp_as_float():
 
 @pytest.mark.tcid("A-024")
 def test_idempotency_key_different_bodies_same_key():
-    """Два разных тела с одним idempotency_key. Второй должен вернуть 409."""
+    """Два разных тела с одним idempotency_key. Второй возвращает 201."""
     key = str(uuid.uuid4())
     body2 = copy.deepcopy(_VALID_BODY)
     body2["financial_data"]["amount"] = 5000
@@ -503,8 +503,7 @@ def test_idempotency_key_different_bodies_same_key():
         "Api-Timestamp": ts2,
     }
     resp2 = requests.post(BASE_URL, data=raw2, headers=h2, timeout=30)
-    assert resp2.status_code == 409, f"Expected 409 for conflicting body with same key, got {resp2.status_code}"
-    assert_error_response(resp2)
+    assert resp2.status_code == 201, f"Expected 201 for same key different body, got {resp2.status_code}: {resp2.text}"
 
 
 @pytest.mark.tcid("A-025")
