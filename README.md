@@ -248,7 +248,7 @@ MERCHANT_DATA = {
 В тестах `test_payin_token_rebill` используется токен карты:
 
 ```python
-"details": {"token": "b928586b-e6ec-4400-9039-e36f19c0094c"},
+"details": {"token": "b928586b-e6ec-4400-9039-e36f19c0094c"}
 ```
 
 Это заглушка. Замените на реальный токен, который вернул API в ответе на Payin с `is_recurrent=True`.
