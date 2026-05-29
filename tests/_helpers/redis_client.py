@@ -7,7 +7,7 @@ except ImportError:
 import _helpers.config as _cfg
 
 
-def query_transaction_from_redis(transaction_id) -> dict:
+def query_transaction_from_redis(transaction_id: int) -> dict[str, str]:
     """Fetch Redis hash for *:*:{transaction_id} (tries tr_rest and tr prefixes). Returns {} if unavailable or not found."""
     if not _REDIS_LIB_AVAILABLE or not _cfg.REDIS_HOST:
         return {}

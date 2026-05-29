@@ -16,7 +16,7 @@ def calc_signature(terminal_id: str, timestamp: str, raw_body: str = "") -> str:
     ).hexdigest()
 
 
-def make_headers(terminal_id: str, raw_body: str = "", method: str = "POST") -> dict:
+def make_headers(terminal_id: str, raw_body: str = "", method: str = "POST") -> dict[str, str]:
     """Заголовки для POST-запросов с телом и idempotency key."""
     timestamp = str(int(time.time()))
     body_for_sig = raw_body if method == "POST" else ""
@@ -30,7 +30,7 @@ def make_headers(terminal_id: str, raw_body: str = "", method: str = "POST") -> 
     }
 
 
-def make_get_headers(terminal_id: str) -> dict:
+def make_get_headers(terminal_id: str) -> dict[str, str]:
     """Заголовки для GET и DELETE запросов (без тела)."""
     timestamp = str(int(time.time()))
     signature = calc_signature(terminal_id, timestamp, "")

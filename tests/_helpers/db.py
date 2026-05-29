@@ -9,7 +9,7 @@ import _helpers.config as _cfg
 _DB_QUERY_LIMIT = 5  # max rows fetched per table in diagnostic queries
 
 
-def _query_subscription_from_db(token: str) -> list:
+def _query_subscription_from_db(token: str) -> list[dict]:
     """Query DB for subscription data by recurrent_token UUID.
 
     Lookup chain:
@@ -53,7 +53,7 @@ def _query_subscription_from_db(token: str) -> list:
     return results
 
 
-def _query_paylink_from_db(link_id: str) -> list:
+def _query_paylink_from_db(link_id: str) -> list[dict]:
     """Query support DB for payment link data. Returns list of {db, table, columns, rows}."""
     if not _PSYCOPG2_AVAILABLE or not _cfg.DB_HOST or not link_id:
         return []
@@ -83,7 +83,7 @@ def _query_paylink_from_db(link_id: str) -> list:
     return results
 
 
-def _query_transaction_from_db(tr_id: int) -> list:
+def _query_transaction_from_db(tr_id: int) -> list[dict]:
     """Query both DBs for transaction data. Returns list of {db, table, columns, rows}."""
     if not _PSYCOPG2_AVAILABLE or not _cfg.DB_HOST:
         return []

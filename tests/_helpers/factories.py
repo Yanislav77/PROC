@@ -14,7 +14,7 @@ def gen_order_id(name: str) -> str:
     return f"{_cfg.RUN_ID}_{slug}"
 
 
-def make_block_payin(order_id: str = None, description: str = None) -> int:
+def make_block_payin(order_id: str | None = None, description: str | None = None) -> int:
     """Creates Payin with capture_mode=manual (hold) and returns transaction_id."""
     md = {**MERCHANT_DATA, "order_id": order_id or gen_order_id("block")}
     if description is not None:
@@ -33,7 +33,7 @@ def make_block_payin(order_id: str = None, description: str = None) -> int:
     return resp.json()["transaction_id"]
 
 
-def make_completed_payin(order_id: str = None) -> int:
+def make_completed_payin(order_id: str | None = None) -> int:
     """Creates auto-capture payin and returns transaction_id."""
     body = {
         "type": "payin",
@@ -49,7 +49,7 @@ def make_completed_payin(order_id: str = None) -> int:
     return resp.json()["transaction_id"]
 
 
-def make_op_body(order_id: str, amount: int = 1000) -> dict:
+def make_op_body(order_id: str, amount: int = _cfg.BLOCK_PAYIN_AMOUNT) -> dict:
     return {
         "merchant_data": {"order_id": order_id},
         "financial_data": {"amount": amount, "currency": "RUB"},

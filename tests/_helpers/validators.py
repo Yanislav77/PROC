@@ -1,3 +1,5 @@
+import requests
+
 _VALID_STATUSES = frozenset({
     "completed", "authorized", "processing",
     "waiting_action", "cancelled", "rejected", "refunded",
@@ -27,7 +29,7 @@ def assert_transaction_response(data: dict) -> None:
         f"created_at must be a non-empty string, got {data.get('created_at')!r}"
 
 
-def assert_error_response(resp) -> None:
+def assert_error_response(resp: requests.Response) -> None:
     """Validates that the error response body is a JSON object per ErrorResponse schema."""
     data = resp.json()
     assert isinstance(data, dict), \
