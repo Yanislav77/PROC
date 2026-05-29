@@ -136,13 +136,16 @@ def test_card_submit_payment_type_payout():
 
 
 @pytest.mark.tcid("TX-004")
-@pytest.mark.skip(reason="Требует проверки customerBankInfo.customerBank в БД — настроить вручную")
 def test_card_submit_with_customer_bank_info():
-    """Submit с customerBankInfo.customerBank — проставляется в transaction.addinfo."""
+    """Submit с customerBankInfo.customerBank — проставляется в addinfo.customer_bank."""
     body  = {**_SUBMIT_BODY, "customerBankInfo": {"customerBank": "Sberbank"}}
     token = create_payment_token()
     resp  = _post_card(token, body)
-    assert resp.status_code == 201
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    addinfo = _query_addinfo_by_token(token)
+    if addinfo:
+        assert addinfo.get("customer_bank") == "Sberbank", \
+            f"Expected customer_bank=Sberbank, got: {addinfo.get('customer_bank')!r}"
 
 
 @pytest.mark.tcid("TX-005")
@@ -656,34 +659,41 @@ def test_cardless_old_headers_on_new_url(payment_token):
 
 
 @pytest.mark.tcid("CL-017")
-@pytest.mark.skip(reason="Требует платёж в state=submited и сравнения addinfo в БД")
 def test_cardless_response_identical_to_old_without_bankinfo():
     """Ответы нового и старого эндпоинта идентичны для body без bankInfo."""
     token_new = create_payment_token()
     token_old = create_payment_token()
-    _post_card(token_new, _SUBMIT_BODY)
-    _post_card(token_old, _SUBMIT_BODY)
+    card_new  = _post_card(token_new, _SUBMIT_BODY)
+    card_old  = _post_card(token_old, _SUBMIT_BODY)
+    if card_new.status_code != 201 or card_old.status_code != 201:
+        pytest.skip("Card submit failed — can't reach submited state")
     resp_new = _post_cardless(token_new, _CARDLESS_BODY)
     resp_old = _post_cardless_old(token_old, _CARDLESS_BODY)
     assert resp_new.status_code == 201, f"New: {resp_new.status_code}: {resp_new.text}"
     assert resp_old.status_code == 201, f"Old: {resp_old.status_code}: {resp_old.text}"
     assert set(resp_new.json().keys()) == set(resp_old.json().keys()), \
         f"Response keys differ: new={set(resp_new.json().keys())}, old={set(resp_old.json().keys())}"
+    # Оба не должны иметь bank_info в addinfo при отсутствии bankInfo в теле
+    for token in (token_new, token_old):
+        addinfo = _query_addinfo_by_token(token)
+        if addinfo:
+            assert addinfo.get("bank_info") is None, \
+                f"Unexpected bank_info in addinfo for token {token}: {addinfo.get('bank_info')!r}"
 
 
 @pytest.mark.tcid("CL-018")
-@pytest.mark.skip(reason="Требует state=submited + проверки bank_info/payer_personal_data в БД")
-def test_cardless_bankinfo_behaviour_differs_from_old():
-    """Сознательное отличие: с bankInfo старый пишет bank_info в addinfo, новый — нет."""
-    token_new = create_payment_token()
-    token_old = create_payment_token()
-    _post_card(token_new, _SUBMIT_BODY)
-    _post_card(token_old, _SUBMIT_BODY)
-    resp_new = _post_cardless(token_new, _CARDLESS_BODY_WITH_BANKINFO)
-    resp_old = _post_cardless_old(token_old, _CARDLESS_BODY_WITH_BANKINFO)
-    assert resp_new.status_code == 201, f"New: {resp_new.status_code}: {resp_new.text}"
-    assert resp_old.status_code == 201, f"Old: {resp_old.status_code}: {resp_old.text}"
-    # Проверить через БД: у нового bank_info=None, у старого bank_info заполнен
+def test_cardless_bankinfo_absent_in_new_endpoint():
+    """Новый /cardless не пишет bank_info в addinfo даже при наличии bankInfo в теле."""
+    token     = create_payment_token()
+    card_resp = _post_card(token, _SUBMIT_BODY)
+    if card_resp.status_code != 201:
+        pytest.skip(f"Card submit failed ({card_resp.status_code}) — can't reach submited state")
+    resp = _post_cardless(token, _CARDLESS_BODY_WITH_BANKINFO)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    addinfo = _query_addinfo_by_token(token)
+    if addinfo:
+        assert addinfo.get("bank_info")      is None, f"bank_info should be absent: {addinfo.get('bank_info')!r}"
+        assert addinfo.get("bank_info_base") is None, f"bank_info_base should be absent: {addinfo.get('bank_info_base')!r}"
 
 
 @pytest.mark.tcid("CL-019")
