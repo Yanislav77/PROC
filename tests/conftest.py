@@ -50,6 +50,7 @@ def pytest_runtest_logreport(report):
     _report.pytest_runtest_logreport(report)
 
 _INTER_TEST_DELAY = _cfg.INTER_TEST_DELAY
+_LOG_BAR_WIDTH    = 64
 
 
 # ─────────────────────────────────────────────
@@ -201,9 +202,9 @@ def log_http_calls(request, _apply_terminal_override):
                     key = (tr_id, label)
                     if key not in seen:
                         seen.add(key)
-                        time.sleep(1)
+                        time.sleep(_cfg.STATUS_POLL_DELAY)
                         poll_headers = make_headers(_cfg.TERMINAL_ID, method="GET")
-                        poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=30)
+                        poll_resp = requests.get(f"{BASE_URL}/{tr_id}", headers=poll_headers, timeout=_cfg.HTTP_TIMEOUT)
                         db_data = _query_transaction_from_db(tr_id)
                         rdata = query_transaction_from_redis(tr_id)
                         redis_entry = None
@@ -244,7 +245,7 @@ def log_http_calls(request, _apply_terminal_override):
                     key = ("link", link_id)
                     if key not in seen:
                         seen.add(key)
-                        time.sleep(1)
+                        time.sleep(_cfg.STATUS_POLL_DELAY)
                         link_db = _query_paylink_from_db(link_id)
                         groups.append({
                             "title": label,
@@ -288,7 +289,7 @@ def log_http_calls(request, _apply_terminal_override):
             + "\n".join(f"  {v}" for v in redis_status_violations)
         )
 
-    bar = "-" * 64
+    bar = "-" * _LOG_BAR_WIDTH
     for prep, resp in captures:
         phrase = _report._status_phrase(resp.status_code)
         print(f"\n{bar}")
@@ -309,7 +310,7 @@ def payin_transaction_id():
     body = {
         "type": "payin",
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("payin_fixture")},
-        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "financial_data": {"amount": _cfg.PAYIN_AMOUNT, "currency": "RUB"},
         "flow_data": {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
         "customer_data": CUSTOMER_DATA,
         "transaction_data": {"method": "card", "details": CARD_DETAILS},
@@ -332,7 +333,7 @@ def payin_block_transaction_id():
     body = {
         "type": "payin",
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("block_payin_fixture")},
-        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "financial_data": {"amount": _cfg.BLOCK_PAYIN_AMOUNT, "currency": "RUB"},
         "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
         "customer_data": CUSTOMER_DATA,
         "transaction_data": {"method": "card", "details": CARD_DETAILS},

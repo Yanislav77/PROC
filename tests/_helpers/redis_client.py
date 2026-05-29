@@ -16,7 +16,7 @@ def query_transaction_from_redis(transaction_id) -> dict:
             host=_cfg.REDIS_HOST, port=_cfg.REDIS_PORT,
             username=_cfg.REDIS_USER, password=_cfg.REDIS_PASSWORD,
             ssl=True, ssl_cert_reqs=None,
-            decode_responses=True, socket_connect_timeout=5,
+            decode_responses=True, socket_connect_timeout=_cfg.REDIS_CONNECT_TIMEOUT,
         )
         for pattern in (f"tr_rest:*:{transaction_id}", f"tr:*:{transaction_id}"):
             keys = r.keys(pattern)

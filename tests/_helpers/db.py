@@ -6,6 +6,8 @@ except ImportError:
 
 import _helpers.config as _cfg
 
+_DB_QUERY_LIMIT = 5  # max rows fetched per table in diagnostic queries
+
 
 def _query_subscription_from_db(token: str) -> list:
     """Query DB for subscription data by recurrent_token UUID.
@@ -18,8 +20,8 @@ def _query_subscription_from_db(token: str) -> list:
         return []
     results = []
     try:
-        sp = psycopg2.connect(host=_cfg.DB_HOST, port=5432, dbname="support", user=_cfg.DB_USER, password=_cfg.DB_PASSWORD)
-        sc = psycopg2.connect(host=_cfg.DB_HOST, port=5432, dbname="secure",  user=_cfg.DB_USER, password=_cfg.DB_PASSWORD)
+        sp = psycopg2.connect(host=_cfg.DB_HOST, port=_cfg.DB_PORT, dbname="support", user=_cfg.DB_USER, password=_cfg.DB_PASSWORD)
+        sc = psycopg2.connect(host=_cfg.DB_HOST, port=_cfg.DB_PORT, dbname="secure",  user=_cfg.DB_USER, password=_cfg.DB_PASSWORD)
         sp_cur = sp.cursor()
         sc_cur = sc.cursor()
 
@@ -36,7 +38,7 @@ def _query_subscription_from_db(token: str) -> list:
 
         if tran_id:
             try:
-                sc_cur.execute("SELECT * FROM public.recurrents WHERE transaction_id = %s LIMIT 5", (tran_id,))
+                sc_cur.execute(f"SELECT * FROM public.recurrents WHERE transaction_id = %s LIMIT {_DB_QUERY_LIMIT}", (tran_id,))
                 rows = sc_cur.fetchall()
                 if rows:
                     cols = [d[0] for d in sc_cur.description]
@@ -58,7 +60,7 @@ def _query_paylink_from_db(link_id: str) -> list:
     results = []
     try:
         conn = psycopg2.connect(
-            host=_cfg.DB_HOST, port=5432, dbname="support",
+            host=_cfg.DB_HOST, port=_cfg.DB_PORT, dbname="support",
             user=_cfg.DB_USER, password=_cfg.DB_PASSWORD,
         )
         for table, col in [("webpayv3", "id")]:
@@ -87,8 +89,8 @@ def _query_transaction_from_db(tr_id: int) -> list:
         return []
     results = []
     try:
-        sc = psycopg2.connect(host=_cfg.DB_HOST, port=5432, dbname="secure", user=_cfg.DB_USER, password=_cfg.DB_PASSWORD)
-        sp = psycopg2.connect(host=_cfg.DB_HOST, port=5432, dbname="support", user=_cfg.DB_USER, password=_cfg.DB_PASSWORD)
+        sc = psycopg2.connect(host=_cfg.DB_HOST, port=_cfg.DB_PORT, dbname="secure", user=_cfg.DB_USER, password=_cfg.DB_PASSWORD)
+        sp = psycopg2.connect(host=_cfg.DB_HOST, port=_cfg.DB_PORT, dbname="support", user=_cfg.DB_USER, password=_cfg.DB_PASSWORD)
         sc_cur = sc.cursor()
         sp_cur = sp.cursor()
 
@@ -107,7 +109,7 @@ def _query_transaction_from_db(tr_id: int) -> list:
 
         for cur, db, table, col, val in queries:
             try:
-                cur.execute(f'SELECT * FROM public."{table}" WHERE "{col}" = %s LIMIT 5', (val,))
+                cur.execute(f'SELECT * FROM public."{table}" WHERE "{col}" = %s LIMIT {_DB_QUERY_LIMIT}', (val,))
                 rows = cur.fetchall()
                 if rows:
                     cols = [d[0] for d in cur.description]

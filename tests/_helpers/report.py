@@ -4,6 +4,9 @@ from datetime import datetime
 from http import HTTPStatus
 from pathlib import Path
 
+_DB_CELL_MAX_LEN    = 200  # chars, DB table cell content truncation
+_REDIS_CELL_MAX_LEN = 300  # chars, Redis field value truncation
+
 _report_file = None
 _http_captures: dict = {}
 _call_reports:  dict = {}
@@ -125,7 +128,7 @@ def _render_db_section(f, db_data: list, indent="    ") -> None:
                         cell = "<span style='color:#555'>NULL</span>"
                     else:
                         s = str(val)
-                        cell = _esc(s[:200] + "…" if len(s) > 200 else s)
+                        cell = _esc(s[:_DB_CELL_MAX_LEN] + "…" if len(s) > _DB_CELL_MAX_LEN else s)
                     f.write(f'{i}            <td>{cell}</td>\n')
                 f.write(f'{i}          </tr>\n')
             f.write(f'{i}          </tbody></table>\n')
@@ -157,7 +160,7 @@ def _render_redis_section(f, redis_entry: dict, indent="    ") -> None:
     f.write(f'{i}        <table class="db-table"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>\n')
     for k, v in rdata.items():
         s = str(v)
-        cell = _esc(s[:300] + "…" if len(s) > 300 else s)
+        cell = _esc(s[:_REDIS_CELL_MAX_LEN] + "…" if len(s) > _REDIS_CELL_MAX_LEN else s)
         f.write(f'{i}          <tr><td>{_esc(k)}</td><td>{cell}</td></tr>\n')
     f.write(f'{i}        </tbody></table>\n')
     f.write(f'{i}      </div></div>\n')

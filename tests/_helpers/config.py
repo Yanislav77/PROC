@@ -29,7 +29,16 @@ except ImportError:
     REDIS_PORT = 6379
     REDIS_AVAILABLE = False
 
-RUN_ID = uuid.uuid4().hex[:6]
+# ── Tuneable constants ────────────────────────────────────────
+DB_PORT               = 5432   # PostgreSQL default port
+HTTP_TIMEOUT          = 30     # seconds, HTTP request timeout
+STATUS_POLL_DELAY     = 1      # seconds, wait before polling transaction status
+REDIS_CONNECT_TIMEOUT = 5      # seconds, Redis connection timeout
+PAYIN_AMOUNT          = 10000  # RUB, auto-capture setup fixture amount
+BLOCK_PAYIN_AMOUNT    = 1000   # RUB, manual-capture setup fixture amount
+
+_RUN_ID_HEX_LEN = 6
+RUN_ID = uuid.uuid4().hex[:_RUN_ID_HEX_LEN]
 
 _API_BASE            = "https://papiv3preprod.testpaygate.com/api/v1"
 BASE_URL             = f"{_API_BASE}/transactions"
