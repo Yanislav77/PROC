@@ -14,6 +14,7 @@ import requests
 
 import _helpers.config as _cfg
 from _helpers.validators import assert_error_response
+from web_form.conftest import options_preflight
 
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
 _BASE_PATH  = "/api/v1/payment-sessions"
@@ -419,3 +420,26 @@ def test_ui_event_duplicate(payment_token):
     resp2 = _post_event(payment_token, _EVENT_BODY)
     assert resp1.status_code == 201, f"First request: expected 201, got {resp1.status_code}: {resp1.text}"
     assert resp2.status_code == 201, f"Second request: expected 201, got {resp2.status_code}: {resp2.text}"
+
+
+# ─────────────────────────────────────────────
+# OPTIONS PREFLIGHT
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("UL-014")
+def test_ui_logs_options_preflight(payment_token):
+    """OPTIONS preflight /ui/logs: Access-Control-Allow-Headers содержит Api-Session-ID и Api-Signature."""
+    resp = options_preflight(f"{_BASE_PATH}/{payment_token}/ui/logs")
+    assert resp.status_code in (200, 204), f"Expected 200/204, got {resp.status_code}: {resp.text}"
+    allow = resp.headers.get("Access-Control-Allow-Headers", "")
+    assert "Api-Session-ID" in allow, f"Api-Session-ID not in Allow-Headers: {allow}"
+    assert "Api-Signature"  in allow, f"Api-Signature not in Allow-Headers: {allow}"
+
+
+@pytest.mark.tcid("UE-014")
+def test_ui_events_options_preflight(payment_token):
+    """OPTIONS preflight /ui/events: Access-Control-Allow-Headers содержит Api-Session-ID и Api-Signature."""
+    resp = options_preflight(f"{_BASE_PATH}/{payment_token}/ui/events")
+    assert resp.status_code in (200, 204), f"Expected 200/204, got {resp.status_code}: {resp.text}"
+    allow = resp.headers.get("Access-Control-Allow-Headers", "")
+    assert "Api-Session-ID" in allow, f"Api-Session-ID not in Allow-Headers: {allow}"
+    assert "Api-Signature"  in allow, f"Api-Signature not in Allow-Headers: {allow}"
