@@ -404,6 +404,25 @@ def pytest_unconfigure(config):
         _report_file = None
 
 
+def pytest_collection_finish(session) -> None:
+    """Warn about duplicate @pytest.mark.tcid values after collection."""
+    seen: dict[str, str] = {}
+    duplicates: list[str] = []
+    for item in session.items:
+        marker = item.get_closest_marker("tcid")
+        if not marker:
+            continue
+        tc_id = marker.args[0]
+        if tc_id in seen:
+            duplicates.append(f"  {tc_id}: {seen[tc_id]}  vs  {item.nodeid}")
+        else:
+            seen[tc_id] = item.nodeid
+    if duplicates:
+        msg = "Duplicate @pytest.mark.tcid values found:\n" + "\n".join(duplicates)
+        import warnings
+        warnings.warn(msg, stacklevel=2)
+
+
 def pytest_runtest_logreport(report):
     if _report_file is None:
         return
