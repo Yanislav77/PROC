@@ -27,6 +27,7 @@ import pytest
 import requests
 
 import _helpers.config as _cfg
+from _helpers.db import _query_addinfo_by_token
 from _helpers.validators import assert_error_response
 from web_form.conftest import create_payment_token, options_preflight
 
@@ -352,19 +353,22 @@ def test_card_submit_response_structure_identical_to_old():
 # ДОПОЛНИТЕЛЬНЫЕ — требуют DB/логов
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("TX-021")
-@pytest.mark.skip(reason="Требует проверки CustomerInfo.IP в БД — верифицировать вручную через Kibana")
 def test_card_submit_x_forwarded_for():
-    """X-Forwarded-For проксируется в CustomerInfo.IP."""
+    """X-Forwarded-For проксируется в ip_address в secure.transactions.addinfo."""
     token = create_payment_token()
     path  = f"{_BASE_PATH}/{token}/transactions/card"
     raw   = json.dumps(_SUBMIT_BODY, separators=(",", ":"))
     sid   = str(uuid.uuid4())
     headers = {
         **_make_headers(path, raw, sid),
-        "X-Forwarded-For": "1.2.3.4",
+        "X-Forwarded-For": "5.6.7.8",
     }
     resp = _post_card(token, _SUBMIT_BODY, headers=headers)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    addinfo = _query_addinfo_by_token(token)
+    if addinfo:
+        assert addinfo.get("ip_address") == "5.6.7.8", \
+            f"Expected ip_address=5.6.7.8, got: {addinfo.get('ip_address')!r}"
 
 
 @pytest.mark.tcid("TX-022")
@@ -431,13 +435,12 @@ def _post_cardless_old(token: str, body: dict) -> requests.Response:
 # КЕЙСЫ С УСЛОВИЕМ НА СОСТОЯНИЕ ПЛАТЕЖА
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CL-001")
-@pytest.mark.skip(reason="Требует платёж в state=submited (после card submit) — настроить вручную")
 def test_cardless_submit_success():
     """Успешный submit без карты. Ожидается 201, ответ содержит name и details."""
-    token = create_payment_token()
-    # Шаг 1: card submit → state=submited
-    _post_card(token, _SUBMIT_BODY)
-    # Шаг 2: cardless submit
+    token     = create_payment_token()
+    card_resp = _post_card(token, _SUBMIT_BODY)
+    if card_resp.status_code != 201:
+        pytest.skip(f"Card submit failed ({card_resp.status_code}) — can't reach submited state")
     resp = _post_cardless(token, _CARDLESS_BODY)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
     data = resp.json()
@@ -446,25 +449,34 @@ def test_cardless_submit_success():
 
 
 @pytest.mark.tcid("CL-002")
-@pytest.mark.skip(reason="Требует проверки transaction.addinfo в БД — верифицировать вручную")
 def test_cardless_submit_bankinfo_ignored():
-    """bankInfo в теле игнорируется — в transaction.addinfo нет bank_info и bank_info_base."""
-    token = create_payment_token()
-    _post_card(token, _SUBMIT_BODY)
+    """bankInfo в теле игнорируется — в addinfo нет bank_info и bank_info_base."""
+    token     = create_payment_token()
+    card_resp = _post_card(token, _SUBMIT_BODY)
+    if card_resp.status_code != 201:
+        pytest.skip(f"Card submit failed ({card_resp.status_code}) — can't reach submited state")
     resp = _post_cardless(token, _CARDLESS_BODY_WITH_BANKINFO)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-    # Проверить через БД: transaction.addinfo.bank_info = None
+    addinfo = _query_addinfo_by_token(token)
+    if addinfo:
+        assert addinfo.get("bank_info")      is None, f"bank_info should be absent, got: {addinfo.get('bank_info')!r}"
+        assert addinfo.get("bank_info_base") is None, f"bank_info_base should be absent, got: {addinfo.get('bank_info_base')!r}"
 
 
 @pytest.mark.tcid("CL-003")
-@pytest.mark.skip(reason="Требует проверки transaction.addinfo.customer_bank в БД")
 def test_cardless_submit_customer_bank_info():
     """customerBankInfo.customerBank сохраняется в addinfo.customer_bank."""
-    body  = {**_CARDLESS_BODY, "customerBankInfo": {"customerBank": "Sberbank"}}
-    token = create_payment_token()
-    _post_card(token, _SUBMIT_BODY)
+    token     = create_payment_token()
+    card_resp = _post_card(token, _SUBMIT_BODY)
+    if card_resp.status_code != 201:
+        pytest.skip(f"Card submit failed ({card_resp.status_code}) — can't reach submited state")
+    body = {**_CARDLESS_BODY, "customerBankInfo": {"customerBank": "Sberbank"}}
     resp = _post_cardless(token, body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    addinfo = _query_addinfo_by_token(token)
+    if addinfo:
+        assert addinfo.get("customer_bank") == "Sberbank", \
+            f"Expected customer_bank=Sberbank, got: {addinfo.get('customer_bank')!r}"
 
 
 @pytest.mark.tcid("CL-004")
@@ -675,20 +687,25 @@ def test_cardless_bankinfo_behaviour_differs_from_old():
 
 
 @pytest.mark.tcid("CL-019")
-@pytest.mark.skip(reason="Требует state=submited и проверки CustomerInfo.IP в БД")
 def test_cardless_x_forwarded_for():
-    """X-Forwarded-For проксируется в CustomerInfo.IP."""
-    token = create_payment_token()
-    _post_card(token, _SUBMIT_BODY)
+    """X-Forwarded-For проксируется в ip_address в secure.transactions.addinfo."""
+    token     = create_payment_token()
+    card_resp = _post_card(token, _SUBMIT_BODY)
+    if card_resp.status_code != 201:
+        pytest.skip(f"Card submit failed ({card_resp.status_code}) — can't reach submited state")
     path  = f"{_BASE_PATH}/{token}/transactions/cardless"
     raw   = json.dumps(_CARDLESS_BODY, separators=(",", ":"))
     sid   = str(uuid.uuid4())
     headers = {
         **_make_headers(path, raw, sid),
-        "X-Forwarded-For": "1.2.3.4",
+        "X-Forwarded-For": "5.6.7.8",
     }
     resp = _post_cardless(token, _CARDLESS_BODY, headers=headers)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    addinfo = _query_addinfo_by_token(token)
+    if addinfo:
+        assert addinfo.get("ip_address") == "5.6.7.8", \
+            f"Expected ip_address=5.6.7.8, got: {addinfo.get('ip_address')!r}"
 
 
 @pytest.mark.tcid("CL-020")

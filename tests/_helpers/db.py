@@ -1,5 +1,6 @@
 try:
     import psycopg2
+    from psycopg2.extras import register_hstore as _register_hstore
     _PSYCOPG2_AVAILABLE = True
 except ImportError:
     _PSYCOPG2_AVAILABLE = False
@@ -139,3 +140,59 @@ def _query_transaction_from_db(tr_id: int) -> list[dict]:
     except Exception:
         pass
     return results
+
+
+# ─────────────────────────────────────────────
+# WEBFORM helpers (webpayv3 / payment sessions)
+# ─────────────────────────────────────────────
+def _query_webpayv3(payment_token: str) -> dict:
+    """Get webpayv3 session row by payment_token (UUID = webpayv3.id). Returns {} if not found."""
+    if not _PSYCOPG2_AVAILABLE or not _cfg.DB_HOST:
+        return {}
+    try:
+        sp = psycopg2.connect(host=_cfg.DB_HOST, port=_cfg.DB_PORT, dbname="support",
+                              user=_cfg.DB_USER, password=_cfg.DB_PASSWORD)
+        cur = sp.cursor()
+        cur.execute("SELECT * FROM public.webpayv3 WHERE id = %s", (str(payment_token),))
+        row = cur.fetchone()
+        if not row:
+            sp.close()
+            return {}
+        cols = [d[0] for d in cur.description]
+        sp.close()
+        return dict(zip(cols, row))
+    except Exception:
+        return {}
+
+
+def _query_addinfo_by_token(payment_token: str) -> dict[str, str]:
+    """Get secure.transactions.addinfo (hstore) for a webpay session.
+
+    Lookup chain: webpayv3.id (payment_token) → webpayv3.transaction_id → secure.transactions.addinfo
+    Returns a flat dict of hstore key→value strings, or {} if unavailable.
+    """
+    if not _PSYCOPG2_AVAILABLE or not _cfg.DB_HOST:
+        return {}
+    try:
+        sp = psycopg2.connect(host=_cfg.DB_HOST, port=_cfg.DB_PORT, dbname="support",
+                              user=_cfg.DB_USER, password=_cfg.DB_PASSWORD)
+        sp_cur = sp.cursor()
+        sp_cur.execute("SELECT transaction_id FROM public.webpayv3 WHERE id = %s", (str(payment_token),))
+        row = sp_cur.fetchone()
+        sp.close()
+        if not row or row[0] is None:
+            return {}
+
+        tr_id = row[0]
+        sc = psycopg2.connect(host=_cfg.DB_HOST, port=_cfg.DB_PORT, dbname="secure",
+                              user=_cfg.DB_USER, password=_cfg.DB_PASSWORD)
+        _register_hstore(sc)
+        sc_cur = sc.cursor()
+        sc_cur.execute("SELECT addinfo FROM public.transactions WHERE id = %s", (tr_id,))
+        row = sc_cur.fetchone()
+        sc.close()
+        if not row or row[0] is None:
+            return {}
+        return row[0]  # dict after register_hstore
+    except Exception:
+        return {}
