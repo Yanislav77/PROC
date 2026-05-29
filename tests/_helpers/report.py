@@ -91,8 +91,6 @@ def _render_http_block(f, prep, resp, title, css_class, indent="    ") -> None:
     f.write(f'{i}    <div class="section-label">Response</div>\n')
     f.write(f'{i}    <p class="http-line"><span class="status-code {sc}">'
             f'{resp.status_code} {_esc(phrase)}</span></p>\n')
-    resp_headers_text = "\n".join(f"{k}: {v}" for k, v in resp.headers.items())
-    f.write(f'{i}    <pre class="headers">{_esc(resp_headers_text)}</pre>\n')
     resp_text = _fmt_body_plain(resp.text)
     if resp_text:
         f.write(f'{i}    <pre class="body">{_esc(resp_text)}</pre>\n')
