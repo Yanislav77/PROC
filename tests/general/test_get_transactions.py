@@ -267,13 +267,14 @@ def test_get_by_id_cvv_not_in_response(payin_transaction_id):
 
 @pytest.mark.tcid("GT-021")
 def test_get_by_id_masked_pan_format(payin_transaction_id):
-    """GET /{id} — sender_info.masked_pan содержит маску (звёздочки)."""
+    """GET /{id} — sender_info.masked_pan содержит маску (* или X)."""
     url = f"{BASE_URL}/{payin_transaction_id}"
     resp = get_request(url)
     assert resp.status_code == 200
     sender = resp.json().get("transaction_data", {}).get("sender_info", {})
     if "masked_pan" in sender:
-        assert "*" in sender["masked_pan"], f"masked_pan не маскирован: {sender['masked_pan']}"
+        assert any(c in sender["masked_pan"] for c in ("*", "X")), \
+            f"masked_pan не маскирован: {sender['masked_pan']}"
 
 
 @pytest.mark.tcid("GT-022")
