@@ -46,8 +46,9 @@ SUBSCRIPTIONS_URL    = f"{_API_BASE}/subscriptions"
 PAYMENT_LINKS_URL    = "https://web3preprod.testpaygate.com/api/v1/payment-links"
 MERCHANT_BALANCE_URL = f"{_API_BASE}/merchant/balance"
 
-SERVICE_SECRET = os.environ["SERVICE_SECRET"]
-TERMINAL_ID    = os.environ.get("TERMINAL_ID", "374")
+SERVICE_SECRET   = os.environ["SERVICE_SECRET"]
+TERMINAL_ID      = os.environ.get("TERMINAL_ID", "374")
+CUSTOMER_MAC_KEY = os.environ.get("CUSTOMER_MAC_KEY", "")
 
 INTER_TEST_DELAY = float(os.environ.get("TEST_DELAY", "3.0"))
 SETUP_DELAY      = float(os.environ.get("SETUP_DELAY", "1.0"))
