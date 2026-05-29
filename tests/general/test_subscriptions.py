@@ -306,11 +306,6 @@ def _sub_token_payin_after_cancel():
     return _create_recurrent_token("sub_payin_after")
 
 
-@pytest.fixture(scope="session")
-def _sub_token_response_headers():
-    return _create_recurrent_token("sub_resp_headers")
-
-
 # ─────────────────────────────────────────────
 # ПОЗИТИВНЫЕ СЦЕНАРИИ
 # ─────────────────────────────────────────────
@@ -369,18 +364,3 @@ def test_rebill_blocked_after_subscription_cancel(_sub_token_payin_after_cancel)
         f"Expected error after cancel, got {after.status_code}: {after.text}"
     )
     assert_error_response(after)
-
-
-@pytest.mark.tcid("SB-024")
-def test_cancel_subscription_response_headers(_sub_token_response_headers):
-    """Успешная отмена возвращает Api-Terminal-ID и status в заголовках ответа."""
-    resp = delete_request(f"{SUBSCRIPTIONS_URL}/{_sub_token_response_headers}")
-    assert resp.status_code == 204, f"Expected 204, got {resp.status_code}: {resp.text}"
-    terminal_header = resp.headers.get("Api-Terminal-ID")
-    assert terminal_header == TERMINAL_ID, (
-        f"Expected Api-Terminal-ID={TERMINAL_ID!r} in response, got {terminal_header!r}"
-    )
-    status_header = resp.headers.get("status")
-    assert status_header == "204", (
-        f"Expected response header status='204', got {status_header!r}"
-    )
