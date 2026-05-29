@@ -105,7 +105,7 @@ def test_payin_token_nonexistent_uuid():
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("token_nonexist")},
         "transaction_data": {
             "method": "token",
-            "details": {"token": "00000000-0000-0000-0000-000000000000"},
+            "details": {"token": "00000000-0000-4000-8000-000000000000"},
             "parent_transaction_id": "000000000000",
         },
     }

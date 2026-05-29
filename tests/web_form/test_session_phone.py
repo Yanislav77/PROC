@@ -128,7 +128,7 @@ def test_phone_lookup_invalid_format(payment_token):
 def test_phone_lookup_nonexistent_token():
     """Валидный UUID, которого нет в БД → 200 (load_payment не вызывается)."""
     _assert_null_country(
-        _post_phone("00000000-0000-0000-0000-000000000000", _PHONE_NONE)
+        _post_phone("00000000-0000-4000-8000-000000000000", _PHONE_NONE)
     )
 
 

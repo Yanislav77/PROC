@@ -285,7 +285,7 @@ def test_card_submit_invalid_token_format():
 @pytest.mark.tcid("TX-016")
 def test_card_submit_nonexistent_token():
     """Несуществующий payment_token (валидный UUID, не в БД). Ожидается 4xx."""
-    resp = _post_card("00000000-0000-0000-0000-000000000000", _SUBMIT_BODY)
+    resp = _post_card("00000000-0000-4000-8000-000000000000", _SUBMIT_BODY)
     assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
@@ -601,7 +601,7 @@ def test_cardless_submit_invalid_token_format():
 @pytest.mark.tcid("CL-013")
 def test_cardless_submit_nonexistent_token():
     """Несуществующий payment_token (валидный UUID, не в БД). Ожидается 4xx."""
-    resp = _post_cardless("00000000-0000-0000-0000-000000000000", _CARDLESS_BODY)
+    resp = _post_cardless("00000000-0000-4000-8000-000000000000", _CARDLESS_BODY)
     assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 

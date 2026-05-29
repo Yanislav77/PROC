@@ -179,7 +179,7 @@ def test_ui_log_invalid_token_format():
 @pytest.mark.tcid("UL-010")
 def test_ui_log_nonexistent_token():
     """Несуществующий payment_token (валидный UUID, не в БД). Ожидается 4xx."""
-    resp = _post("00000000-0000-0000-0000-000000000000", _LOG_BODY)
+    resp = _post("00000000-0000-4000-8000-000000000000", _LOG_BODY)
     assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
@@ -345,7 +345,7 @@ def test_ui_event_invalid_token_format():
 @pytest.mark.tcid("UE-008")
 def test_ui_event_nonexistent_token():
     """Несуществующий payment_token (валидный UUID, не в БД). Ожидается 4xx."""
-    resp = _post_event("00000000-0000-0000-0000-000000000000", _EVENT_BODY)
+    resp = _post_event("00000000-0000-4000-8000-000000000000", _EVENT_BODY)
     assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 

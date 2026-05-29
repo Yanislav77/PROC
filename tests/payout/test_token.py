@@ -98,5 +98,5 @@ def test_payout_token_uppercase_uuid():
 @pytest.mark.tcid("PY-082")
 def test_payout_token_nonexistent():
     """token = несуществующий UUID (все нули). Ожидается 400 или 404."""
-    resp = post_transaction({**_VALID, "transaction_data": {"method": "token", "details": {"token": "00000000-0000-0000-0000-000000000000"}}})
+    resp = post_transaction({**_VALID, "transaction_data": {"method": "token", "details": {"token": "00000000-0000-4000-8000-000000000000"}}})
     assert resp.status_code in (400, 404), f"Expected 400 or 404, got {resp.status_code}: {resp.text}"

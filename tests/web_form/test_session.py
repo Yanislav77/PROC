@@ -194,7 +194,7 @@ def test_get_payment_session_invalid_token_format():
 @pytest.mark.tcid("GP-010")
 def test_get_payment_session_nonexistent_token():
     """Несуществующий payment_token (валидный UUID, не в БД). Ожидается 4xx."""
-    resp = _get("00000000-0000-0000-0000-000000000000")
+    resp = _get("00000000-0000-4000-8000-000000000000")
     assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
