@@ -557,8 +557,8 @@ def test_get_processing_status_no_extra_fields():
 # ПОЛЯ ТЕРМИНАЛЬНЫХ СТАТУСОВ (GT-041 … GT-045)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GT-041")
-def test_get_completed_transaction_mode_is_test(payin_transaction_id):
-    """GET /{id} — transaction_data.mode = 'test' в тестовой среде."""
+def test_get_completed_transaction_mode_is_live(payin_transaction_id):
+    """GET /{id} — transaction_data.mode = 'live' на препроде."""
     url = f"{BASE_URL}/{payin_transaction_id}"
     resp = get_request(url)
     assert resp.status_code == 200
@@ -566,7 +566,7 @@ def test_get_completed_transaction_mode_is_test(payin_transaction_id):
     if data.get("status") not in ("completed", "authorized"):
         pytest.skip(f"Транзакция не в completed/authorized: {data.get('status')!r}")
     td = data.get("transaction_data", {}) or {}
-    assert td.get("mode") == "test", f"Expected mode='test', got {td.get('mode')!r}"
+    assert td.get("mode") == "live", f"Expected mode='live', got {td.get('mode')!r}"
 
 
 @pytest.mark.tcid("GT-042")
