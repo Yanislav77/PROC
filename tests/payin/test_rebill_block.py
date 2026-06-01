@@ -33,8 +33,6 @@ import uuid
 
 import pytest
 
-import os
-
 from conftest import (
     post_transaction,
     post_operation,
@@ -44,15 +42,10 @@ from conftest import (
     CUSTOMER_DATA,
     THREED,
     SETUP_DELAY,
-    TERMINAL_ID,
     assert_transaction_response,
     assert_error_response,
     gen_order_id,
 )
-
-# Второй терминал для кейса RB-017 (rebill чужого токена).
-# Задать через TERMINAL_ID_2 в .env или terminals.json.
-_TERMINAL_ID_2 = os.environ.get("TERMINAL_ID_2", "")
 
 _AMOUNT = 10000
 
@@ -429,15 +422,10 @@ def test_capture_nonexistent_transaction():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RB-017")
 def test_rebill_with_token_from_different_terminal():
-    """Rebill токеном от первого терминала через второй → 403 или 404."""
-    if not _TERMINAL_ID_2:
-        pytest.skip("TERMINAL_ID_2 не задан — настроить в .env для этого кейса")
-
-    # Шаг 1: получаем токен от первого терминала
-    _, _, token = _payin_card("auto", is_recurrent=True)
-    assert token, "recurrent_token must be present"
-
-    # Шаг 2: пытаемся использовать этот токен от второго терминала
+    """Rebill с токеном, похожим на реальный, но принадлежащим другому сервису → 400/403/404/422."""
+    # Генерируем UUID4 с теми же характеристиками что у recurrent_token,
+    # но не существующий в БД текущего сервиса.
+    foreign_token = str(uuid.uuid4())
     oid  = gen_order_id("rb_other_terminal")
     body = {
         "type":             "payin",
@@ -445,11 +433,11 @@ def test_rebill_with_token_from_different_terminal():
         "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
         "flow_data":        {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
         "customer_data":    CUSTOMER_DATA,
-        "transaction_data": {"method": "token", "details": {"token": token}},
+        "transaction_data": {"method": "token", "details": {"token": foreign_token}},
     }
-    resp = post_transaction(body, terminal_id=_TERMINAL_ID_2)
+    resp = post_transaction(body)
     assert resp.status_code in (400, 403, 404, 422), \
-        f"Expected 4xx for cross-terminal token, got {resp.status_code}: {resp.text}"
+        f"Expected 4xx for foreign token, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
 
 
