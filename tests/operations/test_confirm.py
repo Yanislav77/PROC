@@ -61,9 +61,10 @@ def _poll_status(tid: int, expected: str) -> None:
     pytest.skip(f"Transaction {tid} did not reach {expected!r} within timeout")
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def waiting_3ds_tid() -> tuple[int, str]:
-    """Создаёт payin с CVV<500, ждёт статуса waiting_3DS. Возвращает (tid, order_id)."""
+    """Создаёт свежий payin с CVV<500, ждёт статуса waiting_3DS. Возвращает (tid, order_id).
+    Function-scoped: каждый тест получает отдельную транзакцию (confirm меняет её состояние)."""
     oid  = gen_order_id("con_3ds_fixture")
     data = _create_payin(_CARD_WAIT_3DS, oid)
     tid  = data["transaction_id"]
@@ -72,9 +73,10 @@ def waiting_3ds_tid() -> tuple[int, str]:
     return tid, oid
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def waiting_3ds_redirect_tid() -> tuple[int, str]:
-    """Создаёт payin с CVV 500-599, ждёт статуса waiting_3DS_redirect. Возвращает (tid, order_id)."""
+    """Создаёт свежий payin с CVV 500-599, ждёт статуса waiting_3DS_redirect. Возвращает (tid, order_id).
+    Function-scoped: каждый тест получает отдельную транзакцию (confirm меняет её состояние)."""
     oid  = gen_order_id("con_3ds_redir_fixture")
     data = _create_payin(_CARD_WAIT_REDIRECT, oid)
     tid  = data["transaction_id"]
