@@ -265,6 +265,157 @@ def test_cancel_subscription_invalid_timestamp_value():
 
 
 # ─────────────────────────────────────────────
+# UUID CASE VARIANTS (SB-025..027)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("SB-025")
+def test_cancel_subscription_token_lowercase_uuid():
+    """DELETE по валидному UUID4 в нижнем регистре. Ожидается 404 (не найден)."""
+    token = "f47ac10b-58cc-4372-a567-0e02b2c3d479"  # lowercase UUID4, not in DB
+    resp  = delete_request(f"{SUBSCRIPTIONS_URL}/{token}")
+    assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("SB-026")
+def test_cancel_subscription_token_mixed_case_uuid():
+    """DELETE по UUID4 в смешанном регистре. Ожидается 404 или 400."""
+    token = "F47AC10B-58cc-4372-A567-0e02b2c3d479"  # mixed-case UUID4
+    resp  = delete_request(f"{SUBSCRIPTIONS_URL}/{token}")
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}"
+
+
+# ─────────────────────────────────────────────
+# ПУСТОЙ / ОТСУТСТВУЮЩИЙ TOKEN (SB-028..029)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("SB-028")
+def test_cancel_subscription_empty_token():
+    """DELETE /subscriptions/ — пустой token в URL. Ожидается 404 или 405."""
+    resp = delete_request(f"{SUBSCRIPTIONS_URL}/")
+    assert resp.status_code in (400, 404, 405), f"Expected 400/404/405, got {resp.status_code}"
+
+
+@pytest.mark.tcid("SB-029")
+def test_cancel_subscription_missing_token_segment():
+    """DELETE /subscriptions — token-сегмент отсутствует в URL. Ожидается 404 или 405."""
+    resp = delete_request(SUBSCRIPTIONS_URL)
+    assert resp.status_code in (400, 404, 405), f"Expected 400/404/405, got {resp.status_code}"
+
+
+# ─────────────────────────────────────────────
+# СПЕЦСИМВОЛЫ И ПРОБЕЛЫ В TOKEN (SB-030..031)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("SB-030")
+def test_cancel_subscription_token_with_special_chars():
+    """DELETE по токену со спецсимволами (@, #, !). Ожидается 400 или 404."""
+    resp = delete_request(f"{SUBSCRIPTIONS_URL}/abc@def!ghi#000-0000-0000-0000-000000000000")
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}"
+
+
+@pytest.mark.tcid("SB-031")
+def test_cancel_subscription_token_with_spaces():
+    """DELETE по токену с пробелами (URL-encoded). Ожидается 400 или 404."""
+    import urllib.parse
+    token = urllib.parse.quote(" 00000000-0000-4000-8000-000000000000 ")
+    resp  = delete_request(f"{SUBSCRIPTIONS_URL}/{token}")
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}"
+
+
+# ─────────────────────────────────────────────
+# TIMESTAMP СТАРЫЙ / В БУДУЩЕМ (SB-032..033)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("SB-032")
+def test_cancel_subscription_timestamp_too_old():
+    """Api-Timestamp старше окна (> 5 мин назад). Ожидается 401/400."""
+    old_ts = str(int(time.time()) - 400)
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   _sign(TERMINAL_ID, old_ts),
+        "Api-Timestamp":   old_ts,
+    }
+    resp = requests.delete(f"{SUBSCRIPTIONS_URL}/{_NONEXISTENT_TOKEN}", headers=headers, timeout=30)
+    assert resp.status_code in (400, 401), f"Expected 400/401, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("SB-033")
+def test_cancel_subscription_timestamp_in_future():
+    """Api-Timestamp в будущем (> 5 мин вперёд). Ожидается 401/400."""
+    future_ts = str(int(time.time()) + 400)
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   _sign(TERMINAL_ID, future_ts),
+        "Api-Timestamp":   future_ts,
+    }
+    resp = requests.delete(f"{SUBSCRIPTIONS_URL}/{_NONEXISTENT_TOKEN}", headers=headers, timeout=30)
+    assert resp.status_code in (400, 401), f"Expected 400/401, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# PUT / PATCH ВМЕСТО DELETE (SB-034..035)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("SB-034")
+def test_cancel_subscription_put_instead_of_delete():
+    """PUT /subscriptions/{token} вместо DELETE. Ожидается 404 или 405."""
+    url     = f"{SUBSCRIPTIONS_URL}/{_NONEXISTENT_TOKEN}"
+    headers = make_get_headers(TERMINAL_ID)
+    resp    = requests.put(url, headers=headers, timeout=30)
+    assert resp.status_code in (404, 405), f"Expected 404/405, got {resp.status_code}"
+
+
+@pytest.mark.tcid("SB-035")
+def test_cancel_subscription_patch_instead_of_delete():
+    """PATCH /subscriptions/{token} вместо DELETE. Ожидается 404 или 405."""
+    url     = f"{SUBSCRIPTIONS_URL}/{_NONEXISTENT_TOKEN}"
+    headers = make_get_headers(TERMINAL_ID)
+    resp    = requests.patch(url, headers=headers, timeout=30)
+    assert resp.status_code in (404, 405), f"Expected 404/405, got {resp.status_code}"
+
+
+# ─────────────────────────────────────────────
+# СОСТОЯНИЯ ТОКЕНА — требуют реального токена (@skip)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("SB-036")
+@pytest.mark.skip(reason="Требует recurrent_token другого терминала — настроить вручную")
+def test_cancel_subscription_token_from_another_terminal():
+    """Token принадлежит другому терминалу. Ожидается 403 или 404."""
+    foreign_token = str(uuid.uuid4())  # в реальном тесте — токен от другого терминала
+    resp = delete_request(f"{SUBSCRIPTIONS_URL}/{foreign_token}")
+    assert resp.status_code in (403, 404), f"Expected 403/404, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("SB-037")
+@pytest.mark.skip(reason="Требует просроченный recurrent_token — настроить вручную")
+def test_cancel_subscription_expired_token():
+    """Token просрочен. Ожидается 409 или 404."""
+    expired_token = "00000000-0000-4000-8000-000000000001"  # заменить на реальный просроченный
+    resp = delete_request(f"{SUBSCRIPTIONS_URL}/{expired_token}")
+    assert resp.status_code in (404, 409), f"Expected 404/409, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("SB-038")
+@pytest.mark.skip(reason="Требует неактивный recurrent_token — настроить вручную")
+def test_cancel_subscription_inactive_token():
+    """Token неактивен. Ожидается 409 или 404."""
+    inactive_token = "00000000-0000-4000-8000-000000000002"  # заменить на реальный неактивный
+    resp = delete_request(f"{SUBSCRIPTIONS_URL}/{inactive_token}")
+    assert resp.status_code in (404, 409), f"Expected 404/409, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("SB-039")
+@pytest.mark.skip(reason="Требует withdrawal_token (не рекуррентный) — настроить вручную")
+def test_cancel_subscription_non_recurrent_token():
+    """withdrawal_token (не рекуррентный) не должен отменять подписку. Ожидается 404 или 422."""
+    withdrawal_token = "00000000-0000-4000-8000-000000000003"  # заменить на реальный withdrawal_token
+    resp = delete_request(f"{SUBSCRIPTIONS_URL}/{withdrawal_token}")
+    assert resp.status_code in (404, 422), f"Expected 404/422, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
 # SETUP HELPERS ДЛЯ ПОЗИТИВНЫХ ТЕСТОВ
 # ─────────────────────────────────────────────
 
