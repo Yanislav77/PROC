@@ -13,12 +13,74 @@ import pytest
 import requests
 
 from conftest import (
-    calc_signature, post_operation, post_transaction, BASE_URL, TERMINAL_ID,
-    MERCHANT_DATA, CUSTOMER_DATA, CARD_3DS, THREED, gen_order_id, SETUP_DELAY,
+    calc_signature, post_operation, post_transaction, get_request,
+    BASE_URL, TERMINAL_ID, MERCHANT_DATA, CUSTOMER_DATA, CARD_DETAILS,
+    CARD_3DS, THREED, gen_order_id, SETUP_DELAY,
     assert_error_response, assert_transaction_response,
 )
 import _helpers.config as _cfg
 from _helpers.signatures import make_headers
+
+# CVV < 500  → waiting_3DS
+# CVV 500-599 → waiting_3DS_redirect  (CARD_3DS использует cvv=550)
+# CVV >= 600  → без 3DS               (CARD_DETAILS использует cvv=666)
+_CARD_WAIT_3DS      = {**CARD_DETAILS, "cvv": "123"}  # → waiting_3DS
+_CARD_WAIT_REDIRECT = CARD_3DS                          # cvv=550 → waiting_3DS_redirect
+
+_3DS_POLL_ATTEMPTS = 6
+_3DS_POLL_DELAY    = 2.0  # секунд между попытками
+
+
+def _create_payin(card: dict, oid: str) -> dict:
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": card},
+    }
+    resp = post_transaction(body)
+    if resp.status_code != 201:
+        pytest.skip(f"Failed to create transaction: {resp.status_code}: {resp.text}")
+    return resp.json()
+
+
+def _poll_status(tid: int, expected: str) -> None:
+    """Poll GET /{tid} until expected status or skip."""
+    for _ in range(_3DS_POLL_ATTEMPTS):
+        time.sleep(_3DS_POLL_DELAY)
+        r = get_request(f"{BASE_URL}/{tid}")
+        if r.status_code != 200:
+            continue
+        status = r.json().get("status", "")
+        if status == expected:
+            return
+        if status in ("completed", "authorized", "rejected", "cancelled", "failed"):
+            pytest.skip(f"Transaction {tid} reached {status!r} instead of {expected!r}")
+    pytest.skip(f"Transaction {tid} did not reach {expected!r} within timeout")
+
+
+@pytest.fixture(scope="session")
+def waiting_3ds_tid() -> tuple[int, str]:
+    """Создаёт payin с CVV<500, ждёт статуса waiting_3DS. Возвращает (tid, order_id)."""
+    oid  = gen_order_id("con_3ds_fixture")
+    data = _create_payin(_CARD_WAIT_3DS, oid)
+    tid  = data["transaction_id"]
+    if data.get("status") != "waiting_3DS":
+        _poll_status(tid, "waiting_3DS")
+    return tid, oid
+
+
+@pytest.fixture(scope="session")
+def waiting_3ds_redirect_tid() -> tuple[int, str]:
+    """Создаёт payin с CVV 500-599, ждёт статуса waiting_3DS_redirect. Возвращает (tid, order_id)."""
+    oid  = gen_order_id("con_3ds_redir_fixture")
+    data = _create_payin(_CARD_WAIT_REDIRECT, oid)
+    tid  = data["transaction_id"]
+    if data.get("status") != "waiting_3DS_redirect":
+        _poll_status(tid, "waiting_3DS_redirect")
+    return tid, oid
 
 
 # ─────────────────────────────────────────────
@@ -725,43 +787,22 @@ def test_confirm_old_headers_on_new_url():
 
 
 # ─────────────────────────────────────────────
-# HAPPY PATH — требуют транзакцию в нужном статусе
+# HAPPY PATH — используют фикстуры с нужным статусом
 # ─────────────────────────────────────────────
-def _make_3ds_payin_body(order_id: str) -> dict:
-    """Body для создания транзакции, которая должна уйти в waiting_3DS."""
-    return {
-        "type": "payin",
-        "merchant_data": {**MERCHANT_DATA, "order_id": order_id},
-        "financial_data": {"amount": 1000, "currency": "RUB"},
-        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
-        "customer_data": CUSTOMER_DATA,
-        "transaction_data": {"method": "card", "details": CARD_3DS},
-    }
-
-
 @pytest.mark.tcid("CON-045")
-@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_3DS — зависит от конфига сервиса")
-def test_confirm_threed_secure_success():
-    """Успешный confirm type=threed_secure: создать 3DS-транзакцию и подтвердить."""
-    oid  = gen_order_id("confirm_3ds_ok")
-    resp = post_transaction(_make_3ds_payin_body(oid))
-    assert resp.status_code == 201, f"Create failed: {resp.text}"
-    data = resp.json()
-    assert data.get("status") == "waiting_3DS", \
-        f"Expected waiting_3DS, got {data.get('status')!r} — skip manually if not in 3DS flow"
-    tid = data["transaction_id"]
-    time.sleep(SETUP_DELAY)
-    confirm_body = {
+def test_confirm_threed_secure_success(waiting_3ds_tid):
+    """Успешный confirm type=threed_secure на транзакции в waiting_3DS."""
+    tid, oid = waiting_3ds_tid
+    r = post_operation(tid, "confirm", {
         "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "threed_secure", "details": {"data": {"pares": "<real_pares>", "md": "<real_md>"}}},
-    }
-    r = post_operation(tid, "confirm", confirm_body)
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "test_pares", "md": "test_md"}}},
+    })
     assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-    resp_data = r.json()
-    assert resp_data.get("status") == "processing"
-    assert isinstance(resp_data.get("transaction_id"), int)
-    assert_transaction_response(resp_data)
+    data = r.json()
+    assert data.get("status") == "processing"
+    assert isinstance(data.get("transaction_id"), int)
+    assert_transaction_response(data)
 
 
 @pytest.mark.tcid("CON-046")
@@ -815,39 +856,36 @@ def test_confirm_user_action_types_confirmed_true(result_type):
 # 3DS-REDIRECT КЕЙСЫ
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CON-049")
-@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_3DS_redirect — настроить вручную")
-def test_confirm_3ds_redirect_confirmed_true():
+def test_confirm_3ds_redirect_confirmed_true(waiting_3ds_redirect_tid):
     """3DS-redirect: confirm с confirmed=true — клиент принял редирект."""
-    tid = 0  # заменить на реальный tid в waiting_3DS_redirect
+    tid, oid = waiting_3ds_redirect_tid
     r = post_operation(tid, "confirm", {
-        "merchant_data": {"order_id": "order_3ds_redirect"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "result": {"type": "redirect", "details": {"confirmed": True}},
     })
-    assert r.status_code == 200
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
     assert r.json().get("status") == "processing"
 
 
 @pytest.mark.tcid("CON-050")
-@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_3DS_redirect — настроить вручную")
-def test_confirm_3ds_redirect_confirmed_false():
+def test_confirm_3ds_redirect_confirmed_false(waiting_3ds_redirect_tid):
     """3DS-redirect: confirm с confirmed=false — клиент отказался от редиректа."""
-    tid = 0  # заменить на реальный tid в waiting_3DS_redirect
+    tid, oid = waiting_3ds_redirect_tid
     r = post_operation(tid, "confirm", {
-        "merchant_data": {"order_id": "order_3ds_redirect"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "result": {"type": "redirect", "details": {"confirmed": False}},
     })
-    assert r.status_code == 200
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
 
 
 @pytest.mark.tcid("CON-051")
-@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_3DS_redirect — настроить вручную")
-def test_confirm_3ds_redirect_wrong_type():
-    """3DS-redirect: отправить threed_secure вместо redirect — должна быть ошибка несовместимого типа."""
-    tid = 0  # заменить на реальный tid в waiting_3DS_redirect
+def test_confirm_3ds_redirect_wrong_type(waiting_3ds_redirect_tid):
+    """3DS-redirect: отправить threed_secure вместо redirect — ожидается 4xx."""
+    tid, oid = waiting_3ds_redirect_tid
     r = post_operation(tid, "confirm", {
-        "merchant_data": {"order_id": "order_3ds_redirect"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}},
     })
@@ -856,19 +894,18 @@ def test_confirm_3ds_redirect_wrong_type():
 
 
 # ─────────────────────────────────────────────
-# ФОРМАТ ОТВЕТА (требуют успешный confirm)
+# ФОРМАТ ОТВЕТА
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CON-052")
-@pytest.mark.skip(reason="Требует успешный confirm — зависит от waiting_3DS или waiting_action транзакции")
-def test_confirm_minimized_response_format():
-    """Успешный confirm возвращает минимизированный ответ: transaction_id, status, type, merchant_data, financial_data, created_at."""
-    tid = 0
+def test_confirm_minimized_response_format(waiting_3ds_redirect_tid):
+    """Успешный confirm возвращает минимизированный ответ с обязательными полями."""
+    tid, oid = waiting_3ds_redirect_tid
     r = post_operation(tid, "confirm", {
-        "merchant_data": {"order_id": "order_test"},
+        "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "result": {"type": "redirect", "details": {"confirmed": True}},
     })
-    assert r.status_code == 200
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
     data = r.json()
     for field in ("transaction_id", "status", "type", "merchant_data", "financial_data", "created_at"):
         assert field in data, f"Missing field '{field}' in response"
