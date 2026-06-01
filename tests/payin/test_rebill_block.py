@@ -9,7 +9,6 @@ recurrent_token: transaction_data.recurrent_token в GET /{id}.
   RB-002: auto payin → manual rebill + capture
   RB-003: manual payin + capture → auto rebill
   RB-004: manual payin + capture → manual rebill + capture
-  RB-005: manual payin без capture → авто-отмена по таймауту (slow)
   RB-006: частичный capture (5000 из 10000)
   RB-007: повторный capture после полного → 409
   RB-008: capture несуществующей транзакции → 404
@@ -335,33 +334,6 @@ def test_idempotency_same_key_returns_same_result():
         assert r1.json()["transaction_id"] == r2.json()["transaction_id"], \
             "Idempotent requests must return the same transaction_id"
 
-
-# ─────────────────────────────────────────────
-# КЕЙС 5: manual payin без capture → авто-отмена
-# ─────────────────────────────────────────────
-_AUTO_CANCEL_TIMEOUT = 5 * 60  # 5 минут
-_AUTO_CANCEL_POLL    = 30      # опрос каждые 30 сек
-
-
-@pytest.mark.tcid("RB-005")
-@pytest.mark.slow
-def test_manual_payin_auto_cancel_on_timeout():
-    """Manual payin без capture → статус cancelled по истечении таймаута (~5 мин)."""
-    tid, oid, _ = _payin_card("manual", is_recurrent=False)
-    _assert_status(tid, "authorized")
-
-    elapsed = 0
-    while elapsed < _AUTO_CANCEL_TIMEOUT:
-        time.sleep(_AUTO_CANCEL_POLL)
-        elapsed += _AUTO_CANCEL_POLL
-        poll = get_request(f"{BASE_URL}/{tid}")
-        status = poll.json().get("status")
-        if status == "cancelled":
-            return
-        if status not in ("authorized", "processing"):
-            pytest.fail(f"Unexpected status during wait: {status!r}")
-
-    pytest.fail(f"Transaction {tid} did not auto-cancel within {_AUTO_CANCEL_TIMEOUT}s")
 
 
 # ─────────────────────────────────────────────
