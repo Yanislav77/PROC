@@ -10,6 +10,7 @@ import requests
 import pytest
 
 from conftest import (
+    calc_signature,
     get_request,
     make_get_headers,
     post_transaction,
@@ -112,12 +113,15 @@ def test_get_transaction_no_auth():
 
 @pytest.mark.tcid("GT-008")
 def test_get_transaction_invalid_signature():
-    """GET /{id} с подписью из нулей. Ожидается 401 или 403."""
+    """GET /{id} с подписью посчитанной от другого timestamp. Ожидается 401 или 403."""
     url = f"{BASE_URL}/000000000000"
+    ts_header = str(int(time.time()))
+    ts_signed = str(int(time.time()) - 1)  # подпись от другого timestamp — формат верный, значение нет
+    sig = calc_signature(TERMINAL_ID, ts_signed)
     headers = {
         "Api-Terminal-ID": TERMINAL_ID,
-        "Api-Signature":   "0" * 64,
-        "Api-Timestamp":   str(int(time.time())),
+        "Api-Signature":   sig,
+        "Api-Timestamp":   ts_header,
     }
     resp = requests.get(url, headers=headers, timeout=30)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
