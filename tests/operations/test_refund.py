@@ -333,6 +333,7 @@ def test_refund_exceeds_remaining():
         "financial_data": {"amount": 5000, "currency": "RUB"},
     })
     assert resp1.status_code in (200, 201), f"First refund (5000) failed: {resp1.text}"
+    time.sleep(SETUP_DELAY)
     resp2 = post_operation(tid, "refund", {
         "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 6000, "currency": "RUB"},
@@ -438,7 +439,7 @@ def test_refund_on_cancelled_transaction():
     cancel_body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": 1000, "currency": "RUB"}}
     resp_cancel = post_operation(tid, "cancel", cancel_body)
     assert resp_cancel.status_code in (200, 201), f"Cancel setup failed: {resp_cancel.text}"
-
+    time.sleep(SETUP_DELAY)
     body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": 100, "currency": "RUB"}}
     resp = post_operation(tid, "refund", body)
     assert resp.status_code == 409, f"Expected 409 for refund on cancelled, got {resp.status_code}"
@@ -555,7 +556,7 @@ def test_refund_payout_transaction_returns_409():
     assert resp_create.status_code == 201, f"Payout creation failed: {resp_create.text}"
     tid = resp_create.json()["transaction_id"]
     order_id = payout_body["merchant_data"]["order_id"]
-
+    time.sleep(SETUP_DELAY)
     body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": 100, "currency": "RUB"}}
     resp = post_operation(tid, "refund", body)
     assert resp.status_code == 409, f"Expected 409 for refund on payout, got {resp.status_code}"
