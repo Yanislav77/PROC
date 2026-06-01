@@ -174,8 +174,12 @@ def _write_report_entry(nodeid: str, status: str, error, ungrouped: list, tc_id:
     idx = _test_counter
     f = _report_file
 
-    css = "passed" if status == "PASSED" else "failed"
-    badge = "✓ PASSED" if status == "PASSED" else "✗ FAILED"
+    if status == "PASSED":
+        css, badge = "passed", "✓ PASSED"
+    elif status == "SKIPPED":
+        css, badge = "skipped", "⊘ SKIPPED"
+    else:
+        css, badge = "failed", "✗ FAILED"
 
     f.write(f'<div class="panel {css}" id="p{idx}" data-name="{_esc(nodeid)}" data-status="{css}" data-tcid="{_esc(tc_id)}">\n')
     f.write(f'  <div class="panel-header">\n')
@@ -255,6 +259,7 @@ body{{font-family:'Segoe UI',system-ui,sans-serif;background:#1a1a2e;color:#e0e0
 #summary{{display:flex;gap:14px;font-size:.88em;margin-left:auto;align-items:center;white-space:nowrap}}
 .sum-p{{color:#4caf50;font-weight:bold}}
 .sum-f{{color:#f44336;font-weight:bold}}
+.sum-s{{color:#e8e860;font-weight:bold}}
 .sum-t{{color:#777}}
 .layout{{display:flex;flex:1;overflow:hidden}}
 .sidebar{{width:290px;background:#12122a;border-right:1px solid #2a2a4a;overflow-y:auto;flex-shrink:0;padding:6px 0}}
@@ -264,19 +269,23 @@ body{{font-family:'Segoe UI',system-ui,sans-serif;background:#1a1a2e;color:#e0e0
 .nav-badge{{flex-shrink:0;margin-top:1px}}
 .nav-item.passed .nav-badge{{color:#4caf50}}
 .nav-item.failed .nav-badge{{color:#f44336}}
+.nav-item.skipped .nav-badge{{color:#e8e860}}
 .main{{flex:1;overflow-y:auto;padding:20px}}
 .panel{{display:none}}
 .panel.active{{display:block}}
 .panel-header{{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:6px 6px 0 0}}
 .panel.passed .panel-header{{background:#1b3a1b;border:1px solid #2d4a2d;border-bottom:none}}
 .panel.failed .panel-header{{background:#3a1b1b;border:1px solid #4a2020;border-bottom:none}}
+.panel.skipped .panel-header{{background:#2a2a1b;border:1px solid #4a4a20;border-bottom:none}}
 .badge{{font-size:.75em;font-weight:bold;padding:2px 8px;border-radius:10px;flex-shrink:0}}
 .panel.passed .badge{{background:#2e7d32;color:#a5d6a7}}
 .panel.failed .badge{{background:#b71c1c;color:#ffcdd2}}
+.panel.skipped .badge{{background:#5a5a00;color:#e8e860}}
 .panel-name{{font-family:'Consolas',monospace;font-size:.88em;color:#ddd;word-break:break-all}}
 .panel-body{{padding:14px 16px;background:#16213e;border-radius:0 0 6px 6px}}
 .panel.passed .panel-body{{border:1px solid #2d4a2d;border-top:none}}
 .panel.failed .panel-body{{border:1px solid #4a2020;border-top:none}}
+.panel.skipped .panel-body{{border:1px solid #4a4a20;border-top:none}}
 .section-label{{font-size:.72em;font-weight:bold;letter-spacing:.08em;color:#5c7aaa;text-transform:uppercase;margin:12px 0 6px}}
 .section-label:first-child{{margin-top:0}}
 .http-line{{font-family:monospace;font-size:.85em;margin-bottom:6px}}
@@ -364,14 +373,14 @@ def pytest_unconfigure(config):
     return ta[1]-tb[1];
   }});
   panels.forEach(function(p){{main.appendChild(p);}});
-  var passed=0,failed=0,firstFailed=null,navItems=[];
+  var passed=0,failed=0,skipped=0,firstFailed=null,navItems=[];
   panels.forEach(function(p){{
     var st=p.dataset.status,nm=p.dataset.name;
-    if(st==='passed')passed++;else{{failed++;if(!firstFailed)firstFailed=p;}}
+    if(st==='passed')passed++;else if(st==='skipped')skipped++;else{{failed++;if(!firstFailed)firstFailed=p;}}
     var tcid=p.dataset.tcid;
     var item=document.createElement('div');
     item.className='nav-item '+st;
-    item.innerHTML='<span class="nav-badge">'+(st==='passed'?'✓':'✗')+'</span>'+(tcid?'<span class="nav-tcid">['+tcid+']</span> ':'')+nm;
+    item.innerHTML='<span class="nav-badge">'+(st==='passed'?'✓':st==='skipped'?'⊘':'✗')+'</span>'+(tcid?'<span class="nav-tcid">['+tcid+']</span> ':'')+nm;
     (function(panel,navItem){{
       navItem.onclick=function(){{
         panels.forEach(function(x){{x.classList.remove('active');}});
@@ -388,10 +397,11 @@ def pytest_unconfigure(config):
     toShow.classList.add('active');
     navItems[panels.indexOf(toShow)].classList.add('active');
   }}
-  var total=passed+failed;
+  var total=passed+failed+skipped;
   document.getElementById('summary').innerHTML=
     '<span class="sum-p">✓ '+passed+' passed</span>'+
     (failed?'<span class="sum-f">&nbsp;&nbsp;✗ '+failed+' failed</span>':'')+
+    (skipped?'<span class="sum-s">&nbsp;&nbsp;⊘ '+skipped+' skipped</span>':'')+
     '<span class="sum-t">&nbsp;&nbsp;/ '+total+' total</span>';
   document.querySelector('.meta').innerHTML+=
     '&nbsp;|&nbsp; Finished: {finished}';
@@ -436,7 +446,12 @@ def pytest_runtest_logreport(report):
         if call is None:
             return
         ungrouped, groups = _http_captures.pop(report.nodeid, ([], []))
-        status = "PASSED" if call.passed else "FAILED"
-        error = str(call.longrepr) if call.failed else None
+        if call.passed:
+            status = "PASSED"
+        elif call.skipped:
+            status = "SKIPPED"
+        else:
+            status = "FAILED"
+        error = str(call.longrepr) if call.failed or call.skipped else None
         tc_id = _tc_ids.get(report.nodeid, "")
         _write_report_entry(report.nodeid, status, error, ungrouped, tc_id, groups)
