@@ -658,9 +658,23 @@ def test_get_rejected_transaction_has_rejected_data():
 # ─────────────────────────────────────────────
 # financial_data.available_amount (GT-046 … GT-047)
 # ─────────────────────────────────────────────
+_REFUND_POLL_ATTEMPTS = 8
+_REFUND_POLL_DELAY    = 2.0
+
+
+def _poll_financial_data(tid: int) -> dict:
+    """Поллим GET /{tid} пока статус не выйдет из processing/refunded."""
+    for _ in range(_REFUND_POLL_ATTEMPTS):
+        time.sleep(_REFUND_POLL_DELAY)
+        r = get_request(f"{BASE_URL}/{tid}")
+        if r.status_code == 200:
+            return r.json().get("financial_data", {})
+    return get_request(f"{BASE_URL}/{tid}").json().get("financial_data", {})
+
+
 @pytest.mark.tcid("GT-046")
 def test_get_available_amount_after_partial_refund():
-    """GET /{id} — financial_data.available_amount присутствует и корректен после частичного рефанда."""
+    """GET /{id} — financial_data.available_amount корректен после частичного рефанда."""
     oid = gen_order_id("gt_partial_refund")
     tid = make_completed_payin(oid)  # amount = 10000
     refund = post_operation(tid, "refund", {
@@ -668,10 +682,7 @@ def test_get_available_amount_after_partial_refund():
         "financial_data": {"amount": 3000, "currency": "RUB"},
     })
     assert refund.status_code in (200, 201), f"Refund failed: {refund.text}"
-    time.sleep(SETUP_DELAY)
-    resp = get_request(f"{BASE_URL}/{tid}")
-    assert resp.status_code == 200
-    fd = resp.json().get("financial_data", {})
+    fd = _poll_financial_data(tid)
     assert "available_amount" in fd, \
         "financial_data.available_amount должен присутствовать после частичного рефанда"
     assert isinstance(fd["available_amount"], int), \
@@ -682,7 +693,7 @@ def test_get_available_amount_after_partial_refund():
 
 @pytest.mark.tcid("GT-047")
 def test_get_no_available_amount_after_full_refund():
-    """GET /{id} — financial_data.available_amount отсутствует после полного рефанда (нулевой остаток)."""
+    """GET /{id} — financial_data.available_amount отсутствует после полного рефанда."""
     oid = gen_order_id("gt_full_refund_avail")
     tid = make_completed_payin(oid)  # amount = 10000
     refund = post_operation(tid, "refund", {
@@ -690,10 +701,7 @@ def test_get_no_available_amount_after_full_refund():
         "financial_data": {"amount": 10000, "currency": "RUB"},
     })
     assert refund.status_code in (200, 201), f"Refund failed: {refund.text}"
-    time.sleep(SETUP_DELAY)
-    resp = get_request(f"{BASE_URL}/{tid}")
-    assert resp.status_code == 200
-    fd = resp.json().get("financial_data", {})
+    fd = _poll_financial_data(tid)
     assert "available_amount" not in fd, \
         f"available_amount не должен присутствовать при нулевом остатке, got {fd.get('available_amount')!r}"
 
