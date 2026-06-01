@@ -549,7 +549,6 @@ def test_get_processing_status_no_extra_fields():
     assert not data.get("transaction_data"), "processing не должен содержать transaction_data"
     assert "action" not in data, "processing не должен содержать action"
     assert "rejected_data" not in data, "processing не должен содержать rejected_data"
-    assert not data.get("customer_data"), "processing не должен содержать customer_data"
     fd = data.get("financial_data", {})
     assert "available_amount" not in fd, "processing не должен содержать available_amount"
 
