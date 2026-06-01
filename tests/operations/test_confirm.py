@@ -2,16 +2,23 @@
 Тесты для операции confirm (подтверждение ожидающего действия).
 POST /api/v1/transactions/{id}/confirm
 Типы: threed_secure, redirect, transfer_card, transfer_phone, transfer_qr, transfer_account, top_up_mobile.
-Happy path требует транзакцию в статусе waiting_action — покрыты только негативные сценарии.
+Happy path требует транзакцию в статусе waiting_action/waiting_3DS — эти кейсы помечены @skip.
 """
 import json
+import re
 import time
 import uuid
 
 import pytest
 import requests
 
-from conftest import calc_signature, post_operation, BASE_URL, TERMINAL_ID, assert_error_response
+from conftest import (
+    calc_signature, post_operation, post_transaction, BASE_URL, TERMINAL_ID,
+    MERCHANT_DATA, CUSTOMER_DATA, CARD_3DS, THREED, gen_order_id, SETUP_DELAY,
+    assert_error_response, assert_transaction_response,
+)
+import _helpers.config as _cfg
+from _helpers.signatures import make_headers
 
 
 # ─────────────────────────────────────────────
@@ -503,3 +510,370 @@ def test_confirm_content_type_is_json_in_response():
     resp = post_operation("000000000000", "confirm", body)
     assert "application/json" in resp.headers.get("Content-Type", ""), \
         f"Content-Type не json: {resp.headers.get('Content-Type')}"
+
+
+# ─────────────────────────────────────────────
+# ВАЛИДАЦИЯ ТИПОВ И СОВМЕСТИМОСТИ (CON-033..034)
+# ─────────────────────────────────────────────
+_BASE_BODY = {
+    "merchant_data": {"order_id": "order_confirm_test"},
+    "financial_data": {"amount": 1000, "currency": "RUB"},
+}
+
+
+@pytest.mark.tcid("CON-033")
+def test_confirm_confirmed_as_string():
+    """confirmed='true' (строка вместо bool). Ожидается 400 (type validation)."""
+    body = {**_BASE_BODY, "result": {"type": "transfer_card", "details": {"confirmed": "true"}}}
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-034")
+def test_confirm_threed_secure_with_confirmed_field():
+    """threed_secure + confirmed (несовместимая комбинация). Ожидается 400."""
+    body = {**_BASE_BODY, "result": {"type": "threed_secure", "details": {"confirmed": True}}}
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ЗАГОЛОВКИ — РАСШИРЕННЫЕ (CON-035..041)
+# ─────────────────────────────────────────────
+def _confirm_with_headers(headers: dict) -> requests.Response:
+    body = {**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}
+    raw = json.dumps(body, separators=(",", ":"))
+    return requests.post(f"{BASE_URL}/000000000000/confirm", data=raw, headers=headers, timeout=30)
+
+
+@pytest.mark.tcid("CON-035")
+def test_confirm_invalid_idempotency_key_format():
+    """Api-Idempotency-Key не является UUID. Ожидается 400."""
+    ts  = str(int(time.time()))
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    sig = calc_signature(TERMINAL_ID, ts, raw)
+    resp = _confirm_with_headers({
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": "not-a-uuid",
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    })
+    assert resp.status_code in (400, 422), f"Expected 400/422, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-036")
+def test_confirm_timestamp_too_old():
+    """Api-Timestamp старее окна tolerances (> 5 мин назад). Ожидается 401/400."""
+    old_ts = str(int(time.time()) - 400)
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    sig = calc_signature(TERMINAL_ID, old_ts, raw)
+    resp = _confirm_with_headers({
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       old_ts,
+    })
+    assert resp.status_code in (400, 401), f"Expected 400/401, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-037")
+def test_confirm_timestamp_too_new():
+    """Api-Timestamp в будущем (> 5 мин вперёд). Ожидается 401/400."""
+    future_ts = str(int(time.time()) + 400)
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    sig = calc_signature(TERMINAL_ID, future_ts, raw)
+    resp = _confirm_with_headers({
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       future_ts,
+    })
+    assert resp.status_code in (400, 401), f"Expected 400/401, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-038")
+def test_confirm_timestamp_within_window():
+    """Api-Timestamp в пределах окна — запрос проходит валидацию (достигает 404 по транзакции)."""
+    ts  = str(int(time.time()))
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    sig = calc_signature(TERMINAL_ID, ts, raw)
+    resp = _confirm_with_headers({
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    })
+    assert resp.status_code != 401, f"Timestamp validation should pass, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CON-039")
+def test_confirm_signature_from_different_body():
+    """Подпись посчитана от другого body (не от отправляемого). Ожидается 401/403."""
+    ts       = str(int(time.time()))
+    body_a   = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    body_b   = json.dumps({**_BASE_BODY, "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}}}, separators=(",", ":"))
+    sig      = calc_signature(TERMINAL_ID, ts, body_a)
+    resp = requests.post(
+        f"{BASE_URL}/000000000000/confirm",
+        data=body_b,
+        headers={
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": str(uuid.uuid4()),
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        },
+        timeout=30,
+    )
+    assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-040")
+def test_confirm_signature_with_wrong_terminal():
+    """Подпись посчитана с другим terminal_id. Ожидается 401/403."""
+    ts  = str(int(time.time()))
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    sig = calc_signature("99999", ts, raw)
+    resp = _confirm_with_headers({
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    })
+    assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-041")
+def test_confirm_nonexistent_terminal_id():
+    """Несуществующий Api-Terminal-ID. Ожидается 401/403."""
+    ts  = str(int(time.time()))
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    sig = calc_signature("99999", ts, raw)
+    resp = _confirm_with_headers({
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     "99999",
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    })
+    assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# URL-РОУТИНГ (CON-042)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-042")
+def test_confirm_non_numeric_transaction_id():
+    """Нечисловой transaction_id в URL. Ожидается 404 (роутер не матчит \d+)."""
+    resp = post_operation("not-a-number", "confirm", {
+        **_BASE_BODY,
+        "result": {"type": "redirect", "details": {"confirmed": True}},
+    })
+    assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# СОВМЕСТИМОСТЬ ФОРМАТОВ (CON-043..044)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-043")
+def test_confirm_old_pascalcase_body_on_new_url():
+    """Старый PascalCase-формат тела на новом URL. Ожидается 4xx (нет merchant_data/financial_data/result)."""
+    old_body = {
+        "TransactionId": 9999999999,
+        "OrderId": "order_test",
+        "Amount": 1000,
+        "Currency": "RUB",
+        "PaRes": "test_pares",
+        "MD": "test_md",
+    }
+    resp = post_operation("9999999999", "confirm", old_body)
+    assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-044")
+def test_confirm_old_headers_on_new_url():
+    """Старые заголовки X-SITE-ID/X-REQUEST-SIGNATURE на новом URL. Ожидается 4xx (MissingHTTPHeader)."""
+    body = {**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}
+    raw  = json.dumps(body, separators=(",", ":"))
+    resp = requests.post(
+        f"{BASE_URL}/000000000000/confirm",
+        data=raw,
+        headers={
+            "Content-Type":        "application/json",
+            "X-SITE-ID":           TERMINAL_ID,
+            "X-REQUEST-ID":        str(uuid.uuid4()),
+            "X-REQUEST-SIGNATURE": "fakesig",
+        },
+        timeout=30,
+    )
+    assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# HAPPY PATH — требуют транзакцию в нужном статусе
+# ─────────────────────────────────────────────
+def _make_3ds_payin_body(order_id: str) -> dict:
+    """Body для создания транзакции, которая должна уйти в waiting_3DS."""
+    return {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": order_id},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_3DS},
+    }
+
+
+@pytest.mark.tcid("CON-045")
+@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_3DS — зависит от конфига сервиса")
+def test_confirm_threed_secure_success():
+    """Успешный confirm type=threed_secure: создать 3DS-транзакцию и подтвердить."""
+    oid  = gen_order_id("confirm_3ds_ok")
+    resp = post_transaction(_make_3ds_payin_body(oid))
+    assert resp.status_code == 201, f"Create failed: {resp.text}"
+    data = resp.json()
+    assert data.get("status") == "waiting_3DS", \
+        f"Expected waiting_3DS, got {data.get('status')!r} — skip manually if not in 3DS flow"
+    tid = data["transaction_id"]
+    time.sleep(SETUP_DELAY)
+    confirm_body = {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "<real_pares>", "md": "<real_md>"}}},
+    }
+    r = post_operation(tid, "confirm", confirm_body)
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    resp_data = r.json()
+    assert resp_data.get("status") == "processing"
+    assert isinstance(resp_data.get("transaction_id"), int)
+    assert_transaction_response(resp_data)
+
+
+@pytest.mark.tcid("CON-046")
+@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_action (transfer_card) — настроить вручную")
+def test_confirm_transfer_card_confirmed_true():
+    """Успешный confirm type=transfer_card, confirmed=true → UserAction с as_confirm_user_action."""
+    oid = gen_order_id("confirm_tc_true")
+    # Создать транзакцию, которая ждёт подтверждения перевода по карте
+    # ... (зависит от конфига сервиса с P2P/transfer_card методом)
+    tid = 0  # заменить на реальный tid
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "transfer_card", "details": {"confirmed": True}},
+    })
+    assert r.status_code == 200
+    assert r.json().get("status") == "processing"
+
+
+@pytest.mark.tcid("CON-047")
+@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_action (transfer_card) — настроить вручную")
+def test_confirm_transfer_card_confirmed_false():
+    """Confirm type=transfer_card, confirmed=false → транзакция помечается отклонённой пользователем."""
+    oid = gen_order_id("confirm_tc_false")
+    tid = 0  # заменить на реальный tid
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "transfer_card", "details": {"confirmed": False}},
+    })
+    assert r.status_code == 200
+
+
+@pytest.mark.tcid("CON-048")
+@pytest.mark.skip(reason="Требует транзакции в waiting_action для каждого типа — настроить вручную")
+@pytest.mark.parametrize("result_type", ["redirect", "transfer_phone", "transfer_qr", "transfer_account", "top_up_mobile"])
+def test_confirm_user_action_types_confirmed_true(result_type):
+    """Confirm с разными user-action типами, confirmed=true → 200, одинаковая структура ответа."""
+    oid = gen_order_id(f"confirm_{result_type}")
+    tid = 0  # заменить на реальный tid
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": result_type, "details": {"confirmed": True}},
+    })
+    assert r.status_code == 200
+    assert r.json().get("status") == "processing"
+
+
+# ─────────────────────────────────────────────
+# 3DS-REDIRECT КЕЙСЫ
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-049")
+@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_3DS_redirect — настроить вручную")
+def test_confirm_3ds_redirect_confirmed_true():
+    """3DS-redirect: confirm с confirmed=true — клиент принял редирект."""
+    tid = 0  # заменить на реальный tid в waiting_3DS_redirect
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": "order_3ds_redirect"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "redirect", "details": {"confirmed": True}},
+    })
+    assert r.status_code == 200
+    assert r.json().get("status") == "processing"
+
+
+@pytest.mark.tcid("CON-050")
+@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_3DS_redirect — настроить вручную")
+def test_confirm_3ds_redirect_confirmed_false():
+    """3DS-redirect: confirm с confirmed=false — клиент отказался от редиректа."""
+    tid = 0  # заменить на реальный tid в waiting_3DS_redirect
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": "order_3ds_redirect"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "redirect", "details": {"confirmed": False}},
+    })
+    assert r.status_code == 200
+
+
+@pytest.mark.tcid("CON-051")
+@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_3DS_redirect — настроить вручную")
+def test_confirm_3ds_redirect_wrong_type():
+    """3DS-redirect: отправить threed_secure вместо redirect — должна быть ошибка несовместимого типа."""
+    tid = 0  # заменить на реальный tid в waiting_3DS_redirect
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": "order_3ds_redirect"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}},
+    })
+    assert r.status_code in range(400, 500), f"Expected 4xx for wrong type on redirect state"
+    assert_error_response(r)
+
+
+# ─────────────────────────────────────────────
+# ФОРМАТ ОТВЕТА (требуют успешный confirm)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-052")
+@pytest.mark.skip(reason="Требует успешный confirm — зависит от waiting_3DS или waiting_action транзакции")
+def test_confirm_minimized_response_format():
+    """Успешный confirm возвращает минимизированный ответ: transaction_id, status, type, merchant_data, financial_data, created_at."""
+    tid = 0
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": "order_test"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "redirect", "details": {"confirmed": True}},
+    })
+    assert r.status_code == 200
+    data = r.json()
+    for field in ("transaction_id", "status", "type", "merchant_data", "financial_data", "created_at"):
+        assert field in data, f"Missing field '{field}' in response"
+    assert isinstance(data["transaction_id"], int)
+    assert data["status"] == "processing"
+    assert data["type"] in ("payin", "payout")
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", data["created_at"]), \
+        f"created_at not ISO-8601 UTC: {data['created_at']!r}"
