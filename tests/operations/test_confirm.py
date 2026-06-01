@@ -807,51 +807,8 @@ def test_confirm_threed_secure_success(waiting_3ds_tid):
     assert_transaction_response(data)
 
 
-@pytest.mark.tcid("CON-046")
-@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_action (transfer_card) — настроить вручную")
-def test_confirm_transfer_card_confirmed_true():
-    """Успешный confirm type=transfer_card, confirmed=true → UserAction с as_confirm_user_action."""
-    oid = gen_order_id("confirm_tc_true")
-    # Создать транзакцию, которая ждёт подтверждения перевода по карте
-    # ... (зависит от конфига сервиса с P2P/transfer_card методом)
-    tid = 0  # заменить на реальный tid
-    r = post_operation(tid, "confirm", {
-        "merchant_data": {"order_id": oid},
-        "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "transfer_card", "details": {"confirmed": True}},
-    })
-    assert r.status_code == 200
-    assert r.json().get("status") == "processing"
-
-
-@pytest.mark.tcid("CON-047")
-@pytest.mark.skip(reason="Требует транзакцию в статусе waiting_action (transfer_card) — настроить вручную")
-def test_confirm_transfer_card_confirmed_false():
-    """Confirm type=transfer_card, confirmed=false → транзакция помечается отклонённой пользователем."""
-    oid = gen_order_id("confirm_tc_false")
-    tid = 0  # заменить на реальный tid
-    r = post_operation(tid, "confirm", {
-        "merchant_data": {"order_id": oid},
-        "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "transfer_card", "details": {"confirmed": False}},
-    })
-    assert r.status_code == 200
-
-
-@pytest.mark.tcid("CON-048")
-@pytest.mark.skip(reason="Требует транзакции в waiting_action для каждого типа — настроить вручную")
-@pytest.mark.parametrize("result_type", ["redirect", "transfer_phone", "transfer_qr", "transfer_account", "top_up_mobile"])
-def test_confirm_user_action_types_confirmed_true(result_type):
-    """Confirm с разными user-action типами, confirmed=true → 200, одинаковая структура ответа."""
-    oid = gen_order_id(f"confirm_{result_type}")
-    tid = 0  # заменить на реальный tid
-    r = post_operation(tid, "confirm", {
-        "merchant_data": {"order_id": oid},
-        "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": result_type, "details": {"confirmed": True}},
-    })
-    assert r.status_code == 200
-    assert r.json().get("status") == "processing"
+# CON-046, CON-047, CON-048 перенесены в test_confirm_user_action.py
+# (используют P2P-транзакцию для достижения waiting_action)
 
 
 # ─────────────────────────────────────────────
