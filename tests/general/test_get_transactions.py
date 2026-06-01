@@ -618,7 +618,7 @@ def test_get_refunded_contains_transaction_data():
         f"transaction_data должен быть непустым dict для refunded, got {td!r}"
 
 
-_REJECT_CARD = {**CARD_DETAILS, "pan": "4111111111111129"}
+_REJECT_CARD = {**CARD_DETAILS, "expiry_month": "08"}
 
 
 @pytest.mark.tcid("GT-045")
