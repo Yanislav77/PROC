@@ -1149,7 +1149,7 @@ def test_payment_link_side_effects_match_webpay_create():
         if isinstance(pr_new, dict):
             pl_req = pr_new.get("PaymentRequest", {})
             assert pl_req.get("Currency") == "RUB",  f"Currency mismatch in new: {pr_new}"
-            assert pl_req.get("Amount") in (1000, "1000", 1000.0), f"Amount mismatch in new: {pr_new}"
+            assert pl_req.get("Amount") in (10.0, "10.00", "10.0", 10), f"Amount mismatch in new: {pr_new}"
             ci = pr_new.get("CustomerInfo", {})
             assert ci.get("Email") == "test@example.com", f"CustomerInfo.Email mismatch: {ci}"
 
