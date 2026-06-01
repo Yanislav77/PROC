@@ -224,11 +224,10 @@ def test_get_by_order_id_empty_value():
 
 @pytest.mark.tcid("GT-017")
 def test_get_transaction_non_numeric_id():
-    """GET /transactions/not-a-number — не числовой ID. Ожидается 404."""
+    """GET /transactions/not-a-number — не числовой ID. Ожидается 404 (роутер возвращает не-JSON)."""
     url = f"{BASE_URL}/not-a-valid-id"
     resp = get_request(url)
     assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
 
 
 @pytest.mark.tcid("GT-018")
