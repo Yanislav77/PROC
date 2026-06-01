@@ -5,25 +5,35 @@ CVV 999 (≥ 600) → без 3DS.
 recurrent_token: transaction_data.recurrent_token в GET /{id}.
 
 КЕЙСЫ:
-  RB-001: auto-capture payin  → auto rebill
-  RB-002: auto-capture payin  → manual rebill + capture
+  RB-001: auto payin → auto rebill
+  RB-002: auto payin → manual rebill + capture
   RB-003: manual payin + capture → auto rebill
   RB-004: manual payin + capture → manual rebill + capture
+  RB-005: manual payin без capture → авто-отмена по таймауту (slow)
+  RB-006: частичный capture (5000 из 10000)
+  RB-007: повторный capture после полного → 409
+  RB-008: capture несуществующей транзакции → 404
+  RB-017: rebill с токеном другого терминала → 403/404
+  RB-018: is_recurrent=false → withdrawal_token (не recurrent_token)
+  RB-019: без is_recurrent (default false) → withdrawal_token
+  RB-020: цепочка rebill (token1 → token2 → rebill)
 
 ДОПОЛНИТЕЛЬНЫЕ ПРОВЕРКИ:
   RB-010: идемпотентность — повторный запрос с тем же ключом
   RB-011: recurrent_token является UUID v4
   RB-012: токен другого сервиса → 404/422
-  RB-013: capture суммы больше авторизованной → 422
+  RB-013: capture суммы больше авторизованной → 4xx
   RB-014: capture одностадийной транзакции → 409
   RB-015: rebill с несуществующим токеном → 404/422
-  RB-016: is_recurrent=false → recurrent_token отсутствует в ответе
+  RB-016: is_recurrent=false → recurrent_token отсутствует
 """
 import re
 import time
 import uuid
 
 import pytest
+
+import os
 
 from conftest import (
     post_transaction,
@@ -34,10 +44,15 @@ from conftest import (
     CUSTOMER_DATA,
     THREED,
     SETUP_DELAY,
+    TERMINAL_ID,
     assert_transaction_response,
     assert_error_response,
     gen_order_id,
 )
+
+# Второй терминал для кейса RB-017 (rebill чужого токена).
+# Задать через TERMINAL_ID_2 в .env или terminals.json.
+_TERMINAL_ID_2 = os.environ.get("TERMINAL_ID_2", "")
 
 _AMOUNT = 10000
 
@@ -326,3 +341,192 @@ def test_idempotency_same_key_returns_same_result():
     if r2.status_code == 201:
         assert r1.json()["transaction_id"] == r2.json()["transaction_id"], \
             "Idempotent requests must return the same transaction_id"
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 5: manual payin без capture → авто-отмена
+# ─────────────────────────────────────────────
+_AUTO_CANCEL_TIMEOUT = 5 * 60  # 5 минут
+_AUTO_CANCEL_POLL    = 30      # опрос каждые 30 сек
+
+
+@pytest.mark.tcid("RB-005")
+@pytest.mark.slow
+def test_manual_payin_auto_cancel_on_timeout():
+    """Manual payin без capture → статус cancelled по истечении таймаута (~5 мин)."""
+    tid, oid, _ = _payin_card("manual", is_recurrent=False)
+    _assert_status(tid, "authorized")
+
+    elapsed = 0
+    while elapsed < _AUTO_CANCEL_TIMEOUT:
+        time.sleep(_AUTO_CANCEL_POLL)
+        elapsed += _AUTO_CANCEL_POLL
+        poll = get_request(f"{BASE_URL}/{tid}")
+        status = poll.json().get("status")
+        if status == "cancelled":
+            return
+        if status not in ("authorized", "processing"):
+            pytest.fail(f"Unexpected status during wait: {status!r}")
+
+    pytest.fail(f"Transaction {tid} did not auto-cancel within {_AUTO_CANCEL_TIMEOUT}s")
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 6: частичный capture
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-006")
+def test_partial_capture():
+    """Partial capture 5000 из 10000 → completed, остаток разблокирован."""
+    tid, oid, _ = _payin_card("manual", is_recurrent=False)
+    _assert_status(tid, "authorized")
+
+    resp = post_operation(tid, "capture", {
+        "merchant_data":  {"order_id": oid},
+        "financial_data": {"amount": 5000, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), f"Partial capture failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid, "completed")
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 7: повторный capture после полного
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-007")
+def test_repeated_capture_after_full_capture():
+    """Повторный capture после полного → 409 (конфликт)."""
+    tid, oid, _ = _payin_card("manual", is_recurrent=False)
+    _assert_status(tid, "authorized")
+    _capture(tid, oid)
+    _assert_status(tid, "completed")
+
+    resp = post_operation(tid, "capture", {
+        "merchant_data":  {"order_id": oid},
+        "financial_data": {"amount": _AMOUNT, "currency": "RUB"},
+    })
+    assert resp.status_code == 409, \
+        f"Expected 409 for repeated capture, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 8: capture несуществующей транзакции
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-008")
+def test_capture_nonexistent_transaction():
+    """Capture для несуществующего transaction_id → 404."""
+    resp = post_operation("9999999999", "capture", {
+        "merchant_data":  {"order_id": "order_nonexistent"},
+        "financial_data": {"amount": _AMOUNT, "currency": "RUB"},
+    })
+    assert resp.status_code == 404, \
+        f"Expected 404 for nonexistent transaction, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 11: rebill с токеном другого терминала
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-017")
+def test_rebill_with_token_from_different_terminal():
+    """Rebill токеном от первого терминала через второй → 403 или 404."""
+    if not _TERMINAL_ID_2:
+        pytest.skip("TERMINAL_ID_2 не задан — настроить в .env для этого кейса")
+
+    # Шаг 1: получаем токен от первого терминала
+    _, _, token = _payin_card("auto", is_recurrent=True)
+    assert token, "recurrent_token must be present"
+
+    # Шаг 2: пытаемся использовать этот токен от второго терминала
+    oid  = gen_order_id("rb_other_terminal")
+    body = {
+        "type":             "payin",
+        "merchant_data":    {**MERCHANT_DATA, "order_id": oid},
+        "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
+        "flow_data":        {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data":    CUSTOMER_DATA,
+        "transaction_data": {"method": "token", "details": {"token": token}},
+    }
+    resp = post_transaction(body, terminal_id=_TERMINAL_ID_2)
+    assert resp.status_code in (400, 403, 404, 422), \
+        f"Expected 4xx for cross-terminal token, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 12: is_recurrent=false → withdrawal_token
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-018")
+def test_auto_payin_is_recurrent_false_gives_withdrawal_token():
+    """Auto payin с is_recurrent=false → withdrawal_token присутствует, recurrent_token отсутствует."""
+    tid, _, _ = _payin_card("auto", is_recurrent=False)
+    _assert_status(tid, "completed")
+    poll = get_request(f"{BASE_URL}/{tid}")
+    td   = poll.json().get("transaction_data") or {}
+    assert td.get("withdrawal_token"), \
+        f"withdrawal_token должен присутствовать при is_recurrent=False: {td}"
+    assert td.get("recurrent_token") is None, \
+        f"recurrent_token не должен присутствовать при is_recurrent=False: {td}"
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 13: без is_recurrent (default false) → withdrawal_token
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-019")
+def test_auto_payin_without_is_recurrent_gives_withdrawal_token():
+    """Auto payin без is_recurrent (default false) → withdrawal_token, нет recurrent_token."""
+    oid  = gen_order_id("rb_no_recurrent")
+    body = {
+        "type":             "payin",
+        "merchant_data":    {**MERCHANT_DATA, "order_id": oid},
+        "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
+        "flow_data":        {"capture_mode": "auto", "threed_secure": THREED},
+        "customer_data":    CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": _CARD},
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Create failed: {resp.status_code}: {resp.text}"
+    tid = resp.json()["transaction_id"]
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid, "completed")
+    poll = get_request(f"{BASE_URL}/{tid}")
+    td   = poll.json().get("transaction_data") or {}
+    assert td.get("withdrawal_token"), \
+        f"withdrawal_token должен присутствовать без is_recurrent: {td}"
+    assert td.get("recurrent_token") is None, \
+        f"recurrent_token не должен присутствовать без is_recurrent: {td}"
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 14: цепочка rebill (token1 → token2 → rebill)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-020")
+def test_rebill_chain():
+    """Цепочка: родитель (is_recurrent=true) → token1; rebill1 (is_recurrent=true) → token2; rebill2 с token2."""
+    # Шаг 1: родительская транзакция → token1
+    _, _, token1 = _payin_card("auto", is_recurrent=True)
+    assert token1, "token1 must be present"
+
+    # Шаг 2: rebill с is_recurrent=true → token2
+    oid2  = gen_order_id("rb_chain_2")
+    body2 = {
+        "type":             "payin",
+        "merchant_data":    {**MERCHANT_DATA, "order_id": oid2},
+        "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
+        "flow_data":        {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data":    CUSTOMER_DATA,
+        "transaction_data": {"method": "token", "details": {"token": token1}},
+    }
+    r2 = post_transaction(body2)
+    assert r2.status_code == 201, f"rebill1 failed: {r2.status_code}: {r2.text}"
+    tid2 = r2.json()["transaction_id"]
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid2, "completed")
+
+    poll2  = get_request(f"{BASE_URL}/{tid2}")
+    token2 = (poll2.json().get("transaction_data") or {}).get("recurrent_token")
+    assert token2, "token2 must be present after rebill with is_recurrent=True"
+
+    # Шаг 3: rebill с token2
+    tid3, _ = _rebill(token2, "auto")
+    _assert_status(tid3, "completed")
