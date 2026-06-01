@@ -79,7 +79,7 @@ def test_get_transactions_by_order_id(payin_transaction_id):
 @pytest.mark.tcid("GT-004")
 def test_get_transaction_not_found():
     """GET по несуществующему числовому transaction_id. Ожидается 404."""
-    url = f"{BASE_URL}/000000000000"
+    url = f"{BASE_URL}/9999999999"
     resp = get_request(url)
     assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
