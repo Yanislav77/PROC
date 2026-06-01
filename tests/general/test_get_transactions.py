@@ -669,6 +669,7 @@ def test_get_available_amount_after_partial_refund():
         "financial_data": {"amount": 3000, "currency": "RUB"},
     })
     assert refund.status_code in (200, 201), f"Refund failed: {refund.text}"
+    time.sleep(SETUP_DELAY)
     resp = get_request(f"{BASE_URL}/{tid}")
     assert resp.status_code == 200
     fd = resp.json().get("financial_data", {})
@@ -690,6 +691,7 @@ def test_get_no_available_amount_after_full_refund():
         "financial_data": {"amount": 10000, "currency": "RUB"},
     })
     assert refund.status_code in (200, 201), f"Refund failed: {refund.text}"
+    time.sleep(SETUP_DELAY)
     resp = get_request(f"{BASE_URL}/{tid}")
     assert resp.status_code == 200
     fd = resp.json().get("financial_data", {})
