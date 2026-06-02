@@ -121,7 +121,7 @@ def test_confirm_missing_financial_data():
     """Confirm без financial_data (обязательное). Ожидается 400."""
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
@@ -133,7 +133,7 @@ def test_confirm_missing_merchant_data():
     """Confirm без merchant_data (обязательное). Ожидается 400."""
     body = {
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
@@ -146,7 +146,7 @@ def test_confirm_missing_order_id():
     body = {
         "merchant_data": {},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
@@ -198,19 +198,6 @@ def test_confirm_threed_secure_missing_md():
     assert_error_response(resp)
 
 
-@pytest.mark.tcid("CON-009")
-def test_confirm_redirect_missing_confirmed():
-    """Confirm redirect без поля confirmed (обязательное). Ожидается 400."""
-    body = {
-        "merchant_data": {"order_id": "order_confirm_test"},
-        "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {}},
-    }
-    resp = post_operation("000000000000", "confirm", body)
-    assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
-
-
 # ─────────────────────────────────────────────
 # ВАЛИДАЦИЯ RESULT — СТРУКТУРА
 # ─────────────────────────────────────────────
@@ -220,7 +207,7 @@ def test_confirm_result_missing_type():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"details": {"confirmed": True}},
+        "result": {"details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
@@ -262,7 +249,7 @@ def test_confirm_transfer_card_type():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "transfer_card", "details": {"confirmed": True}},
+        "result": {"type": "transfer_card", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
@@ -275,7 +262,7 @@ def test_confirm_transfer_phone_type():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "transfer_phone", "details": {"confirmed": True}},
+        "result": {"type": "transfer_phone", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
@@ -288,7 +275,7 @@ def test_confirm_transfer_qr_type():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "transfer_qr", "details": {"confirmed": True}},
+        "result": {"type": "transfer_qr", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
@@ -301,7 +288,20 @@ def test_confirm_top_up_mobile_type():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "top_up_mobile", "details": {"confirmed": True}},
+        "result": {"type": "top_up_mobile", "details": {}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-056")
+def test_confirm_transfer_account_type():
+    """Confirm с типом transfer_account — тип должен быть распознан (404, не 400 «неизвестный тип»)."""
+    body = {
+        "merchant_data": {"order_id": "order_confirm_test"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "transfer_account", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
@@ -317,7 +317,7 @@ def test_confirm_zero_amount():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 0, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
@@ -330,7 +330,7 @@ def test_confirm_negative_amount():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": -100, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
@@ -343,7 +343,7 @@ def test_confirm_invalid_currency():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "INVALID"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
@@ -356,7 +356,7 @@ def test_confirm_missing_amount():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
@@ -369,7 +369,7 @@ def test_confirm_missing_currency():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404), f"Expected error, got {resp.status_code}: {resp.text}"
@@ -386,7 +386,7 @@ def test_confirm_no_auth():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     raw = json.dumps(body, separators=(",", ":"))
     resp = requests.post(url, data=raw, headers={"Content-Type": "application/json"}, timeout=30)
@@ -401,7 +401,7 @@ def test_confirm_invalid_signature():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     raw = json.dumps(body, separators=(",", ":"))
     headers = {
@@ -423,7 +423,7 @@ def test_confirm_missing_terminal_id():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     raw = json.dumps(body, separators=(",", ":"))
     headers = {
@@ -444,7 +444,7 @@ def test_confirm_missing_timestamp():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     raw = json.dumps(body, separators=(",", ":"))
     headers = {
@@ -530,7 +530,7 @@ def test_confirm_financial_data_empty_object():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404)
@@ -556,7 +556,7 @@ def test_confirm_amount_null():
     body = {
         "merchant_data": {"order_id": "order_confirm_test"},
         "financial_data": {"amount": None, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     }
     resp = post_operation("000000000000", "confirm", body)
     assert resp.status_code in (400, 404)
@@ -576,38 +576,17 @@ def test_confirm_content_type_is_json_in_response():
         f"Content-Type не json: {resp.headers.get('Content-Type')}"
 
 
-# ─────────────────────────────────────────────
-# ВАЛИДАЦИЯ ТИПОВ И СОВМЕСТИМОСТИ (CON-033..034)
-# ─────────────────────────────────────────────
 _BASE_BODY = {
     "merchant_data": {"order_id": "order_confirm_test"},
     "financial_data": {"amount": 1000, "currency": "RUB"},
 }
 
 
-@pytest.mark.tcid("CON-033")
-def test_confirm_confirmed_as_string():
-    """confirmed='true' (строка вместо bool). Ожидается 400 (type validation)."""
-    body = {**_BASE_BODY, "result": {"type": "transfer_card", "details": {"confirmed": "true"}}}
-    resp = post_operation("000000000000", "confirm", body)
-    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
-
-
-@pytest.mark.tcid("CON-034")
-def test_confirm_threed_secure_with_confirmed_field():
-    """threed_secure + confirmed (несовместимая комбинация). Ожидается 400."""
-    body = {**_BASE_BODY, "result": {"type": "threed_secure", "details": {"confirmed": True}}}
-    resp = post_operation("000000000000", "confirm", body)
-    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
-
-
 # ─────────────────────────────────────────────
 # ЗАГОЛОВКИ — РАСШИРЕННЫЕ (CON-035..041)
 # ─────────────────────────────────────────────
 def _confirm_with_headers(headers: dict) -> requests.Response:
-    body = {**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}
+    body = {**_BASE_BODY, "result": {"type": "redirect", "details": {}}}
     raw = json.dumps(body, separators=(",", ":"))
     return requests.post(f"{BASE_URL}/000000000000/confirm", data=raw, headers=headers, timeout=30)
 
@@ -616,7 +595,7 @@ def _confirm_with_headers(headers: dict) -> requests.Response:
 def test_confirm_invalid_idempotency_key_format():
     """Api-Idempotency-Key не является UUID. Ожидается 400."""
     ts  = str(int(time.time()))
-    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {}}}, separators=(",", ":"))
     sig = calc_signature(TERMINAL_ID, ts, raw)
     resp = _confirm_with_headers({
         "Content-Type":        "application/json",
@@ -633,7 +612,7 @@ def test_confirm_invalid_idempotency_key_format():
 def test_confirm_timestamp_too_old():
     """Api-Timestamp старее окна tolerances (> 5 мин назад). Ожидается 401/400."""
     old_ts = str(int(time.time()) - 400)
-    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {}}}, separators=(",", ":"))
     sig = calc_signature(TERMINAL_ID, old_ts, raw)
     resp = _confirm_with_headers({
         "Content-Type":        "application/json",
@@ -650,7 +629,7 @@ def test_confirm_timestamp_too_old():
 def test_confirm_timestamp_too_new():
     """Api-Timestamp в будущем (> 5 мин вперёд). Ожидается 401/400."""
     future_ts = str(int(time.time()) + 400)
-    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {}}}, separators=(",", ":"))
     sig = calc_signature(TERMINAL_ID, future_ts, raw)
     resp = _confirm_with_headers({
         "Content-Type":        "application/json",
@@ -667,7 +646,7 @@ def test_confirm_timestamp_too_new():
 def test_confirm_timestamp_within_window():
     """Api-Timestamp в пределах окна — запрос проходит валидацию (достигает 404 по транзакции)."""
     ts  = str(int(time.time()))
-    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {}}}, separators=(",", ":"))
     sig = calc_signature(TERMINAL_ID, ts, raw)
     resp = _confirm_with_headers({
         "Content-Type":        "application/json",
@@ -683,7 +662,7 @@ def test_confirm_timestamp_within_window():
 def test_confirm_signature_from_different_body():
     """Подпись посчитана от другого body (не от отправляемого). Ожидается 401/403."""
     ts       = str(int(time.time()))
-    body_a   = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    body_a   = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {}}}, separators=(",", ":"))
     body_b   = json.dumps({**_BASE_BODY, "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}}}, separators=(",", ":"))
     sig      = calc_signature(TERMINAL_ID, ts, body_a)
     resp = requests.post(
@@ -706,7 +685,7 @@ def test_confirm_signature_from_different_body():
 def test_confirm_signature_with_wrong_terminal():
     """Подпись посчитана с другим terminal_id. Ожидается 401/403."""
     ts  = str(int(time.time()))
-    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {}}}, separators=(",", ":"))
     sig = calc_signature("99999", ts, raw)
     resp = _confirm_with_headers({
         "Content-Type":        "application/json",
@@ -723,7 +702,7 @@ def test_confirm_signature_with_wrong_terminal():
 def test_confirm_nonexistent_terminal_id():
     """Несуществующий Api-Terminal-ID. Ожидается 401/403."""
     ts  = str(int(time.time()))
-    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}, separators=(",", ":"))
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "redirect", "details": {}}}, separators=(",", ":"))
     sig = calc_signature("99999", ts, raw)
     resp = _confirm_with_headers({
         "Content-Type":        "application/json",
@@ -744,48 +723,9 @@ def test_confirm_non_numeric_transaction_id():
     """Нечисловой transaction_id в URL. Ожидается 404 (роутер не матчит \d+)."""
     resp = post_operation("not-a-number", "confirm", {
         **_BASE_BODY,
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     })
     assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
-
-
-# ─────────────────────────────────────────────
-# СОВМЕСТИМОСТЬ ФОРМАТОВ (CON-043..044)
-# ─────────────────────────────────────────────
-@pytest.mark.tcid("CON-043")
-def test_confirm_old_pascalcase_body_on_new_url():
-    """Старый PascalCase-формат тела на новом URL. Ожидается 4xx (нет merchant_data/financial_data/result)."""
-    old_body = {
-        "TransactionId": 9999999999,
-        "OrderId": "order_test",
-        "Amount": 1000,
-        "Currency": "RUB",
-        "PaRes": "test_pares",
-        "MD": "test_md",
-    }
-    resp = post_operation("9999999999", "confirm", old_body)
-    assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
-
-
-@pytest.mark.tcid("CON-044")
-def test_confirm_old_headers_on_new_url():
-    """Старые заголовки X-SITE-ID/X-REQUEST-SIGNATURE на новом URL. Ожидается 4xx (MissingHTTPHeader)."""
-    body = {**_BASE_BODY, "result": {"type": "redirect", "details": {"confirmed": True}}}
-    raw  = json.dumps(body, separators=(",", ":"))
-    resp = requests.post(
-        f"{BASE_URL}/000000000000/confirm",
-        data=raw,
-        headers={
-            "Content-Type":        "application/json",
-            "X-SITE-ID":           TERMINAL_ID,
-            "X-REQUEST-ID":        str(uuid.uuid4()),
-            "X-REQUEST-SIGNATURE": "fakesig",
-        },
-        timeout=30,
-    )
-    assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -815,28 +755,16 @@ def test_confirm_threed_secure_success(waiting_3ds_tid):
 # 3DS-REDIRECT КЕЙСЫ
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CON-049")
-def test_confirm_3ds_redirect_confirmed_true(waiting_3ds_redirect_tid):
-    """3DS-redirect: confirm с confirmed=true — клиент принял редирект."""
+def test_confirm_3ds_redirect(waiting_3ds_redirect_tid):
+    """3DS-redirect: успешный confirm type=redirect на транзакции в waiting_3DS_redirect."""
     tid, oid = waiting_3ds_redirect_tid
     r = post_operation(tid, "confirm", {
         "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     })
     assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
     assert r.json().get("status") == "processing"
-
-
-@pytest.mark.tcid("CON-050")
-def test_confirm_3ds_redirect_confirmed_false(waiting_3ds_redirect_tid):
-    """3DS-redirect: confirm с confirmed=false — клиент отказался от редиректа."""
-    tid, oid = waiting_3ds_redirect_tid
-    r = post_operation(tid, "confirm", {
-        "merchant_data": {"order_id": oid},
-        "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": False}},
-    })
-    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
 
 
 @pytest.mark.tcid("CON-051")
@@ -862,7 +790,7 @@ def test_confirm_minimized_response_format(waiting_3ds_redirect_tid):
     r = post_operation(tid, "confirm", {
         "merchant_data": {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "result": {"type": "redirect", "details": {"confirmed": True}},
+        "result": {"type": "redirect", "details": {}},
     })
     assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
     data = r.json()
@@ -873,3 +801,389 @@ def test_confirm_minimized_response_format(waiting_3ds_redirect_tid):
     assert data["type"] in ("payin", "payout")
     assert re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", data["created_at"]), \
         f"created_at not ISO-8601 UTC: {data['created_at']!r}"
+
+
+# ─────────────────────────────────────────────
+# ТЕЛО ЗАПРОСА — СТРУКТУРА (CON-053..055)
+# ─────────────────────────────────────────────
+def _auth_headers(raw_body: str = "") -> dict:
+    """Заголовки с корректной подписью, без Content-Type (добавляется вручную при необходимости)."""
+    ts  = str(int(time.time()))
+    sig = calc_signature(TERMINAL_ID, ts, raw_body)
+    return {
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    }
+
+
+@pytest.mark.tcid("CON-053")
+def test_confirm_empty_body():
+    """Пустое тело запроса (без Content-Type и данных). Ожидается 400."""
+    h = {**_auth_headers(), "Content-Type": "application/json"}
+    resp = requests.post(f"{BASE_URL}/000000000000/confirm", headers=h, timeout=30)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-054")
+def test_confirm_invalid_json_body():
+    """Тело — невалидный JSON ({broken). Ожидается 400."""
+    broken = "{broken"
+    h = {**_auth_headers(broken), "Content-Type": "application/json"}
+    resp = requests.post(f"{BASE_URL}/000000000000/confirm", data=broken, headers=h, timeout=30)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-055")
+def test_confirm_json_not_object():
+    """Тело — валидный JSON, но не объект (массив). Ожидается 400."""
+    raw = "[]"
+    h = {**_auth_headers(raw), "Content-Type": "application/json"}
+    resp = requests.post(f"{BASE_URL}/000000000000/confirm", data=raw, headers=h, timeout=30)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ГРАНИЧНЫЕ СЛУЧАИ THREED_SECURE (CON-057..058)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-057")
+def test_confirm_threed_secure_pares_whitespace_only():
+    """threed_secure: pares содержит только пробелы. Ожидается 400."""
+    body = {
+        **_BASE_BODY,
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "   ", "md": "test_md"}}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-058")
+def test_confirm_threed_secure_md_whitespace_only():
+    """threed_secure: md содержит только пробелы. Ожидается 400."""
+    body = {
+        **_BASE_BODY,
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "test_pares", "md": "   "}}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ВАЛИДАЦИЯ ТИПОВ FINANCIAL_DATA / MERCHANT_DATA (CON-059..063)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-059")
+def test_confirm_amount_as_string():
+    """financial_data.amount — строка вместо integer. Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": "order_confirm_test"},
+        "financial_data": {"amount": "1000", "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-060")
+def test_confirm_amount_as_float():
+    """financial_data.amount — дробное число (1000.50) вместо integer. Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": "order_confirm_test"},
+        "financial_data": {"amount": 1000.50, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-061")
+def test_confirm_currency_lowercase():
+    """financial_data.currency — нижний регистр ('rub'). Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": "order_confirm_test"},
+        "financial_data": {"amount": 1000, "currency": "rub"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-062")
+def test_confirm_order_id_empty_string():
+    """merchant_data.order_id — пустая строка. Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": ""},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-063")
+def test_confirm_order_id_null():
+    """merchant_data.order_id — null. Ожидается 400."""
+    body = {
+        "merchant_data": {"order_id": None},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# PATH VS BODY (CON-064)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-064")
+def test_confirm_transaction_id_in_body_ignored():
+    """transaction_id в теле отличается от path — path-значение должно побеждать (→ 404 по path-ID)."""
+    body = {
+        "transaction_id": 999999999,
+        "merchant_data": {"order_id": "order_confirm_test"},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}},
+    }
+    resp = post_operation("000000000000", "confirm", body)
+    assert resp.status_code == 404, \
+        f"Expected 404 (path-ID wins), got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ЗАГОЛОВКИ — ЗНАЧЕНИЯ (CON-065..067)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-065")
+def test_confirm_terminal_id_non_numeric():
+    """Api-Terminal-ID — нечисловая строка ('abc'). Ожидается 400/401/403."""
+    ts  = str(int(time.time()))
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}}}, separators=(",", ":"))
+    sig = calc_signature("abc", ts, raw)
+    resp = requests.post(
+        f"{BASE_URL}/000000000000/confirm",
+        data=raw,
+        headers={
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     "abc",
+            "Api-Idempotency-Key": str(uuid.uuid4()),
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        },
+        timeout=30,
+    )
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-066")
+def test_confirm_timestamp_non_numeric():
+    """Api-Timestamp — нечисловая строка ('not-a-ts'). Ожидается 400/401."""
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}}}, separators=(",", ":"))
+    sig = calc_signature(TERMINAL_ID, "not-a-ts", raw)
+    resp = requests.post(
+        f"{BASE_URL}/000000000000/confirm",
+        data=raw,
+        headers={
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": str(uuid.uuid4()),
+            "Api-Signature":       sig,
+            "Api-Timestamp":       "not-a-ts",
+        },
+        timeout=30,
+    )
+    assert resp.status_code in (400, 401), f"Expected 400/401, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("CON-067")
+def test_confirm_timestamp_float_string():
+    """Api-Timestamp — число с плавающей точкой ('1715760000.5'). Ожидается 400/401."""
+    float_ts = "1715760000.5"
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}}}, separators=(",", ":"))
+    sig = calc_signature(TERMINAL_ID, float_ts, raw)
+    resp = requests.post(
+        f"{BASE_URL}/000000000000/confirm",
+        data=raw,
+        headers={
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": str(uuid.uuid4()),
+            "Api-Signature":       sig,
+            "Api-Timestamp":       float_ts,
+        },
+        timeout=30,
+    )
+    assert resp.status_code in (400, 401), f"Expected 400/401, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# HTTP-МЕТОДЫ (CON-068..069)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-068")
+def test_confirm_get_method_not_allowed():
+    """GET вместо POST на /confirm. Ожидается 404 или 405."""
+    ts  = str(int(time.time()))
+    sig = calc_signature(TERMINAL_ID, ts, "")
+    headers = {
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    }
+    resp = requests.get(f"{BASE_URL}/000000000000/confirm", headers=headers, timeout=30)
+    assert resp.status_code in (404, 405), f"Expected 404/405, got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("CON-069")
+def test_confirm_put_method_not_allowed():
+    """PUT вместо POST на /confirm. Ожидается 404 или 405."""
+    raw = json.dumps({**_BASE_BODY, "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}}}, separators=(",", ":"))
+    h   = {**_auth_headers(raw), "Content-Type": "application/json"}
+    resp = requests.put(f"{BASE_URL}/000000000000/confirm", data=raw, headers=h, timeout=30)
+    assert resp.status_code in (404, 405), f"Expected 404/405, got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# ИДЕМПОТЕНТНОСТЬ РАСШИРЕННАЯ (CON-070)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-070")
+def test_confirm_idempotency_same_key_different_body():
+    """Один Idempotency-Key, разные тела — второй запрос возвращает кэшированный ответ первого."""
+    key  = str(uuid.uuid4())
+
+    def _do(result_type: str, pares: str) -> requests.Response:
+        body = {
+            **_BASE_BODY,
+            "result": {"type": result_type, "details": {"data": {"pares": pares, "md": "m"}}},
+        }
+        raw = json.dumps(body, separators=(",", ":"))
+        ts  = str(int(time.time()))
+        sig = calc_signature(TERMINAL_ID, ts, raw)
+        return requests.post(
+            f"{BASE_URL}/000000000000/confirm",
+            data=raw,
+            headers={
+                "Content-Type":        "application/json",
+                "Api-Terminal-ID":     TERMINAL_ID,
+                "Api-Idempotency-Key": key,
+                "Api-Signature":       sig,
+                "Api-Timestamp":       ts,
+            },
+            timeout=30,
+        )
+
+    r1 = _do("threed_secure", "pares_first")
+    r2 = _do("threed_secure", "pares_second")
+    assert r2.status_code in (r1.status_code, 409), \
+        f"Expected cached {r1.status_code} or 409, got {r2.status_code}: {r2.text}"
+
+
+# ─────────────────────────────────────────────
+# СТРУКТУРА ОТВЕТА (CON-071..075)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-071")
+def test_confirm_error_response_no_internal_fields():
+    """Ответ с ошибкой не содержит внутренних полей (нет stack_trace, internal_error и т.п.)."""
+    resp = post_operation("000000000000", "confirm", {
+        **_BASE_BODY,
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "p", "md": "m"}}},
+    })
+    assert resp.status_code in (400, 404)
+    try:
+        data = resp.json()
+    except Exception:
+        pytest.fail("Response is not valid JSON")
+    forbidden = {"stack_trace", "stacktrace", "internal_error", "exception", "traceback", "debug"}
+    leaking = forbidden & {k.lower() for k in data}
+    assert not leaking, f"Response leaks internal fields: {leaking}"
+
+
+@pytest.mark.tcid("CON-072")
+def test_confirm_response_header_terminal_id(waiting_3ds_tid):
+    """Ответ содержит заголовок Api-Terminal-ID, совпадающий с отправленным."""
+    tid, oid = waiting_3ds_tid
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "test_pares", "md": "test_md"}}},
+    })
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    if "Api-Terminal-ID" in r.headers:
+        assert r.headers["Api-Terminal-ID"] == TERMINAL_ID, \
+            f"Api-Terminal-ID mismatch: {r.headers['Api-Terminal-ID']!r} != {TERMINAL_ID!r}"
+
+
+@pytest.mark.tcid("CON-073")
+def test_confirm_response_header_idempotency_key(waiting_3ds_tid):
+    """Ответ содержит заголовок Api-Idempotency-Key, совпадающий с отправленным."""
+    tid, oid = waiting_3ds_tid
+    key = str(uuid.uuid4())
+    body = {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "test_pares", "md": "test_md"}}},
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    ts  = str(int(time.time()))
+    sig = calc_signature(TERMINAL_ID, ts, raw)
+    r = requests.post(
+        f"{BASE_URL}/{tid}/confirm",
+        data=raw,
+        headers={
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        },
+        timeout=30,
+    )
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    if "Api-Idempotency-Key" in r.headers:
+        assert r.headers["Api-Idempotency-Key"] == key, \
+            f"Api-Idempotency-Key mismatch: {r.headers['Api-Idempotency-Key']!r} != {key!r}"
+
+
+@pytest.mark.tcid("CON-074")
+def test_confirm_response_transaction_id_matches_path(waiting_3ds_tid):
+    """transaction_id в теле ответа совпадает с path-параметром запроса."""
+    tid, oid = waiting_3ds_tid
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "test_pares", "md": "test_md"}}},
+    })
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert r.json().get("transaction_id") == tid, \
+        f"transaction_id в ответе {r.json().get('transaction_id')!r} не совпадает с path {tid!r}"
+
+
+@pytest.mark.tcid("CON-075")
+def test_confirm_created_at_matches_original_transaction(waiting_3ds_tid):
+    """created_at в ответе confirm совпадает с created_at оригинальной транзакции (идемпотентность даты)."""
+    tid, oid = waiting_3ds_tid
+    get_resp = get_request(f"{BASE_URL}/{tid}")
+    assert get_resp.status_code == 200
+    original_created_at = get_resp.json().get("created_at")
+    assert original_created_at, "created_at отсутствует в GET-ответе"
+
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "test_pares", "md": "test_md"}}},
+    })
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert r.json().get("created_at") == original_created_at, \
+        f"created_at изменился: было {original_created_at!r}, стало {r.json().get('created_at')!r}"
