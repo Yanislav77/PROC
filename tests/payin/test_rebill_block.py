@@ -16,6 +16,15 @@ recurrent_token: transaction_data.recurrent_token в GET /{id}.
   RB-018: is_recurrent=false → withdrawal_token (не recurrent_token)
   RB-019: без is_recurrent (default false) → withdrawal_token
   RB-020: цепочка rebill (token1 → token2 → rebill)
+  RB-022: capture с отказом банка → 4xx, статус остаётся authorized
+  RB-023: многократные частичные cancel = полная сумма → cancelled
+  RB-024: многократные частичные capture = полная сумма → completed
+  RB-025: block → частичный cancel → capture оставшегося → completed
+  RB-026: block → частичный capture → cancel оставшегося → completed
+  RB-027: cancel суммы больше авторизованной → 4xx
+  RB-028: cancel после полного capture → 409
+  RB-029: cancel одностадийной транзакции (auto) → 409
+  RB-030: cancel с нулевой суммой → 400
 
 ДОПОЛНИТЕЛЬНЫЕ ПРОВЕРКИ:
   RB-010: идемпотентность — повторный запрос с тем же ключом
@@ -44,6 +53,8 @@ from conftest import (
     assert_transaction_response,
     assert_error_response,
     gen_order_id,
+    make_block_payin,
+    make_completed_payin,
 )
 
 _AMOUNT = 10000
@@ -490,3 +501,223 @@ def test_rebill_chain():
     # Шаг 3: rebill с token2
     tid3, _ = _rebill(token2, "auto")
     _assert_status(tid3, "completed")
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 22: capture с отказом банка
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-022")
+def test_capture_bank_decline():
+    """Двухстадийная транзакция (authorized) → /capture → банк возвращает отказ.
+    Ожидается 4xx, статус транзакции остаётся authorized.
+    Карта: 4111111111111111, expiry_month=01."""
+    tid, oid, _ = _payin_card("manual", is_recurrent=False)
+    _assert_status(tid, "authorized")
+
+    body = {
+        "merchant_data":  {"order_id": oid},
+        "financial_data": {"amount": _AMOUNT, "currency": "RUB"},
+    }
+    resp = post_operation(tid, "capture", body)
+    assert resp.status_code in (400, 409, 422), \
+        f"Expected 4xx for bank decline capture, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid, "authorized")
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 23: многократные частичные cancel = полная сумма
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-023")
+def test_multiple_partial_cancel_full_sum():
+    """10 частичных отмен по 100 (итого 1000) — промежуточный статус authorized, финальный cancelled."""
+    oid = gen_order_id("rb_multi_cancel")
+    tid = make_block_payin(oid)
+    _assert_status(tid, "authorized")
+
+    for i in range(10):
+        step_oid = gen_order_id(f"rb_mcancel_s{i}")
+        resp = post_operation(tid, "cancel", {
+            "merchant_data":  {"order_id": step_oid},
+            "financial_data": {"amount": 100, "currency": "RUB"},
+        })
+        assert resp.status_code in (200, 201), \
+            f"Cancel шаг {i + 1}/10 failed: {resp.status_code}: {resp.text}"
+        time.sleep(SETUP_DELAY)
+        if i < 9:
+            poll = get_request(f"{BASE_URL}/{tid}")
+            assert poll.status_code == 200
+            status = poll.json().get("status")
+            assert status in ("authorized", "processing"), \
+                f"После {i + 1}/10 отмен ожидался authorized/processing, got {status!r}"
+
+    _assert_status(tid, "cancelled")
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 24: многократные частичные capture = полная сумма
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-024")
+def test_multiple_partial_capture_full_sum():
+    """10 частичных capture по 100 (итого 1000) — промежуточный статус authorized, финальный completed."""
+    oid = gen_order_id("rb_multi_capture")
+    tid = make_block_payin(oid)
+    _assert_status(tid, "authorized")
+
+    for i in range(10):
+        step_oid = gen_order_id(f"rb_mcapture_s{i}")
+        resp = post_operation(tid, "capture", {
+            "merchant_data":  {"order_id": step_oid},
+            "financial_data": {"amount": 100, "currency": "RUB"},
+        })
+        assert resp.status_code in (200, 201), \
+            f"Capture шаг {i + 1}/10 failed: {resp.status_code}: {resp.text}"
+        time.sleep(SETUP_DELAY)
+        if i < 9:
+            _assert_status(tid, "authorized")
+
+    _assert_status(tid, "completed")
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 25: частичный cancel → capture оставшегося
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-025")
+def test_block_partial_cancel_then_capture_remaining():
+    """Block 1000 → cancel 300 (authorized с уменьшенной суммой) → capture 700 → completed."""
+    oid = gen_order_id("rb_cancel_then_cap")
+    tid = make_block_payin(oid)
+    _assert_status(tid, "authorized")
+
+    resp = post_operation(tid, "cancel", {
+        "merchant_data":  {"order_id": gen_order_id("rb_ctc_cancel")},
+        "financial_data": {"amount": 300, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), \
+        f"Partial cancel failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid, "authorized")
+
+    resp = post_operation(tid, "capture", {
+        "merchant_data":  {"order_id": gen_order_id("rb_ctc_capture")},
+        "financial_data": {"amount": 700, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), \
+        f"Capture remaining failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid, "completed")
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 26: частичный capture → cancel оставшегося
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-026")
+def test_block_partial_capture_then_cancel_remaining():
+    """Block 1000 → capture 300 (authorized) → cancel 700 → completed."""
+    oid = gen_order_id("rb_cap_then_cancel")
+    tid = make_block_payin(oid)
+    _assert_status(tid, "authorized")
+
+    resp = post_operation(tid, "capture", {
+        "merchant_data":  {"order_id": gen_order_id("rb_cpc_capture")},
+        "financial_data": {"amount": 300, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), \
+        f"Partial capture failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid, "authorized")
+
+    resp = post_operation(tid, "cancel", {
+        "merchant_data":  {"order_id": gen_order_id("rb_cpc_cancel")},
+        "financial_data": {"amount": 700, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), \
+        f"Cancel remaining failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid, "completed")
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 27: cancel суммы больше авторизованной
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-027")
+def test_cancel_amount_exceeds_authorized():
+    """Block 1000 → cancel 1500 (> авторизованной суммы) → 4xx."""
+    oid = gen_order_id("rb_cancel_exceed")
+    tid = make_block_payin(oid)
+    _assert_status(tid, "authorized")
+
+    resp = post_operation(tid, "cancel", {
+        "merchant_data":  {"order_id": gen_order_id("rb_cancel_exceed_op")},
+        "financial_data": {"amount": 1500, "currency": "RUB"},
+    })
+    assert resp.status_code in (400, 409, 422), \
+        f"Expected 4xx for over-cancel, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 28: cancel после полного capture
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-028")
+def test_cancel_after_full_capture():
+    """Block → полный capture (completed) → cancel → 409 Conflict."""
+    oid = gen_order_id("rb_cancel_after_cap")
+    tid = make_block_payin(oid)
+    _assert_status(tid, "authorized")
+
+    resp = post_operation(tid, "capture", {
+        "merchant_data":  {"order_id": gen_order_id("rb_cac_capture")},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), f"Capture failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid, "completed")
+
+    resp = post_operation(tid, "cancel", {
+        "merchant_data":  {"order_id": gen_order_id("rb_cac_cancel")},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+    })
+    assert resp.status_code == 409, \
+        f"Expected 409 for cancel after full capture, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 29: cancel одностадийной транзакции
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-029")
+def test_cancel_auto_capture_transaction():
+    """Auto-capture транзакция (completed) → cancel → 409 Conflict."""
+    oid = gen_order_id("rb_cancel_auto")
+    tid = make_completed_payin(oid)
+    _assert_status(tid, "completed")
+
+    resp = post_operation(tid, "cancel", {
+        "merchant_data":  {"order_id": gen_order_id("rb_cancel_auto_op")},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+    })
+    assert resp.status_code == 409, \
+        f"Expected 409 for cancel of auto-capture transaction, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# КЕЙС 30: cancel с нулевой суммой
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("RB-030")
+def test_cancel_zero_amount():
+    """Block → cancel amount=0 → ошибка валидации 400 или 422."""
+    oid = gen_order_id("rb_cancel_zero")
+    tid = make_block_payin(oid)
+    _assert_status(tid, "authorized")
+
+    resp = post_operation(tid, "cancel", {
+        "merchant_data":  {"order_id": gen_order_id("rb_cancel_zero_op")},
+        "financial_data": {"amount": 0, "currency": "RUB"},
+    })
+    assert resp.status_code in (400, 422), \
+        f"Expected 400/422 for zero amount cancel, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)

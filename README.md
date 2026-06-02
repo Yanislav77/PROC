@@ -1,9 +1,9 @@
-эт# PROC — CORE REST API Test Suite
+# PROC — CORE REST API Test Suite
 
 Интеграционные тесты для CORE REST API платёжного шлюза.
 Тесты делают реальные HTTP-запросы к препрод-окружению — никаких моков.
 
-**823+ теста** в 23 файлах, покрывают все эндпоинты API.
+**1200+ тестов** в 31 файле, покрывают все эндпоинты API.
 
 ---
 
@@ -14,10 +14,9 @@
 3. [Что и где настраивать](#3-что-и-где-настраивать)
    - [Секрет и ID терминала → `.env`](#секрет-и-id-терминала--файл-env)
    - [Разные терминалы → `terminals.json`](#разные-терминалы-для-разных-файлов-тестов--terminalsjson)
-   - [Данные карты, клиента, мерчанта](#данные-карты-клиента-мерчанта--testsconftestpy)
+   - [Данные карты, клиента, мерчанта](#данные-карты-клиента-мерчанта--tests_helperspayloadspy)
    - [Суммы и валюты](#суммы-и-валюты--конкретный-файл-теста)
-   - [Токен для rebill](#токен-для-rebill--testspayintest_tokenpy)
-   - [URL API](#url-api--testsconftestpy)
+   - [URL API](#url-api--tests_helpersconfigpy)
 4. [Как запускать тесты](#4-как-запускать-тесты)
 5. [Что делают тесты](#5-что-делают-тесты)
 6. [Как читать результат](#6-как-читать-результат)
@@ -153,6 +152,7 @@ copy terminals.json.example terminals.json
 | `payin/test_qr.py` | QR-оплата |
 | `payin/test_mobile.py` | Мобильные платежи (payin) |
 | `payin/test_token.py` | Токенизированные карты (payin) |
+| `payin/test_rebill_block.py` | Block/Rebill (двухстадийные и рекуррентные) |
 | `payout/test_card.py` | Выплата на карту |
 | `payout/test_token.py` | Выплата по токену |
 | `payout/test_mobile.py` | Выплата на мобильный |
@@ -164,12 +164,15 @@ copy terminals.json.example terminals.json
 | `operations/test_cancel.py` | Отмена (cancel) |
 | `operations/test_refund.py` | Возврат (refund) |
 | `operations/test_confirm.py` | Подтверждение 3DS |
+| `operations/test_confirm_user_action.py` | Подтверждение user-action (P2P, redirect и др.) |
 | `general/test_auth.py` | Авторизация и подпись |
 | `general/test_customer_data.py` | Данные клиента |
 | `general/test_get_transactions.py` | Получение транзакций |
 | `general/test_merchant.py` | Мерчант API |
 | `general/test_payment_links.py` | Платёжные ссылки |
 | `general/test_subscriptions.py` | Подписки |
+
+> Тесты в `web_form/` используют отдельную авторизацию (`CUSTOMER_MAC_KEY`) и не управляются через `terminals.json`.
 
 **Пример: один основной терминал + отдельный для 3DS**
 
@@ -203,10 +206,9 @@ DB_HOST=...
 
 ---
 
-### Данные карты, клиента, мерчанта → `tests/conftest.py`
+### Данные карты, клиента, мерчанта → `tests/_helpers/payloads.py`
 
-Откройте `tests/conftest.py` и найдите блок `SHARED PAYLOADS`.
-Там словари с тестовыми данными, которые используются во всех файлах тестов:
+Откройте `tests/_helpers/payloads.py`. Там словари с тестовыми данными, которые используются во всех файлах тестов:
 
 **Карта** (`CARD_DETAILS`):
 ```python
@@ -243,25 +245,13 @@ MERCHANT_DATA = {
 
 ---
 
-### Токен для rebill → `tests/payin/test_token.py`
-
-В тестах `test_payin_token_rebill` используется токен карты:
-
-```python
-"details": {"token": "b928586b-e6ec-4400-9039-e36f19c0094c"}
-```
-
-Это заглушка. Замените на реальный токен, который вернул API в ответе на Payin с `is_recurrent=True`.
-
----
-
-### URL API → `tests/conftest.py`
+### URL API → `tests/_helpers/config.py`
 
 ```python
 _API_BASE            = "https://papiv3preprod.testpaygate.com/api/v1"
 BASE_URL             = f"{_API_BASE}/transactions"
 SUBSCRIPTIONS_URL    = f"{_API_BASE}/subscriptions"
-PAYMENT_LINKS_URL    = f"{_API_BASE}/payment-links"
+PAYMENT_LINKS_URL    = "https://web3preprod.testpaygate.com/api/v1/payment-links"
 MERCHANT_BALANCE_URL = f"{_API_BASE}/merchant/balance"
 ```
 
@@ -308,11 +298,13 @@ pytest
 pytest tests/payin/
 pytest tests/payout/
 pytest tests/operations/
+pytest tests/web_form/
 
 # один файл
 pytest tests/operations/test_refund.py
 pytest tests/operations/test_capture.py
 pytest tests/payin/test_card.py
+pytest tests/payin/test_rebill_block.py
 
 # один конкретный тест по имени функции
 pytest tests/operations/test_refund.py::test_refund_partial
@@ -324,6 +316,7 @@ pytest "tests/general/test_customer_data.py::test_browser_info_optional_field_mi
 # по ID тест-кейса (маркер @pytest.mark.tcid)
 pytest -k "RF-001"
 pytest -k "CAP-031"
+pytest -k "RB-022"
 pytest -k "CD-082"
 
 # остановиться на первой ошибке
@@ -368,34 +361,50 @@ pytest "tests/general/test_customer_data.py::test_browser_info_optional_field_mi
 Структура тестов:
 ```
 tests/
-├── conftest.py            — общие фикстуры, хелперы, константы
-├── payin/                 — входящие платежи
-│   ├── test_card.py       — карточные Payin (PC-xxx)
-│   ├── test_3ds.py        — 3DS-флоу (3DS-xxx)
-│   ├── test_p2p.py        — метод p2p
-│   ├── test_qr.py         — метод qr
-│   ├── test_mobile.py     — метод mobile
-│   └── test_token.py      — метод token (rebill)
-├── payout/                — выплаты (PY-xxx)
+├── conftest.py                        — общие фикстуры и хелперы
+├── _helpers/                          — вспомогательные модули
+│   ├── config.py                      — URL, таймауты, суммы по умолчанию
+│   ├── payloads.py                    — CARD_DETAILS, MERCHANT_DATA, CUSTOMER_DATA
+│   ├── factories.py                   — make_block_payin, make_completed_payin и др.
+│   ├── http_client.py                 — post_transaction, post_operation, get_request
+│   ├── signatures.py                  — HMAC-подпись запросов
+│   └── validators.py                  — assert_transaction_response, assert_error_response
+├── payin/                             — входящие платежи
+│   ├── test_card.py                   — карточные Payin (PC-xxx)
+│   ├── test_3ds.py                    — 3DS-флоу (3DS-xxx)
+│   ├── test_p2p.py                    — метод p2p (P2P-xxx)
+│   ├── test_qr.py                     — метод qr (QR-xxx)
+│   ├── test_mobile.py                 — метод mobile (MOB-xxx)
+│   ├── test_token.py                  — метод token (PT-xxx)
+│   └── test_rebill_block.py           — block/rebill (RB-xxx)
+├── payout/                            — выплаты (PY-xxx)
 │   ├── test_card.py
 │   ├── test_token.py
 │   ├── test_mobile.py
 │   ├── test_sbp.py
 │   ├── test_wallet.py
 │   ├── test_bank_account.py
-│   └── test_validation.py — общая валидация полей
-├── operations/            — операции над транзакциями
-│   ├── test_capture.py    — списание (CAP-xxx)
-│   ├── test_cancel.py     — отмена (CAN-xxx)
-│   ├── test_confirm.py    — подтверждение (CON-xxx)
-│   └── test_refund.py     — возврат (RF-xxx)
-└── general/               — общие сценарии
-    ├── test_auth.py       — авторизация (A-xxx)
-    ├── test_get_transactions.py — GET статус (GT-xxx)
-    ├── test_customer_data.py   — данные клиента (CD-xxx)
-    ├── test_payment_links.py   — платёжные ссылки (PL-xxx)
-    ├── test_merchant.py        — баланс мерчанта (MB-xxx)
-    └── test_subscriptions.py  — подписки (SB-xxx)
+│   └── test_validation.py             — общая валидация полей
+├── operations/                        — операции над транзакциями
+│   ├── test_capture.py                — списание (CAP-xxx)
+│   ├── test_cancel.py                 — отмена (CAN-xxx)
+│   ├── test_confirm.py                — подтверждение 3DS/redirect (CON-xxx)
+│   ├── test_confirm_user_action.py    — подтверждение user-action (CON-xxx)
+│   └── test_refund.py                 — возврат (RF-xxx)
+├── general/                           — общие сценарии
+│   ├── test_auth.py                   — авторизация (A-xxx)
+│   ├── test_get_transactions.py       — GET статус (GT-xxx)
+│   ├── test_customer_data.py          — данные клиента (CD-xxx)
+│   ├── test_payment_links.py          — платёжные ссылки (PL-xxx)
+│   ├── test_merchant.py               — баланс мерчанта (MB-xxx)
+│   └── test_subscriptions.py          — подписки (SB-xxx)
+└── web_form/                          — Web Form API (payment-sessions)
+    ├── test_session.py                — GET сессии (GP-xxx)
+    ├── test_session_bin.py            — BIN-lookup (BI-xxx)
+    ├── test_session_phone.py          — lookup по телефону (PH-xxx)
+    ├── test_session_transactions.py   — submit card/cardless (TX-xxx, CL-xxx)
+    ├── test_session_ui.py             — UI-логи и события (UL-xxx, UE-xxx)
+    └── test_session_ws.py             — WebSocket (WS-xxx)
 ```
 
 ---
@@ -433,22 +442,49 @@ tests/
 
 ---
 
+### `payin/test_3ds.py` — 3DS-флоу (1 тест, 3DS-001)
+
+Использует карту с CVV 550, которая инициирует `waiting_action` с редиректом.
+
+| Сценарий | Ожидаемый статус |
+|---|---|
+| redirect URL в ответе не закодирован URL-encode | 200 |
+
+---
+
 ### `payin/test_p2p.py`, `test_qr.py`, `test_mobile.py`, `test_token.py` — Payin другими методами
 
 Payin через P2P, QR-код, мобильный платёж и токен (rebill).
 
-| Метод | Примеры сценариев |
-|---|---|
-| p2p | happy path, manual capture, с description, нулевая сумма → 400 |
-| qr | happy path, is_recurrent=True, отрицательная сумма → 400, action в ответе |
-| mobile | phone обязателен, формат E.164, provider опционален, phone=null → 400 |
-| token | token — UUID, отсутствие parent_transaction_id, несуществующий UUID |
+| Метод | Тестов | Примеры сценариев |
+|---|---|---|
+| p2p | 48 | happy path, manual capture, с description, нулевая сумма → 400 |
+| qr | 45 | happy path, is_recurrent=True, отрицательная сумма → 400, action в ответе |
+| mobile | 61 | phone обязателен, формат E.164, provider опционален, phone=null → 400 |
+| token | 52 | token — UUID, отсутствие parent_transaction_id, несуществующий UUID |
 
 ---
 
-### `payout/` — Выплаты (141 тест, PY-001…PY-141)
+### `payin/test_rebill_block.py` — Block и Rebill (27 тестов, RB-001…RB-030)
 
-Покрывает все методы выплат: карта, SBP, кошелёк, банковский счёт, мобильный, токен.
+Двухстадийные (block/capture) и рекуррентные (rebill) транзакции.
+
+| Группа | Сценарии |
+|---|---|
+| Базовые комбинации | auto→auto rebill, auto→manual rebill + capture, manual + capture→rebill |
+| Частичный capture | partial capture (часть суммы), 10× по 100 = 1000 → completed |
+| Частичный cancel | 10× по 100 = 1000 → cancelled |
+| Смешанные операции | cancel 300 → capture 700 → completed; capture 300 → cancel 700 → completed |
+| Негативные | capture > авторизованной суммы → 4xx; cancel после full capture → 409 |
+| Негативные | cancel auto-capture транзакции → 409; cancel amount=0 → 400; банк отказывает capture → 4xx |
+| Токены | recurrent_token является UUID v4; is_recurrent=false → withdrawal_token |
+| Цепочки | token1 → token2 → rebill; токен другого терминала → 403/404 |
+
+---
+
+### `payout/` — Выплаты (141 тест, PY-001…PY-119)
+
+Покрывает все методы выплат: карта, SBP, кошелёк, банковский счёт, мобильный, токен, валидация.
 
 | Метод | Примеры сценариев |
 |---|---|
@@ -480,7 +516,7 @@ Payin через P2P, QR-код, мобильный платёж и токен (
 
 ---
 
-### `general/test_get_transactions.py` — Получение транзакций (GT-001…GT-050)
+### `general/test_get_transactions.py` — Получение транзакций (50 тестов, GT-001…GT-050)
 
 GET `/api/v1/transactions/{id}` и GET `/api/v1/transactions?order_id=`.
 
@@ -498,7 +534,7 @@ GET `/api/v1/transactions/{id}` и GET `/api/v1/transactions?order_id=`.
 
 ---
 
-### `operations/test_capture.py` — Списание заблокированных средств (31 тест, CAP-001…CAP-031)
+### `operations/test_capture.py` — Списание заблокированных средств (32 теста, CAP-001…CAP-032)
 
 POST `/api/v1/transactions/{id}/capture`.
 
@@ -517,7 +553,7 @@ POST `/api/v1/transactions/{id}/capture`.
 
 ---
 
-### `operations/test_cancel.py` — Отмена транзакции (31 тест, CAN-001…CAN-031)
+### `operations/test_cancel.py` — Отмена транзакции (33 теста, CAN-001…CAN-033)
 
 POST `/api/v1/transactions/{id}/cancel`.
 
@@ -534,7 +570,7 @@ POST `/api/v1/transactions/{id}/cancel`.
 
 ---
 
-### `operations/test_confirm.py` — Подтверждение ожидающего действия (32 теста, CON-001…CON-032)
+### `operations/test_confirm.py` — Подтверждение ожидающего действия (49 тестов, CON-001…CON-052)
 
 POST `/api/v1/transactions/{id}/confirm` — используется после 3DS или redirect.
 
@@ -552,7 +588,20 @@ POST `/api/v1/transactions/{id}/confirm` — используется после
 
 ---
 
-### `operations/test_refund.py` — Возвраты (27 тестов, RF-001…RF-036)
+### `operations/test_confirm_user_action.py` — Подтверждение user-action (3 теста, CON-046…CON-048)
+
+POST `/api/v1/transactions/{id}/confirm` для транзакций в статусе `waiting_action`.
+Достигается через P2P (method=p2p).
+
+| Тип подтверждения | Сценарии |
+|---|---|
+| transfer_card | подтверждение / отклонение P2P-перевода |
+| redirect | подтверждение / отклонение редиректа |
+| transfer_phone, transfer_qr, transfer_account, top_up_mobile | аналогично |
+
+---
+
+### `operations/test_refund.py` — Возвраты (48 тестов, RF-001…RF-036+)
 
 POST `/api/v1/transactions/{id}/refund`.
 
@@ -573,7 +622,7 @@ POST `/api/v1/transactions/{id}/refund`.
 
 ---
 
-### `general/test_payment_links.py` — Платёжные ссылки (38 тестов, PL-001…PL-038)
+### `general/test_payment_links.py` — Платёжные ссылки (62 теста, PL-001…PL-061)
 
 POST `/api/v1/payment-links`.
 
@@ -594,7 +643,7 @@ POST `/api/v1/payment-links`.
 
 ---
 
-### `general/test_merchant.py` — Баланс мерчанта (18 тестов, MB-001…MB-018)
+### `general/test_merchant.py` — Баланс мерчанта (25 тестов, MB-001…MB-025)
 
 GET `/api/v1/merchant/balance`.
 
@@ -609,7 +658,7 @@ GET `/api/v1/merchant/balance`.
 
 ---
 
-### `general/test_subscriptions.py` — Управление подписками (18 тестов, SB-001…SB-018)
+### `general/test_subscriptions.py` — Управление подписками (37 тестов, SB-001…SB-039)
 
 DELETE `/api/v1/subscriptions/{token}`.
 
@@ -624,6 +673,31 @@ DELETE `/api/v1/subscriptions/{token}`.
 | Лишний сегмент URL | 400 / 404 / 405 |
 | Content-Type ответа — application/json | 200 |
 | Idempotency key не требуется (DELETE) | 404 / 409 |
+
+---
+
+### `web_form/` — Web Form API (132 теста)
+
+Тесты API веб-формы платёжной сессии (`https://web3preprod.testpaygate.com`).
+Используют отдельную авторизацию: `Api-Session-ID` + HMAC-SHA256 по `CUSTOMER_MAC_KEY`.
+
+| Файл | ID | Что тестирует |
+|---|---|---|
+| `test_session.py` | GP-001…GP-014 | GET `/api/v1/payment-sessions/{token}` — получение сессии |
+| `test_session_bin.py` | BI-001…BI-016 | POST `.../bin` — BIN-lookup по номеру карты |
+| `test_session_phone.py` | PH-001…PH-018 | POST `.../phone` — lookup страны по номеру телефона |
+| `test_session_transactions.py` | TX-001…TX-023, CL-001…CL-021 | POST `.../transactions/card` и `.../cardless` — сабмит платежа |
+| `test_session_ui.py` | UL-001…UL-014, UE-001…UE-014 | POST `.../ui/logs` и `.../ui/events` — UI-логи и события |
+| `test_session_ws.py` | WS-001…WS-012 | GET `.../ws` — WebSocket-соединение |
+
+| Сценарии (общие для web_form) | Ожидаемый результат |
+|---|---|
+| Несуществующий / невалидный payment_token | 400 / 404 |
+| Отсутствует Api-Session-ID или Api-Signature | 400 / 401 |
+| Неверная подпись | 401 |
+| Обязательные поля ответа присутствуют | 200 / 201 |
+| Повторный сабмит (double_confirmation) | 200, пустое тело |
+| WS: подключение, получение состояния, push 3DS_method | соответствующие WS-фреймы |
 
 ---
 
@@ -650,7 +724,7 @@ DELETE `/api/v1/subscriptions/{token}`.
 ```
 tests/payin/test_card.py::test_payin_card_auto_capture   PASSED
 ...
-823 passed in 410.32s
+1273 passed in 640.15s
 ```
 
 Упавший тест:
@@ -688,13 +762,13 @@ API вернул ошибку валидации. Ответ содержит п
 AssertionError: Expected 201, got 422: {"error": "invalid pan format"}
 ```
 Читайте текст ошибки — там написано, что именно не так.
-Проверьте `CARD_DETAILS`, `MERCHANT_DATA` в `tests/conftest.py`.
+Проверьте `CARD_DETAILS`, `MERCHANT_DATA` в `tests/_helpers/payloads.py`.
 
 ---
 
 ### `Expected 201, got 404` — неверный URL или нет доступа
 
-Проверьте `_API_BASE` в `tests/conftest.py` и доступность препрода (VPN).
+Проверьте `_API_BASE` в `tests/_helpers/config.py` и доступность препрода (VPN).
 
 ---
 
@@ -742,7 +816,7 @@ SETUP_DELAY=0.5   # пауза после создания родительск�
 
 Пример запуска с уменьшенной задержкой:
 ```
-TEST_DELAY=1.0 pytest tests/test_merchant.py
+TEST_DELAY=1.0 pytest tests/general/test_merchant.py
 ```
 
 или в `.env`:
