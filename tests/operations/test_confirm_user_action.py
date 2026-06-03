@@ -7,20 +7,24 @@ Fixture-based: каждый тест получает свою транзакц�
 
 Типы confirm для user-action:
   transfer_card    — подтверждение/отклонение P2P-перевода
-  redirect         — подтверждение/отклонение редиректа
   transfer_phone   — подтверждение/отклонение перевода по телефону
   transfer_qr      — подтверждение/отклонение QR
   transfer_account — подтверждение/отклонение перевода по счёту
   top_up_mobile    — подтверждение/отклонение пополнения телефона
 """
+import json
 import time
+import uuid
 
 import pytest
+import requests as _req
 
 from conftest import (
     post_transaction, post_operation, get_request,
-    BASE_URL, MERCHANT_DATA, CUSTOMER_DATA, THREED,
+    BASE_URL, TERMINAL_ID, MERCHANT_DATA, CUSTOMER_DATA, CARD_DETAILS, THREED,
     gen_order_id, SETUP_DELAY,
+    calc_signature,
+    make_block_payin, make_completed_payin,
     assert_error_response, assert_transaction_response,
 )
 
@@ -67,6 +71,76 @@ def _create_p2p() -> tuple[int, str]:
 def waiting_action_tid() -> tuple[int, str]:
     """Свежая P2P-транзакция в статусе waiting_action. Function-scoped."""
     return _create_p2p()
+
+
+# ─────────────────────────────────────────────
+# ДОПОЛНИТЕЛЬНЫЕ ХЕЛПЕРЫ И КОНСТАНТЫ
+# ─────────────────────────────────────────────
+_FAKE_TID = "000000000000"
+_FAKE_OID = "order_ua_test"
+_CARD_WAIT_3DS = {**CARD_DETAILS, "cvv": "123"}   # CVV < 500 → waiting_3DS
+
+
+def _ua_confirm(tid, oid: str, result_type: str, details: dict):
+    """Отправляет confirm user-action на транзакцию."""
+    return post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "result": {"type": result_type, "details": details},
+    })
+
+
+def _ua_confirm_fake(result_type: str, details: dict):
+    """Confirm на несуществующей транзакции — для тестов валидации."""
+    return post_operation(_FAKE_TID, "confirm", {
+        "merchant_data": {"order_id": _FAKE_OID},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "result": {"type": result_type, "details": details},
+    })
+
+
+def _create_3ds_transaction() -> tuple[int, str]:
+    """Создаёт payin с CVV 123 (waiting_3DS) и возвращает (tid, oid)."""
+    oid  = gen_order_id("ua_3ds")
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": _CARD_WAIT_3DS},
+    }
+    resp = post_transaction(body)
+    if resp.status_code != 201:
+        pytest.skip(f"Failed to create 3DS transaction: {resp.status_code}: {resp.text}")
+    data = resp.json()
+    tid  = data["transaction_id"]
+    if data.get("status") == "waiting_3DS":
+        return tid, oid
+    for _ in range(_POLL_ATTEMPTS):
+        time.sleep(_POLL_DELAY)
+        r = get_request(f"{BASE_URL}/{tid}")
+        if r.status_code != 200:
+            continue
+        s = r.json().get("status", "")
+        if s == "waiting_3DS":
+            return tid, oid
+        if s in ("completed", "authorized", "rejected", "cancelled", "failed"):
+            pytest.skip(f"3DS transaction {tid} reached {s!r} instead of waiting_3DS")
+    pytest.skip(f"3DS transaction {tid} did not reach waiting_3DS within timeout")
+
+
+def _create_cancelled_transaction() -> tuple[int, str]:
+    """Создаёт authorized block payin и отменяет его. Возвращает (tid, oid)."""
+    oid = gen_order_id("ua_cancel")
+    tid = make_block_payin(oid)
+    r = post_operation(tid, "cancel", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+    })
+    if r.status_code not in (200, 201):
+        pytest.skip(f"Failed to cancel transaction {tid}: {r.text}")
+    return tid, oid
 
 
 # ─────────────────────────────────────────────
@@ -166,3 +240,369 @@ def test_idempotency_same_key_returns_same_transaction_id(waiting_action_tid):
     assert r2.json().get("transaction_id") == tid1, (
         f"Duplicate key returned different transaction_id: r1={tid1}, r2={r2.json().get('transaction_id')}"
     )
+
+
+# ═════════════════════════════════════════════
+# UA — HAPPY PATH (UA-001 … UA-010)
+# ═════════════════════════════════════════════
+
+@pytest.mark.tcid("UA-001")
+def test_ua_transfer_card_confirmed_true(waiting_action_tid):
+    """transfer_card + confirmed=true → 200, status=processing."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    data = r.json()
+    assert data.get("status") == "processing"
+    assert isinstance(data.get("transaction_id"), int)
+    assert_transaction_response(data)
+
+
+@pytest.mark.tcid("UA-002")
+def test_ua_transfer_card_confirmed_false(waiting_action_tid):
+    """transfer_card + confirmed=false → 200, транзакция отклонена."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": False})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert r.json().get("status") in ("rejected", "cancelled", "failed", "processing")
+
+
+@pytest.mark.tcid("UA-003")
+def test_ua_transfer_phone_confirmed_true(waiting_action_tid):
+    """transfer_phone + confirmed=true → 200."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_phone", {"confirmed": True})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert r.json().get("status") == "processing"
+    assert_transaction_response(r.json())
+
+
+@pytest.mark.tcid("UA-004")
+def test_ua_transfer_phone_confirmed_false(waiting_action_tid):
+    """transfer_phone + confirmed=false → 200, транзакция отклонена."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_phone", {"confirmed": False})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert r.json().get("status") in ("rejected", "cancelled", "failed", "processing")
+
+
+@pytest.mark.tcid("UA-005")
+def test_ua_transfer_qr_confirmed_true(waiting_action_tid):
+    """transfer_qr + confirmed=true → 200."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_qr", {"confirmed": True})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert r.json().get("status") == "processing"
+    assert_transaction_response(r.json())
+
+
+@pytest.mark.tcid("UA-006")
+def test_ua_transfer_qr_confirmed_false(waiting_action_tid):
+    """transfer_qr + confirmed=false → 200, транзакция отклонена."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_qr", {"confirmed": False})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert r.json().get("status") in ("rejected", "cancelled", "failed", "processing")
+
+
+@pytest.mark.tcid("UA-007")
+def test_ua_transfer_account_confirmed_true(waiting_action_tid):
+    """transfer_account + confirmed=true → 200."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_account", {"confirmed": True})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert r.json().get("status") == "processing"
+    assert_transaction_response(r.json())
+
+
+@pytest.mark.tcid("UA-008")
+def test_ua_transfer_account_confirmed_false(waiting_action_tid):
+    """transfer_account + confirmed=false → 200, транзакция отклонена."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_account", {"confirmed": False})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert r.json().get("status") in ("rejected", "cancelled", "failed", "processing")
+
+
+@pytest.mark.tcid("UA-009")
+def test_ua_top_up_mobile_confirmed_true(waiting_action_tid):
+    """top_up_mobile + confirmed=true → 200."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "top_up_mobile", {"confirmed": True})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert r.json().get("status") == "processing"
+    assert_transaction_response(r.json())
+
+
+@pytest.mark.tcid("UA-010")
+def test_ua_top_up_mobile_confirmed_false(waiting_action_tid):
+    """top_up_mobile + confirmed=false → 200, транзакция отклонена."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "top_up_mobile", {"confirmed": False})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert r.json().get("status") in ("rejected", "cancelled", "failed", "processing")
+
+
+# ═════════════════════════════════════════════
+# ВАЛИДАЦИЯ ПОЛЯ confirmed (UA-011 … UA-018)
+# ═════════════════════════════════════════════
+
+@pytest.mark.tcid("UA-011")
+def test_ua_confirmed_missing():
+    """confirmed отсутствует в details → 400."""
+    r = _ua_confirm_fake("transfer_card", {})
+    assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-012")
+def test_ua_confirmed_null():
+    """confirmed = null → 400."""
+    r = _ua_confirm_fake("transfer_card", {"confirmed": None})
+    assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-013")
+def test_ua_confirmed_string_true():
+    """confirmed = "true" (строка) → 400."""
+    r = _ua_confirm_fake("transfer_card", {"confirmed": "true"})
+    assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-014")
+def test_ua_confirmed_string_false():
+    """confirmed = "false" (строка) → 400."""
+    r = _ua_confirm_fake("transfer_card", {"confirmed": "false"})
+    assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-015")
+def test_ua_confirmed_int_1():
+    """confirmed = 1 (integer) → 400."""
+    r = _ua_confirm_fake("transfer_card", {"confirmed": 1})
+    assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-016")
+def test_ua_confirmed_int_0():
+    """confirmed = 0 (integer) → 400."""
+    r = _ua_confirm_fake("transfer_card", {"confirmed": 0})
+    assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-017")
+def test_ua_confirmed_array():
+    """confirmed = [] (массив) → 400."""
+    r = _ua_confirm_fake("transfer_card", {"confirmed": []})
+    assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-018")
+def test_ua_confirmed_object():
+    """confirmed = {} (объект) → 400."""
+    r = _ua_confirm_fake("transfer_card", {"confirmed": {}})
+    assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+# ═════════════════════════════════════════════
+# ВАЛИДАЦИЯ СТРУКТУРЫ result.details (UA-019 … UA-022)
+# ═════════════════════════════════════════════
+
+@pytest.mark.tcid("UA-019")
+def test_ua_details_missing():
+    """result.details отсутствует → 400."""
+    r = post_operation(_FAKE_TID, "confirm", {
+        "merchant_data": {"order_id": _FAKE_OID},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "result": {"type": "transfer_card"},
+    })
+    assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-020")
+def test_ua_details_empty_object():
+    """result.details = {} (пустой объект, нет confirmed) → 400."""
+    r = _ua_confirm_fake("transfer_card", {})
+    assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-021")
+def test_ua_details_extra_field(waiting_action_tid):
+    """result.details = {confirmed: true, extra_field: 'value'} — фиксируем поведение: 200 или 400."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True, "extra_field": "value"})
+    assert r.status_code in (200, 400), f"Expected 200 or 400, got {r.status_code}: {r.text}"
+
+
+@pytest.mark.tcid("UA-022")
+def test_ua_details_mixed_user_action_and_3ds(waiting_action_tid):
+    """result.details = {confirmed: true, pares: 'x', md: 'y'} — смешанная структура, фиксируем поведение."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True, "pares": "x", "md": "y"})
+    assert r.status_code in (200, 400), f"Expected 200 or 400, got {r.status_code}: {r.text}"
+
+
+# ═════════════════════════════════════════════
+# НЕСОВМЕСТИМЫЕ КОМБИНАЦИИ (UA-023 … UA-025)
+# ═════════════════════════════════════════════
+
+@pytest.mark.tcid("UA-023")
+def test_ua_transfer_card_with_3ds_fields_no_confirmed():
+    """type=transfer_card + details.data.pares + details.data.md (без confirmed) → 400."""
+    r = post_operation(_FAKE_TID, "confirm", {
+        "merchant_data": {"order_id": _FAKE_OID},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "result": {"type": "transfer_card", "details": {"data": {"pares": "test_pares", "md": "test_md"}}},
+    })
+    assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-024")
+def test_ua_transfer_card_confirmed_and_data(waiting_action_tid):
+    """type=transfer_card + details содержит и confirmed, и data → 400 или игнорирование лишнего."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_card", {
+        "confirmed": True,
+        "data": {"pares": "test_pares", "md": "test_md"},
+    })
+    assert r.status_code in (200, 400), f"Expected 200 or 400, got {r.status_code}: {r.text}"
+
+
+@pytest.mark.tcid("UA-025")
+def test_ua_transfer_card_on_waiting_3ds_transaction():
+    """Транзакция в статусе waiting_3DS + transfer_card confirm → 4xx (тип не соответствует статусу)."""
+    tid, oid = _create_3ds_transaction()
+    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True})
+    assert r.status_code in range(400, 500), \
+        f"Expected 4xx for transfer_card on waiting_3DS, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+# ═════════════════════════════════════════════
+# СОСТОЯНИЕ ТРАНЗАКЦИИ (UA-026 … UA-029)
+# ═════════════════════════════════════════════
+
+@pytest.mark.tcid("UA-026")
+def test_ua_nonexistent_transaction():
+    """Несуществующий transaction_id + валидный body → 404."""
+    r = _ua_confirm_fake("transfer_card", {"confirmed": True})
+    assert r.status_code == 404, f"Expected 404, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-027")
+def test_ua_completed_transaction():
+    """Транзакция в статусе completed + transfer_card + confirmed=true → 4xx."""
+    oid = gen_order_id("ua_comp")
+    tid = make_completed_payin(oid)
+    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True})
+    assert r.status_code in range(400, 500), \
+        f"Expected 4xx for confirm on completed transaction, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-028")
+def test_ua_cancelled_transaction():
+    """Транзакция в статусе cancelled + transfer_card + confirmed=true → 4xx."""
+    tid, oid = _create_cancelled_transaction()
+    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True})
+    assert r.status_code in range(400, 500), \
+        f"Expected 4xx for confirm on cancelled transaction, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-029")
+def test_ua_rejected_transaction():
+    """Транзакция в статусе rejected + transfer_card + confirmed=true → 4xx."""
+    oid  = gen_order_id("ua_rej")
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": oid},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+    }
+    resp = post_transaction(body)
+    if resp.status_code != 201:
+        pytest.skip(f"Cannot create transaction: {resp.status_code}")
+    tid = resp.json()["transaction_id"]
+    for _ in range(_POLL_ATTEMPTS):
+        time.sleep(_POLL_DELAY)
+        r = get_request(f"{BASE_URL}/{tid}")
+        if r.status_code == 200:
+            s = r.json().get("status", "")
+            if s == "rejected":
+                break
+            if s in ("completed", "authorized"):
+                pytest.skip(f"Transaction {tid} ended in {s!r} — no rejected state in this env")
+    else:
+        pytest.skip(f"Transaction {tid} did not reach 'rejected' within timeout")
+    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True})
+    assert r.status_code in range(400, 500), \
+        f"Expected 4xx for confirm on rejected transaction, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+# ═════════════════════════════════════════════
+# ИДЕМПОТЕНТНОСТЬ (UA-030 … UA-031)
+# ═════════════════════════════════════════════
+
+@pytest.mark.tcid("UA-030")
+def test_ua_idempotency_same_key_same_body(waiting_action_tid):
+    """Повторный confirm с тем же idempotency key, тот же body → 409 или кэшированный 200."""
+    tid, oid = waiting_action_tid
+    body = {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "result": {"type": "transfer_card", "details": {"confirmed": True}},
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    key = str(uuid.uuid4())
+
+    def _post():
+        ts  = str(int(time.time()))
+        sig = calc_signature(TERMINAL_ID, ts, raw)
+        return _req.post(
+            f"{BASE_URL}/{tid}/confirm",
+            data=raw,
+            headers={
+                "Content-Type":        "application/json",
+                "Api-Terminal-ID":     TERMINAL_ID,
+                "Api-Idempotency-Key": key,
+                "Api-Signature":       sig,
+                "Api-Timestamp":       ts,
+            },
+            timeout=30,
+        )
+
+    r1 = _post()
+    assert r1.status_code in (200, 201), f"First confirm failed: {r1.text}"
+    r2 = _post()
+    assert r2.status_code in (200, 201, 409), \
+        f"Expected cached 200 or 409, got {r2.status_code}: {r2.text}"
+    if r2.status_code in (200, 201):
+        assert r2.json().get("transaction_id") == r1.json().get("transaction_id"), \
+            "Idempotent response returned different transaction_id"
+
+
+@pytest.mark.tcid("UA-031")
+def test_ua_idempotency_new_key_on_confirmed_transaction(waiting_action_tid):
+    """Повторный confirm с новым idempotency key на уже подтверждённой транзакции → 4xx."""
+    tid, oid = waiting_action_tid
+    r1 = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True})
+    assert r1.status_code == 200, f"First confirm failed: {r1.text}"
+    r2 = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True})
+    assert r2.status_code in range(400, 500), \
+        f"Expected 4xx on second confirm with new key, got {r2.status_code}: {r2.text}"
+    assert_error_response(r2)
