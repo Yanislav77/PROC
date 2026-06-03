@@ -120,9 +120,9 @@ def test_get_transaction_no_auth():
 
 
 @pytest.mark.tcid("GT-008")
-def test_get_transaction_invalid_signature():
-    """GET /{id} с подписью посчитанной от другого timestamp. Ожидается 401 или 403."""
-    url = f"{BASE_URL}/000000000000"
+def test_get_transaction_invalid_signature(payin_transaction_id):
+    """GET /{id} по реальному ID с подписью от другого timestamp. Ожидается 401 или 403."""
+    url = f"{BASE_URL}/{payin_transaction_id}"
     ts_header = str(int(time.time()))
     ts_signed = str(int(time.time()) - 1)  # подпись от другого timestamp — формат верный, значение нет
     sig = calc_signature(TERMINAL_ID, ts_signed)
