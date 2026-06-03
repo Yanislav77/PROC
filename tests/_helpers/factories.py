@@ -2,11 +2,14 @@ import re
 import time
 
 import _helpers.config as _cfg
-from _helpers.http_client import post_transaction
+from _helpers.http_client import get_request, post_transaction
 from _helpers.payloads import CARD_DETAILS, CUSTOMER_DATA, MERCHANT_DATA, THREED
 
 
 _ORDER_ID_SLUG_MAX_LEN = 60
+_FACTORY_POLL_ATTEMPTS = 10
+_FACTORY_POLL_DELAY    = 2.0
+
 
 def gen_order_id(name: str) -> str:
     """Unique order_id per test run, tied to a semantic name."""
@@ -14,8 +17,29 @@ def gen_order_id(name: str) -> str:
     return f"{_cfg.RUN_ID}_{slug}"
 
 
+def _wait_for_status(tid: int, expected: str) -> None:
+    """Poll GET /{tid} until expected status or raise AssertionError on timeout/bad terminal state."""
+    for _ in range(_FACTORY_POLL_ATTEMPTS):
+        time.sleep(_FACTORY_POLL_DELAY)
+        r = get_request(f"{_cfg.BASE_URL}/{tid}")
+        if r.status_code != 200:
+            continue
+        status = r.json().get("status", "")
+        if status == expected:
+            return
+        if status in ("rejected", "cancelled", "failed"):
+            raise AssertionError(
+                f"Setup transaction {tid} reached unexpected terminal status {status!r} "
+                f"(expected {expected!r})"
+            )
+    raise AssertionError(
+        f"Setup transaction {tid} did not reach {expected!r} within "
+        f"{_FACTORY_POLL_ATTEMPTS * _FACTORY_POLL_DELAY:.0f}s"
+    )
+
+
 def make_block_payin(order_id: str | None = None, description: str | None = None) -> int:
-    """Creates Payin with capture_mode=manual (hold) and returns transaction_id."""
+    """Creates Payin with capture_mode=manual, polls until 'authorized', returns transaction_id."""
     md = {**MERCHANT_DATA, "order_id": order_id or gen_order_id("block")}
     if description is not None:
         md["description"] = description
@@ -29,12 +53,14 @@ def make_block_payin(order_id: str | None = None, description: str | None = None
     }
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Setup Block Payin failed: {resp.text}"
-    time.sleep(_cfg.SETUP_DELAY)
-    return resp.json()["transaction_id"]
+    tid = resp.json()["transaction_id"]
+    if resp.json().get("status") != "authorized":
+        _wait_for_status(tid, "authorized")
+    return tid
 
 
 def make_completed_payin(order_id: str | None = None) -> int:
-    """Creates auto-capture payin and returns transaction_id."""
+    """Creates auto-capture payin, polls until 'completed', returns transaction_id."""
     body = {
         "type": "payin",
         "merchant_data": {**MERCHANT_DATA, "order_id": order_id or gen_order_id("auto")},
@@ -45,8 +71,10 @@ def make_completed_payin(order_id: str | None = None) -> int:
     }
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Setup auto payin failed: {resp.text}"
-    time.sleep(_cfg.SETUP_DELAY)
-    return resp.json()["transaction_id"]
+    tid = resp.json()["transaction_id"]
+    if resp.json().get("status") != "completed":
+        _wait_for_status(tid, "completed")
+    return tid
 
 
 def make_op_body(order_id: str, amount: int = _cfg.BLOCK_PAYIN_AMOUNT) -> dict:

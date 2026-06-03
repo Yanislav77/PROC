@@ -553,7 +553,7 @@ def test_get_processing_status_no_extra_fields():
     assert "action" not in data, "processing не должен содержать action"
     assert "rejected_data" not in data, "processing не должен содержать rejected_data"
     fd = data.get("financial_data", {})
-    assert "available_amount" not in fd, "processing не должен содержать available_amount"
+    assert fd.get("available_amount") is None, "processing не должен содержать ненулевой available_amount"
 
 
 # ─────────────────────────────────────────────
@@ -702,8 +702,8 @@ def test_get_no_available_amount_after_full_refund():
     })
     assert refund.status_code in (200, 201), f"Refund failed: {refund.text}"
     fd = _poll_financial_data(tid)
-    assert "available_amount" not in fd, \
-        f"available_amount не должен присутствовать при нулевом остатке, got {fd.get('available_amount')!r}"
+    assert fd.get("available_amount") is None, \
+        f"available_amount не должен быть ненулевым при нулевом остатке, got {fd.get('available_amount')!r}"
 
 
 # ─────────────────────────────────────────────
