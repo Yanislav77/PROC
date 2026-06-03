@@ -3,7 +3,7 @@
 Интеграционные тесты для CORE REST API платёжного шлюза.
 Тесты делают реальные HTTP-запросы к препрод-окружению — никаких моков.
 
-**1200+ тестов** в 31 файле, покрывают все эндпоинты API.
+**1400+ тестов** в 31 файле, покрывают все эндпоинты API.
 
 ---
 
@@ -423,7 +423,7 @@ tests/
 │   ├── test_qr.py                     — метод qr (QR-xxx)
 │   ├── test_mobile.py                 — метод mobile (MOB-xxx)
 │   ├── test_token.py                  — метод token (PT-xxx)
-│   └── test_rebill_block.py           — block/rebill (RB-xxx)
+│   └── test_rebill_block.py           — block/rebill/подписки (RB-xxx)
 ├── payout/                            — выплаты (PY-xxx)
 │   ├── test_card.py
 │   ├── test_token.py
@@ -435,8 +435,8 @@ tests/
 ├── operations/                        — операции над транзакциями
 │   ├── test_capture.py                — списание (CAP-xxx)
 │   ├── test_cancel.py                 — отмена (CAN-xxx)
-│   ├── test_confirm.py                — подтверждение 3DS/redirect (CON-xxx)
-│   ├── test_confirm_user_action.py    — подтверждение user-action (CON-xxx)
+│   ├── test_confirm.py                — подтверждение 3DS (CON-xxx)
+│   ├── test_confirm_user_action.py    — подтверждение user-action (UA-xxx, CON-046..048)
 │   └── test_refund.py                 — возврат (RF-xxx)
 ├── general/                           — общие сценарии
 │   ├── test_auth.py                   — авторизация (A-xxx)
@@ -510,22 +510,28 @@ Payin через P2P, QR-код, мобильный платёж и токен (
 | mobile | 61 | phone обязателен, формат E.164, provider опционален, phone=null → 400 |
 | token | 52 | token — UUID, отсутствие parent_transaction_id, несуществующий UUID |
 
+В тестах PT-28-1, PT-35-1, PT-37-1, PT-37-2 реализован полный инлайн-флоу:
+1. Card payin (is_recurrent=True/False) → 2. Опрос GET /{tid} до появления токена → 3. Payin method=token.
+Каждый шаг виден в HTML-отчёте отдельным HTTP-запросом.
+
 ---
 
-### `payin/test_rebill_block.py` — Block и Rebill (27 тестов, RB-001…RB-030)
+### `payin/test_rebill_block.py` — Block, Rebill и Подписки (46 тестов, RB-001…RB-046)
 
-Двухстадийные (block/capture) и рекуррентные (rebill) транзакции.
+Двухстадийные (block/capture), рекуррентные (rebill) транзакции и управление подписками.
 
-| Группа | Сценарии |
-|---|---|
-| Базовые комбинации | auto→auto rebill, auto→manual rebill + capture, manual + capture→rebill |
-| Частичный capture | partial capture (часть суммы), 10× по 100 = 1000 → completed |
-| Частичный cancel | 10× по 100 = 1000 → cancelled |
-| Смешанные операции | cancel 300 → capture 700 → completed; capture 300 → cancel 700 → completed |
-| Негативные | capture > авторизованной суммы → 4xx; cancel после full capture → 409 |
-| Негативные | cancel auto-capture транзакции → 409; cancel amount=0 → 400; банк отказывает capture → 4xx |
-| Токены | recurrent_token является UUID v4; is_recurrent=false → withdrawal_token |
-| Цепочки | token1 → token2 → rebill; токен другого терминала → 403/404 |
+| Группа | ID | Сценарии |
+|---|---|---|
+| Базовые комбинации | RB-001..004 | auto→auto rebill, auto→manual rebill + capture, manual + capture→rebill |
+| Частичный capture/cancel | RB-006..007, RB-023..026 | partial capture, 10× cancel = полная сумма, смешанные операции |
+| Негативные capture | RB-008, RB-013..014, RB-022 | несуществующая транзакция → 404; сумма > авторизованной → 4xx; банк отказывает |
+| Негативные cancel | RB-027..030 | сумма > авторизованной → 4xx; после full capture → 409; auto-capture → 409; amount=0 → 400 |
+| Токены | RB-011..012, RB-016..020 | recurrent_token — UUID v4; is_recurrent=false → withdrawal_token; цепочки |
+| Идемпотентность | RB-010 | одинаковый ключ → один результат |
+| **Двухстадийные rebill** | RB-031..040 | manual rebill → full/partial capture, cancel, смешанные операции, банковский отказ на capture |
+| **Управление подписками** | RB-041..046 | cancel до/после rebill, pending rebill при отмене, повторный cancel → 404, несуществующий токен → 404 |
+
+**DELETE** `/api/v1/subscriptions/{token}` — тесты RB-041..046.
 
 ---
 
@@ -617,9 +623,10 @@ POST `/api/v1/transactions/{id}/cancel`.
 
 ---
 
-### `operations/test_confirm.py` — Подтверждение ожидающего действия (66 тестов, CON-001…CON-075)
+### `operations/test_confirm.py` — Подтверждение 3DS (CON-001…CON-077)
 
-POST `/api/v1/transactions/{id}/confirm` — используется после 3DS или redirect.
+POST `/api/v1/transactions/{id}/confirm` — исключительно тип `threed_secure` (waiting_3DS).
+User-action типы (transfer_card, transfer_phone, transfer_qr, transfer_account, top_up_mobile, redirect) вынесены в `test_confirm_user_action.py`.
 
 | Группа | Сценарии | Ожидаемый статус |
 |---|---|---|
@@ -639,26 +646,36 @@ POST `/api/v1/transactions/{id}/confirm` — используется после
 | Методы | GET / PUT вместо POST | 404 / 405 |
 | Идемпотентность | Одинаковый ключ, разное тело — кэшированный ответ | 200 / 409 |
 | Happy path | 3DS success — статус processing | 200 |
-| Happy path | 3DS-redirect success — статус processing | 200 |
-| Happy path | 3DS-redirect неверный тип → 4xx | 400 |
 | Ответ | Обязательные поля присутствуют, created_at ISO-8601 UTC | 200 |
 | Ответ | Нет внутренних полей (schema leakage) | — |
 | Ответ | `transaction_id` в ответе = path-параметру | 200 |
 | Ответ | `created_at` в ответе = `created_at` оригинальной транзакции | 200 |
 | Ответ | Echo заголовков `Api-Terminal-ID` / `Api-Idempotency-Key` | 200 |
+| **Обратная совместимость** | CON-076: старый PascalCase-формат тела → 4xx | 400 |
+| **Обратная совместимость** | CON-077: старые заголовки X-SITE-ID/X-REQUEST-ID → 4xx | 400 / 401 |
 
 ---
 
-### `operations/test_confirm_user_action.py` — Подтверждение user-action (3 теста, CON-046…CON-048)
+### `operations/test_confirm_user_action.py` — Подтверждение user-action (UA-001…UA-045)
 
-POST `/api/v1/transactions/{id}/confirm` для транзакций в статусе `waiting_action`.
-Достигается через P2P (method=p2p).
+POST `/api/v1/transactions/{id}/confirm` для транзакций в статусах `waiting_action` и `waiting_3DS_redirect`.
 
-| Тип подтверждения | Сценарии |
-|---|---|
-| transfer_card | подтверждение / отклонение P2P-перевода |
-| redirect | подтверждение / отклонение редиректа |
-| transfer_phone, transfer_qr, transfer_account, top_up_mobile | аналогично |
+| Группа | ID | Сценарии |
+|---|---|---|
+| **Happy path** | UA-001..012 | transfer_card/phone/qr/account/top_up_mobile/redirect × confirmed=true/false → 200 |
+| **Валидация confirmed** | UA-013..022 | missing, null, строки "true"/"false", int 1/0, array, object → 400; отдельно redirect |
+| **Валидация details** | UA-023..028 | missing, {}, extra_field, смешанная 3DS-структура; отдельно redirect + details |
+| **Несовместимые комбинации** | UA-029..034 | transfer_card + 3DS-поля; redirect + 3DS-поля; waiting_3DS + transfer_card/redirect |
+| **Состояние транзакции** | UA-035..043 | nonexistent → 404; completed/cancelled/rejected → 4xx; waiting_3DS_redirect + redirect ✓ |
+| **Идемпотентность** | UA-044..045 | одинаковый ключ → 409/200; новый ключ на подтверждённой → 4xx |
+
+Транзакция `waiting_action` создаётся через P2P (method=p2p).
+Транзакция `waiting_3DS_redirect` создаётся картой с CVV=550.
+
+UA-041..043 — тесты специфично для `waiting_3DS_redirect`:
+- UA-041: redirect + confirmed=true → 200 (валидная комбинация)
+- UA-042: redirect + confirmed=false → 200
+- UA-043: transfer_card на waiting_3DS_redirect → 4xx (неверный тип)
 
 ---
 
