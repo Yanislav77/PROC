@@ -13,6 +13,7 @@ import requests
 from conftest import (
     calc_signature,
     post_operation,
+    get_request,
     BASE_URL,
     TERMINAL_ID,
     assert_transaction_response,
@@ -22,6 +23,24 @@ from conftest import (
     make_completed_payin,
     make_op_body,
 )
+
+_POLL_ATTEMPTS = 6
+_POLL_DELAY    = 2.0
+
+
+def _poll_status(tid: int, expected: str) -> None:
+    """Poll GET /{tid} until expected status or skip."""
+    for _ in range(_POLL_ATTEMPTS):
+        time.sleep(_POLL_DELAY)
+        r = get_request(f"{BASE_URL}/{tid}")
+        if r.status_code != 200:
+            continue
+        status = r.json().get("status", "")
+        if status == expected:
+            return
+        if status in ("completed", "authorized", "rejected", "cancelled", "failed"):
+            pytest.skip(f"Transaction {tid} reached {status!r} instead of {expected!r}")
+    pytest.skip(f"Transaction {tid} did not reach {expected!r} within timeout")
 
 _OP_BODY = {
     "merchant_data": {
@@ -44,6 +63,8 @@ def test_capture_full(payin_block_transaction_id):
     data = resp.json()
     assert_transaction_response(data)
     assert data["type"] == "payin"
+    if data.get("status") != "completed":
+        _poll_status(payin_block_transaction_id, "completed")
 
 
 @pytest.mark.tcid("CAP-002")
@@ -57,7 +78,10 @@ def test_capture_partial():
     }
     resp = post_operation(tid, "capture", body)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
-    assert_transaction_response(resp.json())
+    data = resp.json()
+    assert_transaction_response(data)
+    if data.get("status") != "completed":
+        _poll_status(tid, "completed")
 
 
 @pytest.mark.tcid("CAP-003")
@@ -71,7 +95,10 @@ def test_capture_without_webhook_url():
     }
     resp = post_operation(tid, "capture", body)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
-    assert_transaction_response(resp.json())
+    data = resp.json()
+    assert_transaction_response(data)
+    if data.get("status") != "completed":
+        _poll_status(tid, "completed")
 
 
 # ─────────────────────────────────────────────

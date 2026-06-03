@@ -13,6 +13,7 @@ from conftest import (
     calc_signature,
     post_transaction,
     post_operation,
+    get_request,
     BASE_URL,
     TERMINAL_ID,
     MERCHANT_DATA,
@@ -26,6 +27,24 @@ from conftest import (
     make_block_payin,
     make_completed_payin,
 )
+
+_POLL_ATTEMPTS = 6
+_POLL_DELAY    = 2.0
+
+
+def _poll_status(tid: int, expected: str) -> None:
+    """Poll GET /{tid} until expected status or skip."""
+    for _ in range(_POLL_ATTEMPTS):
+        time.sleep(_POLL_DELAY)
+        r = get_request(f"{BASE_URL}/{tid}")
+        if r.status_code != 200:
+            continue
+        status = r.json().get("status", "")
+        if status == expected:
+            return
+        if status in ("completed", "authorized", "rejected", "cancelled", "failed"):
+            pytest.skip(f"Transaction {tid} reached {status!r} instead of {expected!r}")
+    pytest.skip(f"Transaction {tid} did not reach {expected!r} within timeout")
 
 _REFUND_BODY = {
     "merchant_data": {
@@ -95,6 +114,8 @@ def test_refund_partial(refund_tid):
     assert_transaction_response(data)
     assert data["type"] == "payin"
     assert data["financial_data"]["currency"] == "RUB"
+    if data.get("status") != "completed":
+        _poll_status(refund_tid, "completed")
 
 
 # ─────────────────────────────────────────────

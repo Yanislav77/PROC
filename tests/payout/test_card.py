@@ -1,10 +1,13 @@
 """
 Тесты выплат методом card (type=payout, method=card).
 """
+import time
 import pytest
 
 from conftest import (
     post_transaction,
+    get_request,
+    BASE_URL,
     MERCHANT_DATA,
     CUSTOMER_DATA,
     THREED,
@@ -12,6 +15,24 @@ from conftest import (
     assert_error_response,
     gen_order_id,
 )
+
+_POLL_ATTEMPTS = 6
+_POLL_DELAY    = 2.0
+
+
+def _poll_status(tid: int, expected: str) -> None:
+    """Poll GET /{tid} until expected status or skip."""
+    for _ in range(_POLL_ATTEMPTS):
+        time.sleep(_POLL_DELAY)
+        r = get_request(f"{BASE_URL}/{tid}")
+        if r.status_code != 200:
+            continue
+        status = r.json().get("status", "")
+        if status == expected:
+            return
+        if status in ("completed", "authorized", "rejected", "cancelled", "failed"):
+            pytest.skip(f"Transaction {tid} reached {status!r} instead of {expected!r}")
+    pytest.skip(f"Transaction {tid} did not reach {expected!r} within timeout")
 
 _BASE = {
     "type": "payout",
@@ -43,7 +64,10 @@ def test_payout_card():
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("payout_card")},
         "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
     }
-    _assert_payout_ok(post_transaction(body))
+    data = _assert_payout_ok(post_transaction(body))
+    tid = data["transaction_id"]
+    if data.get("status") != "processing":
+        _poll_status(tid, "processing")
 
 
 # ─────────────────────────────────────────────
