@@ -2,10 +2,17 @@
 Тесты для GET-эндпоинтов транзакций.
 GET /api/v1/transactions?order_id=  — поиск по order_id мерчанта
 GET /api/v1/transactions/{id}       — получение транзакции по числовому ID
+
+Валидационные ошибки REST API (TC-REST-300..411):
+  POST /api/v1/transactions — 401 Auth, 403 Forbidden, 409 Conflict
+  GET  /api/v1/transactions — ошибки order_id и transaction_id
 """
+import copy
 import hashlib
 import hmac
+import json
 import time
+import uuid
 import requests
 import pytest
 
@@ -777,3 +784,257 @@ def test_get_by_order_id_returns_all_transactions():
     found_ids = {item.get("transaction_id") for item in data}
     assert tid1 in found_ids, f"transaction_id {tid1} не найден в ответе: {found_ids}"
     assert tid2 in found_ids, f"transaction_id {tid2} не найден в ответе: {found_ids}"
+
+
+# ═════════════════════════════════════════════
+# TC-REST-300..411 — ВАЛИДАЦИОННЫЕ ОШИБКИ REST API
+# ═════════════════════════════════════════════
+
+_REST_VALID_BODY = {
+    "type": "payin",
+    "merchant_data": MERCHANT_DATA,
+    "financial_data": {"amount": 10000, "currency": "RUB"},
+    "flow_data": {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
+    "customer_data": CUSTOMER_DATA,
+    "transaction_data": {"method": "card", "details": CARD_DETAILS},
+}
+
+
+def _post_signed(raw: str, terminal_id: str = None, timestamp: str = None,
+                 signature: str = None, idempotency_key: str = None) -> requests.Response:
+    tid = terminal_id or TERMINAL_ID
+    ts = timestamp or str(int(time.time()))
+    sig = signature or calc_signature(tid, ts, raw)
+    headers = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     tid,
+        "Api-Idempotency-Key": idempotency_key or str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    }
+    return requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+
+
+def _assert_code(resp: requests.Response, expected_code: str) -> None:
+    assert_error_response(resp)
+    body = resp.json()
+    actual = body.get("error", {}).get("code") or body.get("code")
+    assert actual == expected_code, f"Expected error.code={expected_code!r}, got {actual!r}"
+
+
+# ─────────────────────────────────────────────
+# 2.2 POST — 401 Authentication
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("TC-REST-300")
+def test_post_invalid_signature():
+    """POST с неверной подписью. Ожидается 401, code='invalid_signature'."""
+    raw = json.dumps(_REST_VALID_BODY, separators=(",", ":"))
+    resp = _post_signed(raw, signature="0" * 64)
+    assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+    _assert_code(resp, "invalid_signature")
+
+
+@pytest.mark.tcid("TC-REST-301")
+def test_post_expired_timestamp():
+    """POST с Api-Timestamp > 5 минут назад. Ожидается 401, code='expired_timestamp'."""
+    raw = json.dumps(_REST_VALID_BODY, separators=(",", ":"))
+    old_ts = str(int(time.time()) - 400)
+    resp = _post_signed(raw, timestamp=old_ts)
+    assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+    _assert_code(resp, "expired_timestamp")
+
+
+@pytest.mark.tcid("TC-REST-302")
+def test_post_unknown_terminal():
+    """POST с несуществующим Api-Terminal-ID. Ожидается 401, code='unknown_terminal'."""
+    raw = json.dumps(_REST_VALID_BODY, separators=(",", ":"))
+    fake_tid = "000001"
+    ts = str(int(time.time()))
+    resp = _post_signed(raw, terminal_id=fake_tid,
+                        signature=calc_signature(fake_tid, ts, raw), timestamp=ts)
+    assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+    _assert_code(resp, "unknown_terminal")
+
+
+@pytest.mark.tcid("TC-REST-303")
+def test_post_missing_terminal_key():
+    """POST для терминала без секрета. Ожидается 401, code='missing_terminal_key'.
+    Требует переменную среды TERMINAL_NO_SECRET_ID.
+    """
+    import os
+    no_key_tid = os.environ.get("TERMINAL_NO_SECRET_ID", "")
+    if not no_key_tid:
+        pytest.skip("TERMINAL_NO_SECRET_ID не задан — нужен терминал без секретного ключа")
+    raw = json.dumps(_REST_VALID_BODY, separators=(",", ":"))
+    ts = str(int(time.time()))
+    resp = _post_signed(raw, terminal_id=no_key_tid,
+                        signature=calc_signature(TERMINAL_ID, ts, raw), timestamp=ts)
+    assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
+    _assert_code(resp, "missing_terminal_key")
+
+
+# ─────────────────────────────────────────────
+# 2.3 POST — 403 Forbidden
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("TC-REST-310")
+def test_post_method_not_available():
+    """POST методом, не разрешённым терминалу. Ожидается 403, code='method_not_available'.
+    Требует переменную среды TERMINAL_NO_PAYIN_ID (терминал без прав на payin).
+    """
+    import os
+    restricted_tid = os.environ.get("TERMINAL_NO_PAYIN_ID", "")
+    if not restricted_tid:
+        pytest.skip("TERMINAL_NO_PAYIN_ID не задан — нужен терминал без прав на payin")
+    raw = json.dumps(_REST_VALID_BODY, separators=(",", ":"))
+    ts = str(int(time.time()))
+    resp = _post_signed(raw, terminal_id=restricted_tid,
+                        signature=calc_signature(restricted_tid, ts, raw), timestamp=ts)
+    assert resp.status_code == 403, f"Expected 403, got {resp.status_code}: {resp.text}"
+    _assert_code(resp, "method_not_available")
+
+
+@pytest.mark.tcid("TC-REST-311")
+def test_post_forbidden_ip():
+    """POST с IP не из whitelist. Ожидается 403, code='forbidden_ip'.
+    Этот сценарий нельзя воспроизвести с тестовой машины — IP уже в whitelist.
+    """
+    pytest.skip("Невозможно воспроизвести: тестовая машина находится в IP-whitelist терминала")
+
+
+# ─────────────────────────────────────────────
+# 2.4 POST — 409 Conflict
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("TC-REST-320")
+def test_post_order_duplicate():
+    """POST с тем же order_id, но другим телом (без idempotency key). Ожидается 409, code='order_duplicate'."""
+    shared_oid = gen_order_id("rest320")
+    body1 = copy.deepcopy(_REST_VALID_BODY)
+    body1["merchant_data"] = {**MERCHANT_DATA, "order_id": shared_oid}
+    raw1 = json.dumps(body1, separators=(",", ":"))
+    ts1 = str(int(time.time()))
+    resp1 = requests.post(BASE_URL, data=raw1, headers={
+        "Content-Type":    "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   calc_signature(TERMINAL_ID, ts1, raw1),
+        "Api-Timestamp":   ts1,
+    }, timeout=30)
+    assert resp1.status_code == 201, f"First request failed: {resp1.status_code} {resp1.text}"
+
+    body2 = copy.deepcopy(body1)
+    body2["financial_data"]["amount"] = 5000
+    raw2 = json.dumps(body2, separators=(",", ":"))
+    ts2 = str(int(time.time()))
+    resp2 = requests.post(BASE_URL, data=raw2, headers={
+        "Content-Type":    "application/json",
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   calc_signature(TERMINAL_ID, ts2, raw2),
+        "Api-Timestamp":   ts2,
+    }, timeout=30)
+    assert resp2.status_code == 409, f"Expected 409, got {resp2.status_code}: {resp2.text}"
+    _assert_code(resp2, "order_duplicate")
+
+
+@pytest.mark.tcid("TC-REST-321")
+def test_post_recurrent_limit_reached():
+    """POST payin, превышающий лимит recurrent для сервиса. Ожидается 409, code='recurrent_limit_reached'.
+    Требует переменную среды TERMINAL_RECURRENT_LIMIT_ID (терминал с лимитом = 1 recurrent).
+    """
+    import os
+    limit_tid = os.environ.get("TERMINAL_RECURRENT_LIMIT_ID", "")
+    if not limit_tid:
+        pytest.skip("TERMINAL_RECURRENT_LIMIT_ID не задан — нужен терминал с ограничением на recurrent")
+    body = copy.deepcopy(_REST_VALID_BODY)
+    body["merchant_data"] = {**MERCHANT_DATA, "order_id": gen_order_id("rest321_1")}
+    body["flow_data"]["is_recurrent"] = True
+    resp1 = post_transaction(body)
+    assert resp1.status_code == 201, f"First recurrent failed: {resp1.text}"
+
+    body2 = copy.deepcopy(body)
+    body2["merchant_data"] = {**MERCHANT_DATA, "order_id": gen_order_id("rest321_2")}
+    resp2 = post_transaction(body2)
+    assert resp2.status_code == 409, f"Expected 409, got {resp2.status_code}: {resp2.text}"
+    _assert_code(resp2, "recurrent_limit_reached")
+
+
+@pytest.mark.tcid("TC-REST-322")
+def test_post_duplicate_request():
+    """POST с тем же Api-Idempotency-Key, но другим телом. Ожидается 409, code='duplicate_request'."""
+    shared_key = str(uuid.uuid4())
+    body1 = copy.deepcopy(_REST_VALID_BODY)
+    body1["merchant_data"] = {**MERCHANT_DATA, "order_id": gen_order_id("rest322")}
+    raw1 = json.dumps(body1, separators=(",", ":"))
+    resp1 = _post_signed(raw1, idempotency_key=shared_key)
+    assert resp1.status_code == 201, f"First request failed: {resp1.status_code} {resp1.text}"
+
+    body2 = copy.deepcopy(body1)
+    body2["financial_data"]["amount"] = 5000
+    raw2 = json.dumps(body2, separators=(",", ":"))
+    resp2 = _post_signed(raw2, idempotency_key=shared_key)
+    assert resp2.status_code == 409, f"Expected 409, got {resp2.status_code}: {resp2.text}"
+    _assert_code(resp2, "duplicate_request")
+
+
+# ─────────────────────────────────────────────
+# 2.5 GET — ошибки order_id
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("TC-REST-400")
+def test_get_missing_order_id():
+    """GET без параметра order_id. Ожидается 400, code='missing_order_id' (или 'invalid_field' в текущей сборке)."""
+    resp = requests.get(BASE_URL, headers=make_get_headers(TERMINAL_ID), timeout=30)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+    actual = resp.json().get("code")
+    assert actual in ("missing_order_id", "invalid_field"), \
+        f"Expected code='missing_order_id' (или 'invalid_field'), got {actual!r}"
+
+
+@pytest.mark.tcid("TC-REST-401")
+def test_get_invalid_order_id():
+    """GET с невалидным order_id (спецсимволы). Ожидается 400, code='invalid_order_id'."""
+    resp = requests.get(
+        BASE_URL,
+        params={"order_id": "<invalid!@#$%^&*()>"},
+        headers=make_get_headers(TERMINAL_ID),
+        timeout=30,
+    )
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    _assert_code(resp, "invalid_order_id")
+
+
+@pytest.mark.tcid("TC-REST-402")
+def test_get_order_not_found():
+    """GET с корректным, но несуществующим order_id. Ожидается 404, code='order_not_found'."""
+    resp = requests.get(
+        BASE_URL,
+        params={"order_id": f"nonexistent_{uuid.uuid4().hex}"},
+        headers=make_get_headers(TERMINAL_ID),
+        timeout=30,
+    )
+    assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+    _assert_code(resp, "order_not_found")
+
+
+# ─────────────────────────────────────────────
+# 2.6 GET /transactions/<transaction_id>
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("TC-REST-410")
+def test_get_invalid_transaction_id():
+    """GET /transactions/<не-числовой id>. Ожидается 400 или 404, code='invalid_transaction_id'."""
+    url = f"{BASE_URL}/not-a-valid-id"
+    resp = requests.get(url, headers=make_get_headers(TERMINAL_ID), timeout=30)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    _assert_code(resp, "invalid_transaction_id")
+
+
+@pytest.mark.tcid("TC-REST-411")
+def test_get_transaction_not_found():
+    """GET /transactions/<несуществующий числовой id>. Ожидается 404, code='transaction_not_found'."""
+    url = f"{BASE_URL}/9999999999"
+    resp = requests.get(url, headers=make_get_headers(TERMINAL_ID), timeout=30)
+    assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+    _assert_code(resp, "transaction_not_found")
