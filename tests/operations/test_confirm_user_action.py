@@ -123,3 +123,46 @@ def test_confirm_user_action_types_confirmed_true(waiting_action_tid, result_typ
     data = r.json()
     assert data.get("status") == "processing", f"[{result_type}] Expected status=processing"
     assert isinstance(data.get("transaction_id"), int)
+
+
+# ─────────────────────────────────────────────
+# ИДЕМПОТЕНТНОСТЬ
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-074")
+def test_idempotency_same_key_returns_same_transaction_id(waiting_action_tid):
+    """Повторный confirm с тем же Api-Idempotency-Key возвращает transaction_id первого запроса без создания дубля."""
+    import json
+    import uuid
+    import requests as _req
+    from _helpers.config import BASE_URL, TERMINAL_ID
+    from _helpers.signatures import calc_signature
+
+    tid, oid = waiting_action_tid
+    body = {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "result": {"type": "transfer_card", "details": {"confirmed": True}},
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    key = str(uuid.uuid4())
+
+    def _post():
+        ts = str(int(time.time()))
+        sig = calc_signature(TERMINAL_ID, ts, raw)
+        h = {
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        }
+        return _req.post(f"{BASE_URL}/{tid}/confirm", data=raw, headers=h, timeout=30)
+
+    r1 = _post()
+    assert r1.status_code in (200, 201), f"First confirm failed: {r1.text}"
+    tid1 = r1.json().get("transaction_id")
+    r2 = _post()
+    assert r2.status_code in (200, 201), f"Duplicate key: expected 200/201, got {r2.status_code}: {r2.text}"
+    assert r2.json().get("transaction_id") == tid1, (
+        f"Duplicate key returned different transaction_id: r1={tid1}, r2={r2.json().get('transaction_id')}"
+    )

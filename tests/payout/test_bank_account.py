@@ -260,3 +260,57 @@ def test_payout_bank_account_unknown_extra_field():
     """BankAccountDetails с неизвестным дополнительным полем. Ожидается 201 или 400."""
     resp = post_transaction(_ba(gen_order_id("py_ba_extra"), unknown_field="surprise"))
     assert resp.status_code in (201, 400)
+
+
+# ─────────────────────────────────────────────
+# ИДЕМПОТЕНТНОСТЬ
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PY-146")
+def test_idempotency_same_key_returns_same_transaction_id():
+    """Повторный запрос с тем же Api-Idempotency-Key возвращает transaction_id первого запроса без создания дубля."""
+    import json
+    import time
+    import uuid
+    import requests as _req
+    from _helpers.config import BASE_URL, TERMINAL_ID
+    from _helpers.signatures import calc_signature
+
+    body = {
+        "type": "payout",
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("idem_py_ba")},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto"},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {
+            "method": "bank_account",
+            "details": {
+                "account_number": "40702810000000012345",
+                "swift_code": "SABRRUMM",
+                "bank_name": "Sberbank",
+                "account_holder_name": "JOHN DOE",
+            },
+        },
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    key = str(uuid.uuid4())
+
+    def _post():
+        ts = str(int(time.time()))
+        sig = calc_signature(TERMINAL_ID, ts, raw)
+        h = {
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        }
+        return _req.post(BASE_URL, data=raw, headers=h, timeout=30)
+
+    r1 = _post()
+    assert r1.status_code == 201, f"First request failed: {r1.text}"
+    r2 = _post()
+    assert r2.status_code in (200, 201), f"Duplicate key: expected 200/201, got {r2.status_code}: {r2.text}"
+    assert r2.json()["transaction_id"] == r1.json()["transaction_id"], (
+        f"Duplicate key created new transaction: "
+        f"r1.tid={r1.json().get('transaction_id')}, r2.tid={r2.json().get('transaction_id')}"
+    )

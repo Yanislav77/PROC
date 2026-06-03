@@ -652,3 +652,49 @@ def test_p2p_details_with_provider():
     }
     resp = post_transaction(body)
     assert resp.status_code in (201, 400), f"Got {resp.status_code}: {resp.text}"
+
+
+# ─────────────────────────────────────────────
+# ИДЕМПОТЕНТНОСТЬ
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("P2P-9-1")
+def test_idempotency_same_key_returns_same_transaction_id():
+    """Повторный запрос с тем же Api-Idempotency-Key возвращает transaction_id первого запроса без создания дубля."""
+    import json
+    import time
+    import uuid
+    import requests as _req
+    from _helpers.config import BASE_URL, TERMINAL_ID
+    from _helpers.signatures import calc_signature
+
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("idem_p2p")},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "transaction_data": {"method": "p2p"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    key = str(uuid.uuid4())
+
+    def _post():
+        ts = str(int(time.time()))
+        sig = calc_signature(TERMINAL_ID, ts, raw)
+        h = {
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        }
+        return _req.post(BASE_URL, data=raw, headers=h, timeout=30)
+
+    r1 = _post()
+    assert r1.status_code == 201, f"First request failed: {r1.text}"
+    r2 = _post()
+    assert r2.status_code in (200, 201), f"Duplicate key: expected 200/201, got {r2.status_code}: {r2.text}"
+    assert r2.json()["transaction_id"] == r1.json()["transaction_id"], (
+        f"Duplicate key created new transaction: "
+        f"r1.tid={r1.json().get('transaction_id')}, r2.tid={r2.json().get('transaction_id')}"
+    )

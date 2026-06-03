@@ -809,3 +809,49 @@ def test_token_from_different_service():
     resp = post_transaction(body)
     assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# ИДЕМПОТЕНТНОСТЬ
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("PT-38-1")
+def test_idempotency_same_key_returns_same_transaction_id():
+    """Повторный запрос с тем же Api-Idempotency-Key возвращает transaction_id первого запроса без создания дубля."""
+    import json
+    import requests as _req
+    from _helpers.config import BASE_URL, TERMINAL_ID
+    from _helpers.signatures import calc_signature
+
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("idem_tok")},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "transaction_data": {"method": "token", "details": {"token": _STUB_TOKEN}},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    key = str(uuid.uuid4())
+
+    def _post():
+        ts = str(int(time.time()))
+        sig = calc_signature(TERMINAL_ID, ts, raw)
+        h = {
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        }
+        return _req.post(BASE_URL, data=raw, headers=h, timeout=30)
+
+    r1 = _post()
+    if r1.status_code not in (200, 201):
+        import pytest as _pytest
+        _pytest.skip(f"Payin token не поддерживается в этом окружении ({r1.status_code})")
+    r2 = _post()
+    assert r2.status_code in (200, 201), f"Duplicate key: expected 200/201, got {r2.status_code}: {r2.text}"
+    assert r2.json()["transaction_id"] == r1.json()["transaction_id"], (
+        f"Duplicate key created new transaction: "
+        f"r1.tid={r1.json().get('transaction_id')}, r2.tid={r2.json().get('transaction_id')}"
+    )
