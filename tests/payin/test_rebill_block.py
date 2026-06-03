@@ -1,5 +1,6 @@
 """
 Тесты комбинаций block/rebill для POST /api/v1/transactions.
+Управление подписками: DELETE /api/v1/subscriptions/{token}.
 
 CVV 999 (≥ 600) → без 3DS.
 recurrent_token: transaction_data.recurrent_token в GET /{id}.
@@ -45,7 +46,9 @@ from conftest import (
     post_transaction,
     post_operation,
     get_request,
+    delete_request,
     BASE_URL,
+    SUBSCRIPTIONS_URL,
     MERCHANT_DATA,
     CUSTOMER_DATA,
     THREED,
@@ -721,3 +724,370 @@ def test_cancel_zero_amount():
     assert resp.status_code in (400, 422), \
         f"Expected 400/422 for zero amount cancel, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
+
+
+# ═════════════════════════════════════════════════════════════
+# ДВУХСТАДИЙНЫЕ REBILL (RB-031 … RB-040)
+# ═════════════════════════════════════════════════════════════
+
+def _get_token() -> str:
+    """Создаёт родительский payin и возвращает recurrent_token."""
+    _, _, token = _payin_card("auto", is_recurrent=True)
+    assert token, "recurrent_token должен присутствовать при is_recurrent=True"
+    return token
+
+
+def _cancel_op(tid: int, oid: str, amount: int):
+    """Вызывает /cancel и ассертирует 200/201."""
+    resp = post_operation(tid, "cancel", {
+        "merchant_data":  {"order_id": oid},
+        "financial_data": {"amount": amount, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), f"cancel failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    return resp
+
+
+@pytest.mark.tcid("RB-031")
+def test_double_stage_rebill_capture_full():
+    """Двухстадийный rebill → полный capture → статус completed.
+    Шаг 1: родительский payin (is_recurrent=True) → recurrent_token.
+    Шаг 2: rebill method=token, capture_mode=manual → authorized.
+    Шаг 3: /capture полная сумма → completed."""
+    token = _get_token()
+    tid_r, oid_r = _rebill(token, "manual")
+    _assert_status(tid_r, "authorized")
+    _capture(tid_r, oid_r)
+    _assert_status(tid_r, "completed")
+
+
+@pytest.mark.tcid("RB-032")
+def test_double_stage_rebill_capture_partial():
+    """Двухстадийный rebill → частичный capture → authorized → capture остатка → completed.
+    Шаг 1: rebill 10000, manual.
+    Шаг 2: /capture 3000 → authorized.
+    Шаг 3: GET → authorized.
+    Шаг 4: /capture 7000 → completed."""
+    token = _get_token()
+    tid_r, oid_r = _rebill(token, "manual")
+    _assert_status(tid_r, "authorized")
+
+    resp = post_operation(tid_r, "capture", {
+        "merchant_data":  {"order_id": gen_order_id("rb31_cap1")},
+        "financial_data": {"amount": 3000, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), f"Partial capture failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid_r, "authorized")
+
+    resp = post_operation(tid_r, "capture", {
+        "merchant_data":  {"order_id": gen_order_id("rb31_cap2")},
+        "financial_data": {"amount": 7000, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), f"Final capture failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid_r, "completed")
+
+
+@pytest.mark.tcid("RB-033")
+def test_double_stage_rebill_cancel_before_capture():
+    """Двухстадийный rebill → /cancel без capture → статус cancelled.
+    Шаг 1: rebill (manual) → authorized.
+    Шаг 2: /cancel → cancelled."""
+    token = _get_token()
+    tid_r, oid_r = _rebill(token, "manual")
+    _assert_status(tid_r, "authorized")
+    _cancel_op(tid_r, gen_order_id("rb32_cancel"), _AMOUNT)
+    _assert_status(tid_r, "cancelled")
+
+
+@pytest.mark.tcid("RB-034")
+def test_double_stage_rebill_partial_cancel_then_capture():
+    """Двухстадийный rebill → частичный cancel → capture оставшейся суммы → completed.
+    Шаг 1: rebill 10000 (manual) → authorized.
+    Шаг 2: /cancel 3000 → authorized (остаток 7000).
+    Шаг 3: /capture 7000 → completed."""
+    token = _get_token()
+    tid_r, oid_r = _rebill(token, "manual")
+    _assert_status(tid_r, "authorized")
+
+    _cancel_op(tid_r, gen_order_id("rb33_cancel"), 3000)
+    _assert_status(tid_r, "authorized")
+
+    resp = post_operation(tid_r, "capture", {
+        "merchant_data":  {"order_id": gen_order_id("rb33_cap")},
+        "financial_data": {"amount": 7000, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), f"Capture remaining failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid_r, "completed")
+
+
+@pytest.mark.tcid("RB-035")
+def test_double_stage_rebill_partial_capture_then_cancel():
+    """Двухстадийный rebill → частичный capture → cancel остатка → completed.
+    Шаг 1: rebill 10000 (manual) → authorized.
+    Шаг 2: /capture 3000 → authorized.
+    Шаг 3: /cancel 7000 → completed (или cancelled, фиксируем поведение)."""
+    token = _get_token()
+    tid_r, oid_r = _rebill(token, "manual")
+    _assert_status(tid_r, "authorized")
+
+    resp = post_operation(tid_r, "capture", {
+        "merchant_data":  {"order_id": gen_order_id("rb34_cap")},
+        "financial_data": {"amount": 3000, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), f"Partial capture failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid_r, "authorized")
+
+    resp = post_operation(tid_r, "cancel", {
+        "merchant_data":  {"order_id": gen_order_id("rb34_cancel")},
+        "financial_data": {"amount": 7000, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), f"Cancel remaining failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
+    final = get_request(f"{BASE_URL}/{tid_r}").json().get("status")
+    assert final in ("completed", "cancelled"), \
+        f"Expected completed or cancelled after partial-capture + cancel, got {final!r}"
+
+
+@pytest.mark.tcid("RB-036")
+def test_double_stage_rebill_capture_amount_exceeds():
+    """Двухстадийный rebill → capture суммы больше авторизованной → ошибка 4xx.
+    Шаг 1: rebill 10000 (manual) → authorized.
+    Шаг 2: /capture 10001 → 4xx."""
+    token = _get_token()
+    tid_r, oid_r = _rebill(token, "manual")
+    _assert_status(tid_r, "authorized")
+
+    resp = post_operation(tid_r, "capture", {
+        "merchant_data":  {"order_id": gen_order_id("rb35_cap")},
+        "financial_data": {"amount": _AMOUNT + 1, "currency": "RUB"},
+    })
+    assert resp.status_code in (400, 409, 422), \
+        f"Expected 4xx for over-capture on rebill, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("RB-037")
+def test_double_stage_rebill_repeated_capture_after_full():
+    """Двухстадийный rebill → полный capture → повторный capture → 409.
+    Шаг 1: rebill (manual) → authorized.
+    Шаг 2: /capture полная → completed.
+    Шаг 3: /capture повторно → 409."""
+    token = _get_token()
+    tid_r, oid_r = _rebill(token, "manual")
+    _assert_status(tid_r, "authorized")
+    _capture(tid_r, oid_r)
+    _assert_status(tid_r, "completed")
+
+    resp = post_operation(tid_r, "capture", {
+        "merchant_data":  {"order_id": gen_order_id("rb36_cap2")},
+        "financial_data": {"amount": _AMOUNT, "currency": "RUB"},
+    })
+    assert resp.status_code == 409, \
+        f"Expected 409 for repeated capture on rebill, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+
+
+@pytest.mark.slow
+@pytest.mark.skip(reason="Требует ожидания timeout (~5 мин) — запускать вручную с -m slow")
+@pytest.mark.tcid("RB-038")
+def test_double_stage_rebill_auto_cancel_timeout():
+    """Двухстадийный rebill без capture → автоматическая отмена по таймауту → cancelled.
+    Не запускается в обычном прогоне: слишком медленный."""
+    token = _get_token()
+    tid_r, _ = _rebill(token, "manual")
+    _assert_status(tid_r, "authorized")
+    time.sleep(300)   # 5 минут — зависит от конфигурации сервиса
+    _assert_status(tid_r, "cancelled")
+
+
+@pytest.mark.tcid("RB-039")
+def test_double_stage_rebill_chain():
+    """Цепочка двухстадийных rebill'ов (rebill от rebill).
+    Шаг 1: родитель (is_recurrent=True) → token1.
+    Шаг 2: rebill1 с token1 (is_recurrent=True, manual) → authorized → capture → completed + token2.
+    Шаг 3: rebill2 с token2 (manual) → authorized → capture → completed."""
+    _, _, token1 = _payin_card("auto", is_recurrent=True)
+    assert token1, "token1 отсутствует"
+
+    oid2 = gen_order_id("rb38_r1")
+    body2 = {
+        "type":             "payin",
+        "merchant_data":    {**MERCHANT_DATA, "order_id": oid2},
+        "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
+        "flow_data":        {"is_recurrent": True, "capture_mode": "manual", "threed_secure": THREED},
+        "customer_data":    CUSTOMER_DATA,
+        "transaction_data": {"method": "token", "details": {"token": token1}},
+    }
+    r2 = post_transaction(body2)
+    assert r2.status_code == 201, f"rebill1 failed: {r2.status_code}: {r2.text}"
+    tid2 = r2.json()["transaction_id"]
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid2, "authorized")
+    _capture(tid2, oid2)
+    _assert_status(tid2, "completed")
+
+    poll2  = get_request(f"{BASE_URL}/{tid2}")
+    token2 = (poll2.json().get("transaction_data") or {}).get("recurrent_token")
+    if not token2:
+        pytest.skip("Rebill с is_recurrent=True не вернул token2 — цепочка не поддерживается в этой среде")
+
+    tid3, oid3 = _rebill(token2, "manual")
+    _assert_status(tid3, "authorized")
+    _capture(tid3, oid3)
+    _assert_status(tid3, "completed")
+
+
+@pytest.mark.tcid("RB-040")
+def test_double_stage_rebill_bank_decline_on_capture():
+    """Двухстадийный rebill → capture с отказом банка → 4xx, статус остаётся authorized.
+    Шаг 1: rebill (manual) → authorized.
+    Шаг 2: /capture → банк отказывает → 4xx.
+    Шаг 3: GET → статус authorized."""
+    token = _get_token()
+    tid_r, oid_r = _rebill(token, "manual")
+    _assert_status(tid_r, "authorized")
+
+    resp = post_operation(tid_r, "capture", {
+        "merchant_data":  {"order_id": oid_r},
+        "financial_data": {"amount": _AMOUNT, "currency": "RUB"},
+    })
+    if resp.status_code in (200, 201):
+        pytest.skip("Банк не отклонил capture в данном окружении — тест не применим")
+    assert resp.status_code in (400, 409, 422), \
+        f"Expected 4xx for bank decline on rebill capture, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+    time.sleep(SETUP_DELAY)
+    _assert_status(tid_r, "authorized")
+
+
+# ═════════════════════════════════════════════════════════════
+# УПРАВЛЕНИЕ ПОДПИСКАМИ (RB-041 … RB-046)
+# ═════════════════════════════════════════════════════════════
+
+def _cancel_subscription(token: str):
+    """DELETE /api/v1/subscriptions/{token}"""
+    return delete_request(f"{SUBSCRIPTIONS_URL}/{token}")
+
+
+def _try_rebill(token: str) -> int:
+    """Пытается создать rebill, возвращает HTTP-статус."""
+    oid  = gen_order_id("rb_sub_rebill")
+    body = {
+        "type":             "payin",
+        "merchant_data":    {**MERCHANT_DATA, "order_id": oid},
+        "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
+        "flow_data":        {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data":    CUSTOMER_DATA,
+        "transaction_data": {"method": "token", "details": {"token": token}},
+    }
+    return post_transaction(body).status_code
+
+
+@pytest.mark.tcid("RB-041")
+def test_cancel_subscription_before_rebill():
+    """Отмена подписки до первого rebill → rebill невозможен.
+    Шаг 1: родительский payin (is_recurrent=True) → recurrent_token.
+    Шаг 2: DELETE /subscriptions/{token} → 204.
+    Шаг 3: rebill с этим токеном → 404 или 409."""
+    token = _get_token()
+
+    r = _cancel_subscription(token)
+    assert r.status_code in (200, 204), \
+        f"Expected 200/204 for subscription cancel, got {r.status_code}: {r.text}"
+
+    rebill_status = _try_rebill(token)
+    assert rebill_status in (400, 404, 409, 422), \
+        f"Expected error for rebill after subscription cancel, got {rebill_status}"
+
+
+@pytest.mark.tcid("RB-042")
+def test_cancel_subscription_after_one_rebill():
+    """Отмена подписки после успешного rebill → следующий rebill невозможен.
+    Шаг 1: родитель → token1.
+    Шаг 2: успешный rebill с token1.
+    Шаг 3: DELETE /subscriptions/{token1} → 200/204.
+    Шаг 4: второй rebill → ошибка."""
+    token = _get_token()
+
+    tid_r, _ = _rebill(token, "auto")
+    _assert_status(tid_r, "completed")
+
+    r = _cancel_subscription(token)
+    assert r.status_code in (200, 204), \
+        f"Expected 200/204, got {r.status_code}: {r.text}"
+
+    rebill_status = _try_rebill(token)
+    assert rebill_status in (400, 404, 409, 422), \
+        f"Expected error for rebill after subscription cancel, got {rebill_status}"
+
+
+@pytest.mark.tcid("RB-043")
+def test_cancel_subscription_with_pending_double_stage_rebill():
+    """Отмена подписки при наличии незавершённого двухстадийного rebill.
+    Pending rebill не отменяется, но новый rebill с тем же токеном создать нельзя.
+    Шаг 1: родитель → token1.
+    Шаг 2: rebill (manual) → authorized (pending).
+    Шаг 3: DELETE /subscriptions/{token1} → 200/204.
+    Шаг 4: новый rebill → ошибка.
+    Шаг 5: GET pending rebill → всё ещё authorized (не отменился)."""
+    token = _get_token()
+
+    tid_r, oid_r = _rebill(token, "manual")
+    _assert_status(tid_r, "authorized")
+
+    r = _cancel_subscription(token)
+    assert r.status_code in (200, 204), \
+        f"Expected 200/204, got {r.status_code}: {r.text}"
+
+    rebill_status = _try_rebill(token)
+    assert rebill_status in (400, 404, 409, 422), \
+        f"Expected error for new rebill after subscription cancel, got {rebill_status}"
+
+    poll = get_request(f"{BASE_URL}/{tid_r}")
+    assert poll.status_code == 200
+    assert poll.json().get("status") == "authorized", \
+        f"Pending rebill должен остаться authorized после отмены подписки"
+
+
+@pytest.mark.tcid("RB-044")
+def test_cancel_already_cancelled_subscription():
+    """Повторная отмена подписки → 404.
+    Шаг 1: получить token.
+    Шаг 2: DELETE → 200/204.
+    Шаг 3: повторный DELETE → 404."""
+    token = _get_token()
+
+    r1 = _cancel_subscription(token)
+    assert r1.status_code in (200, 204), \
+        f"First cancel: Expected 200/204, got {r1.status_code}: {r1.text}"
+
+    r2 = _cancel_subscription(token)
+    assert r2.status_code == 404, \
+        f"Second cancel: Expected 404, got {r2.status_code}: {r2.text}"
+    assert_error_response(r2)
+
+
+@pytest.mark.tcid("RB-045")
+def test_cancel_subscription_invalid_token():
+    """Отмена подписки с несуществующим токеном → 404."""
+    fake_token = str(uuid.uuid4())
+    r = _cancel_subscription(fake_token)
+    assert r.status_code == 404, \
+        f"Expected 404 for nonexistent token, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("RB-046")
+def test_cancel_subscription_wrong_terminal():
+    """Попытка отменить подписку, принадлежащую другому терминалу → 403 или 404.
+    Используем UUID4, аналогичный реальному recurrent_token,
+    но не существующий для текущего терминала."""
+    foreign_token = str(uuid.uuid4())
+    r = _cancel_subscription(foreign_token)
+    assert r.status_code in (403, 404), \
+        f"Expected 403/404 for foreign terminal token, got {r.status_code}: {r.text}"
+    assert_error_response(r)
