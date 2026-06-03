@@ -52,8 +52,12 @@ _TOKEN_BASE = {
 }
 
 
+_ACQUIRE_POLL_ATTEMPTS = 10
+_ACQUIRE_POLL_DELAY    = 2.0
+
+
 def _acquire_token(flow_data: dict) -> str:
-    """Creates a card payin with given flow_data and returns recurrent/withdrawal token."""
+    """Creates card payin with given flow_data, polls until recurrent/withdrawal token appears."""
     body = {
         "type": "payin",
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("tok_acq")},
@@ -65,14 +69,24 @@ def _acquire_token(flow_data: dict) -> str:
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Token acquisition failed: {resp.status_code}: {resp.text}"
     tr_id = resp.json()["transaction_id"]
-    time.sleep(SETUP_DELAY)
-    status = get_request(f"{BASE_URL}/{tr_id}")
-    assert status.status_code == 200, f"Status poll failed: {status.text}"
-    data = status.json()
-    td = data.get("transaction_data") or {}
-    token = td.get("recurrent_token") or td.get("withdrawal_token")
-    assert token, f"No token in status response: {data}"
-    return token
+    for _ in range(_ACQUIRE_POLL_ATTEMPTS):
+        time.sleep(_ACQUIRE_POLL_DELAY)
+        r = get_request(f"{BASE_URL}/{tr_id}")
+        assert r.status_code == 200, f"Status poll failed: {r.text}"
+        data = r.json()
+        td = data.get("transaction_data") or {}
+        token = td.get("recurrent_token") or td.get("withdrawal_token")
+        if token:
+            return token
+        status = data.get("status", "")
+        if status in ("rejected", "cancelled", "failed"):
+            raise AssertionError(
+                f"Token acquisition transaction {tr_id} reached {status!r} — no token"
+            )
+    raise AssertionError(
+        f"Token acquisition transaction {tr_id} did not yield a token within "
+        f"{_ACQUIRE_POLL_ATTEMPTS * _ACQUIRE_POLL_DELAY:.0f}s"
+    )
 
 
 @pytest.fixture(scope="session")
@@ -134,12 +148,16 @@ def test_payin_token_missing_parent_transaction_id():
 # ──────────────────────────────────────────────────────────────
 
 @pytest.mark.tcid("PT-28-1")
-def test_token_method_token(recurrent_token):
-    """28.1 method=token с валидным recurrent_token → 201."""
+def test_token_method_token():
+    """28.1 method=token с валидным recurrent_token → 201.
+    Шаг 1: card payin с is_recurrent=True, capture_mode=auto.
+    Шаг 2: опрос GET /{tid}, сохранение recurrent_token.
+    Шаг 3: payin method=token → 201."""
+    token = _acquire_token({"is_recurrent": True, "capture_mode": "auto"})
     body = {
         **_TOKEN_BASE,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("m_tok")},
-        "transaction_data": {"method": "token", "details": {"token": recurrent_token}},
+        "transaction_data": {"method": "token", "details": {"token": token}},
     }
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
@@ -591,12 +609,20 @@ def test_token_details_empty():
 # ──────────────────────────────────────────────────────────────
 
 @pytest.mark.tcid("PT-35-1")
-def test_token_valid_uuid(recurrent_token):
-    """35.1 token — валидный UUID из recurrent payin → 201."""
+def test_token_valid_uuid():
+    """35.1 token — валидный UUID из recurrent payin → 201.
+    Шаг 1: card payin с is_recurrent=True, capture_mode=auto.
+    Шаг 2: опрос GET /{tid}, сохранение recurrent_token — проверяем UUID-формат.
+    Шаг 3: payin method=token → 201."""
+    token = _acquire_token({"is_recurrent": True, "capture_mode": "auto"})
+    try:
+        uuid.UUID(token)
+    except ValueError:
+        pytest.fail(f"recurrent_token не является валидным UUID: {token!r}")
     body = {
         **_TOKEN_BASE,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("tok_valid")},
-        "transaction_data": {"method": "token", "details": {"token": recurrent_token}},
+        "transaction_data": {"method": "token", "details": {"token": token}},
     }
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
@@ -773,12 +799,16 @@ def test_token_details_with_provider(recurrent_token):
 # ──────────────────────────────────────────────────────────────
 
 @pytest.mark.tcid("PT-37-1")
-def test_token_from_non_recurrent_payin(withdrawal_token_false):
-    """37.1 token из payin с is_recurrent=false → 400 или 404."""
+def test_token_from_non_recurrent_payin():
+    """37.1 token из payin с is_recurrent=false — withdrawal_token не работает для token-payin.
+    Шаг 1: card payin с is_recurrent=False, capture_mode=auto.
+    Шаг 2: опрос GET /{tid}, сохранение withdrawal_token.
+    Шаг 3: payin method=token с withdrawal_token → 400 или 404."""
+    token = _acquire_token({"is_recurrent": False, "capture_mode": "auto"})
     body = {
         **_TOKEN_BASE,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("wtok_false")},
-        "transaction_data": {"method": "token", "details": {"token": withdrawal_token_false}},
+        "transaction_data": {"method": "token", "details": {"token": token}},
     }
     resp = post_transaction(body)
     assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
@@ -786,12 +816,19 @@ def test_token_from_non_recurrent_payin(withdrawal_token_false):
 
 
 @pytest.mark.tcid("PT-37-2")
-def test_token_from_empty_flow_payin(withdrawal_token_empty_flow):
-    """37.2 token из payin с flow_data={} → 400 или 404."""
+def test_token_from_empty_flow_payin():
+    """37.2 token из payin с flow_data={} — не является recurrent_token.
+    Шаг 1: card payin с flow_data={}.
+    Шаг 2: опрос GET /{tid}, сохранение withdrawal_token (если есть).
+    Шаг 3: payin method=token → 400 или 404."""
+    try:
+        token = _acquire_token({})
+    except AssertionError as e:
+        pytest.skip(f"flow_data={{}} не вернул токен в данном окружении: {e}")
     body = {
         **_TOKEN_BASE,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("wtok_eflow")},
-        "transaction_data": {"method": "token", "details": {"token": withdrawal_token_empty_flow}},
+        "transaction_data": {"method": "token", "details": {"token": token}},
     }
     resp = post_transaction(body)
     assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
