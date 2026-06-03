@@ -127,9 +127,10 @@ def test_get_transaction_invalid_signature():
     ts_signed = str(int(time.time()) - 1)  # подпись от другого timestamp — формат верный, значение нет
     sig = calc_signature(TERMINAL_ID, ts_signed)
     headers = {
-        "Api-Terminal-ID": TERMINAL_ID,
-        "Api-Signature":   sig,
-        "Api-Timestamp":   ts_header,
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts_header,
     }
     resp = requests.get(url, headers=headers, timeout=30)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
@@ -348,9 +349,10 @@ def test_get_transaction_invalid_signature_for_get():
     timestamp = str(int(time.time()))
     wrong_sig = _sign(TERMINAL_ID, timestamp, "fakebody")
     headers = {
-        "Api-Terminal-ID": TERMINAL_ID,
-        "Api-Signature": wrong_sig,
-        "Api-Timestamp": timestamp,
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       wrong_sig,
+        "Api-Timestamp":       timestamp,
     }
     resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
