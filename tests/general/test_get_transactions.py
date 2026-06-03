@@ -22,6 +22,7 @@ from conftest import (
     THREED,
     SERVICE_SECRET,
     CARD_DETAILS,
+    CARD_ASYNC,
     MERCHANT_BALANCE_URL,
     assert_transaction_response,
     assert_error_response,
@@ -530,16 +531,17 @@ def test_get_transaction_created_at_utc_z_format(payin_transaction_id):
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GT-040")
 def test_get_processing_status_no_extra_fields():
-    """GET /{id} — статус processing не содержит transaction_data, action, rejected_data, customer_data, available_amount.
-    Тест пропускается если транзакция уже покинула статус processing к моменту опроса."""
+    """GET /{id} — статус processing не содержит transaction_data, action, rejected_data, available_amount.
+    Карта 4242424242424242 (async, non-3DS): NEW->PENDING->(CHARGED|REJECTED), задержка = сумма в RUB (5 сек).
+    Гарантированное окно в 5 секунд позволяет надёжно поймать статус processing."""
     oid = gen_order_id("gt_processing")
     body = {
         "type": "payin",
         "merchant_data": {**MERCHANT_DATA, "order_id": oid},
-        "financial_data": {"amount": 1000, "currency": "RUB"},
-        "flow_data": {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
+        "financial_data": {"amount": 5, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
         "customer_data": CUSTOMER_DATA,
-        "transaction_data": {"method": "card", "details": CARD_DETAILS},
+        "transaction_data": {"method": "card", "details": CARD_ASYNC},
     }
     create_resp = post_transaction(body)
     assert create_resp.status_code == 201, f"Create failed: {create_resp.text}"

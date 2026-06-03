@@ -31,7 +31,7 @@ from _helpers.http_client import (
     post_operation,
     post_transaction,
 )
-from _helpers.payloads import CARD_3DS, CARD_DETAILS, CARDS, CUSTOMER_DATA, MERCHANT_DATA, THREED
+from _helpers.payloads import CARD_3DS, CARD_ASYNC, CARD_DETAILS, CARDS, CUSTOMER_DATA, MERCHANT_DATA, THREED
 from _helpers.redis_client import query_transaction_from_redis
 from _helpers.signatures import calc_signature, make_get_headers, make_headers
 from _helpers.validators import assert_error_response, assert_transaction_response

@@ -55,11 +55,16 @@ CARD_DETAILS = {
 
 # Заглушка для нескольких карт. Сейчас используется только "default" (= CARD_DETAILS).
 # Когда понадобится — добавьте новую карту по образцу и используйте CARDS["visa"] и т.д.
-CARD_3DS = {**CARD_DETAILS, "cvv": "550"}
+CARD_3DS  = {**CARD_DETAILS, "cvv": "550"}
+
+# Async card (Case 4): NEW->PENDING->(CHARGED|REJECTED), delay = amount in seconds (max 20s).
+# Use small amounts (e.g. 5) to get a predictable processing window for status assertions.
+CARD_ASYNC = {**CARD_DETAILS, "pan": "4242424242424242"}
 
 CARDS = {
     "default": CARD_DETAILS,
-    "3ds": CARD_3DS,
+    "3ds":     CARD_3DS,
+    "async":   CARD_ASYNC,
 }
 
 THREED = {"challenge_window_size": "05"}
