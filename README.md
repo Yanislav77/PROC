@@ -28,10 +28,14 @@
 
 ### Python
 
-1. Скачайте Python на [python.org/downloads](https://www.python.org/downloads/)
+Требуется **Python 3.10–3.13** (3.13 рекомендуется).
+
+1. Скачайте Python 3.13 на [python.org/downloads](https://www.python.org/downloads/)
 2. Запустите установщик и **обязательно поставьте галочку «Add Python to PATH»**
 3. Нажмите «Install Now»
 4. Проверка: откройте PowerShell и введите `python --version` — должна появиться версия
+
+> **Важно:** `pytest-allure-adaptor2` несовместим с Python 3.12+, поэтому в проекте он не используется. Если ранее был установлен — удалите: `pip uninstall pytest-allure-adaptor2`.
 
 ### Проект в PyCharm
 
@@ -41,22 +45,41 @@
 
 ### Виртуальное окружение
 
-Виртуальное окружение — изолированная папка с Python и пакетами для этого проекта.
-Нужно создать один раз.
+В репозитории уже есть `.venv` в `.gitignore` — создайте его один раз в терминале из корня проекта:
 
+```bash
+python -m venv .venv
+```
+
+Или через PyCharm:
 1. **File → Settings → Project: PROC → Python Interpreter**
 2. Нажмите шестерёнку ⚙ → **Add Interpreter → Add Local Interpreter**
-3. **Virtualenv Environment → New**, путь оставьте как есть → **OK**
+3. **Virtualenv Environment → New**, выберите `.venv` → **OK**
 
 ### Зависимости
 
-Откройте `requirements.txt` в PyCharm — появится жёлтая плашка **Install requirements**.
-Нажмите её.
+```bash
+# Windows
+.venv\Scripts\pip install -r requirements.txt
 
-Или в терминале PyCharm (**View → Tool Windows → Terminal**):
+# Linux / macOS
+.venv/bin/pip install -r requirements.txt
 ```
-pip install -r requirements.txt
-```
+
+Или через PyCharm: откройте `requirements.txt` — появится жёлтая плашка **Install requirements**, нажмите её.
+
+Устанавливаемые пакеты:
+
+| Пакет | Назначение |
+|---|---|
+| `pytest` | Тест-раннер |
+| `pytest-rerunfailures` | Перезапуск упавших тестов |
+| `pytest-xdist` | Параллельный запуск |
+| `requests` | HTTP-клиент |
+| `python-dotenv` | Загрузка `.env` |
+| `psycopg2-binary` | Проверка статусов через PostgreSQL |
+| `redis` | Проверка статусов через Redis |
+| `websocket-client` | WebSocket-тесты (web_form) |
 
 ---
 
@@ -81,8 +104,9 @@ git pull
 Если появилось сообщение вроде `Already up to date` — у вас уже последняя версия.
 Если обновились файлы — установите зависимости на случай, если они изменились:
 
-```
-pip install -r requirements.txt
+```bash
+.venv\Scripts\pip install -r requirements.txt   # Windows
+.venv/bin/pip install -r requirements.txt       # Linux / macOS
 ```
 
 ### Важно: файл `.env` при обновлении не трогается
@@ -210,13 +234,23 @@ DB_HOST=...
 
 Откройте `tests/_helpers/payloads.py`. Там словари с тестовыми данными, которые используются во всех файлах тестов:
 
-**Карта** (`CARD_DETAILS`):
+**Карты** (`CARD_DETAILS`, `CARD_3DS`, `CARD_ASYNC`):
+
+| Константа | PAN | Поведение |
+|---|---|---|
+| `CARD_DETAILS` | `4111111111111111` | Обычная карта, синхронная обработка |
+| `CARD_3DS` | `4111111111111111` (cvv=550) | Инициирует 3DS / redirect |
+| `CARD_ASYNC` | `4242424242424242` | Асинхронная обработка: задержка = сумма в RUB (макс. 20 сек) |
+
+`CARD_ASYNC` используется в тестах, где нужно поймать транзакцию в статусе `processing`.
+Например, с `amount=5` транзакция остаётся в `processing` ровно ~5 секунд.
+
 ```python
 CARD_DETAILS = {
-    "pan":          "4111111111111111",  # номер карты
-    "holder":       "JOHN DOE",          # имя (латиницей)
-    "expiry_month": "05",                # месяц истечения
-    "expiry_year":  "27",                # год истечения (две цифры)
+    "pan":          "4111111111111111",
+    "holder":       "JOHN DOE",
+    "expiry_month": "05",
+    "expiry_year":  "27",
     "cvv":          "666",
 }
 ```
@@ -224,9 +258,9 @@ CARD_DETAILS = {
 **Мерчант** (`MERCHANT_DATA`):
 ```python
 MERCHANT_DATA = {
-    "order_id":    "order_1111",                    # ID заказа
+    "order_id":    "order_1111",
     "description": "Order payment",
-    "webhook_url": "https://merchant.com/webhook",  # URL для уведомлений от API
+    "webhook_url": "https://merchant.com/webhook",
     "return_url":  "https://merchant.com/return",
 }
 ```
@@ -290,50 +324,63 @@ MERCHANT_BALANCE_URL = f"{_API_BASE}/merchant/balance"
 
 ### Через терминал
 
+Используйте `pytest` из виртуального окружения:
+
+```bash
+# Windows
+.venv\Scripts\pytest
+
+# Linux / macOS
+.venv/bin/pytest
+```
+
+Примеры:
+
 ```bash
 # все тесты
-pytest
+.venv\Scripts\pytest
 
 # папка целиком
-pytest tests/payin/
-pytest tests/payout/
-pytest tests/operations/
-pytest tests/web_form/
+.venv\Scripts\pytest tests/payin/
+.venv\Scripts\pytest tests/payout/
+.venv\Scripts\pytest tests/operations/
+.venv\Scripts\pytest tests/web_form/
 
 # один файл
-pytest tests/operations/test_refund.py
-pytest tests/operations/test_capture.py
-pytest tests/payin/test_card.py
-pytest tests/payin/test_rebill_block.py
+.venv\Scripts\pytest tests/operations/test_refund.py
+.venv\Scripts\pytest tests/operations/test_capture.py
+.venv\Scripts\pytest tests/payin/test_card.py
+.venv\Scripts\pytest tests/payin/test_rebill_block.py
 
 # один конкретный тест по имени функции
-pytest tests/operations/test_refund.py::test_refund_partial
-pytest tests/operations/test_capture.py::test_capture_full
+.venv\Scripts\pytest tests/operations/test_refund.py::test_refund_partial
+.venv\Scripts\pytest tests/operations/test_capture.py::test_capture_full
 
 # параметризованный тест — нужен node-id с параметром в квадратных скобках
-pytest "tests/general/test_customer_data.py::test_browser_info_optional_field_missing[accept_header]"
+.venv\Scripts\pytest "tests/general/test_customer_data.py::test_browser_info_optional_field_missing[accept_header]"
 
 # по ID тест-кейса (маркер @pytest.mark.tcid)
-pytest -k "RF-001"
-pytest -k "CAP-031"
-pytest -k "RB-022"
-pytest -k "CD-082"
+.venv\Scripts\pytest -k "RF-001"
+.venv\Scripts\pytest -k "CAP-031"
+.venv\Scripts\pytest -k "GT-040"
 
 # остановиться на первой ошибке
-pytest -x
+.venv\Scripts\pytest -x
 
 # подробный вывод (имена всех тестов)
-pytest -v
+.venv\Scripts\pytest -v
 
 # показать print/HTTP-вывод внутри тестов
-pytest -s
+.venv\Scripts\pytest -s
 
 # полный traceback при падении
-pytest --tb=long
+.venv\Scripts\pytest --tb=long
 
 # комбинация флагов
-pytest tests/operations/test_refund.py -v -s --tb=long
+.venv\Scripts\pytest tests/operations/test_refund.py -v -s --tb=long
 ```
+
+> Если `.venv` активировать (`source .venv/bin/activate` / `.venv\Scripts\activate`), то можно писать просто `pytest` без пути.
 
 #### Параметризованные тесты
 
@@ -365,7 +412,7 @@ tests/
 ├── _helpers/                          — вспомогательные модули
 │   ├── config.py                      — URL, таймауты, суммы по умолчанию
 │   ├── payloads.py                    — CARD_DETAILS, MERCHANT_DATA, CUSTOMER_DATA
-│   ├── factories.py                   — make_block_payin, make_completed_payin и др.
+│   ├── factories.py                   — make_block_payin (→ authorized), make_completed_payin (→ completed)
 │   ├── http_client.py                 — post_transaction, post_operation, get_request
 │   ├── signatures.py                  — HMAC-подпись запросов
 │   └── validators.py                  — assert_transaction_response, assert_error_response
@@ -828,9 +875,9 @@ TEST_DELAY=1.0    # пауза между тестами, секунд (по у�
 SETUP_DELAY=0.5   # пауза после создания родительской транзакции (по умолчанию 1.0)
 ```
 
-Пример запуска с уменьшенной задержкой:
-```
-TEST_DELAY=1.0 pytest tests/general/test_merchant.py
+Пример запуска с уменьшенной задержкой (Windows):
+```bash
+$env:TEST_DELAY="1.0"; .venv\Scripts\pytest tests/general/test_merchant.py
 ```
 
 или в `.env`:
@@ -838,3 +885,22 @@ TEST_DELAY=1.0 pytest tests/general/test_merchant.py
 TEST_DELAY=1.0
 SETUP_DELAY=0.5
 ```
+
+> `SETUP_DELAY` влияет только на начальный `time.sleep` внутри хелперов.
+> Фабричные функции `make_block_payin` и `make_completed_payin` дополнительно
+> поллят статус транзакции (до 20 сек), чтобы гарантировать нужное состояние
+> перед тестом — это время не управляется `SETUP_DELAY`.
+
+---
+
+### Многие тесты стали пропускаться (SKIPPED)
+
+Если polling-тест видит неожиданный терминальный статус — он вызывает `pytest.skip`,
+а не `FAILED`. Это нормальное поведение: тест не упал, просто тестовая среда
+не смогла воспроизвести нужное состояние. Типичные причины:
+
+- Транзакция ушла из `processing` в `authorized` вместо `completed` (manual capture вместо auto)
+- Бэкенд обработал транзакцию быстрее, чем тест успел проверить `processing`
+- Транзакция зависла в `processing` и polling timeout истёк
+
+При систематических skips проверьте настройки терминала и карточные кейсы.
