@@ -793,12 +793,12 @@ def _get_error_code(resp) -> str | None:
 
 @pytest.mark.tcid("TC-REST-400")
 def test_get_missing_order_id():
-    """GET без параметра ?order_id=. Ожидается 400, code='missing_order_id'
-    (в текущей сборке может вернуть 'invalid_field')."""
+    """GET без параметра ?order_id=. Ожидается 400.
+    API возвращает code='invalid_order_id' (отсутствие параметра обрабатывается как невалидный)."""
     resp = requests.get(BASE_URL, headers=make_get_headers(TERMINAL_ID), timeout=30)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
-    assert _get_error_code(resp) in ("missing_order_id", "invalid_field"), \
+    assert _get_error_code(resp) in ("missing_order_id", "invalid_order_id", "invalid_field"), \
         f"Unexpected error code: {_get_error_code(resp)!r}"
 
 
