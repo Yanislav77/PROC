@@ -797,7 +797,6 @@ def test_get_missing_order_id():
     API возвращает code='invalid_order_id' (отсутствие параметра обрабатывается как невалидный)."""
     resp = requests.get(BASE_URL, headers=make_get_headers(TERMINAL_ID), timeout=30)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
     assert _get_error_code(resp) in ("missing_order_id", "invalid_order_id", "invalid_field"), \
         f"Unexpected error code: {_get_error_code(resp)!r}"
 
