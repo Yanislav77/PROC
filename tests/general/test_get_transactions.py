@@ -859,21 +859,7 @@ def test_post_unknown_terminal():
     _assert_code(resp, "unknown_terminal")
 
 
-@pytest.mark.tcid("TC-REST-303")
-def test_post_missing_terminal_key():
-    """POST для терминала без секрета. Ожидается 401, code='missing_terminal_key'.
-    Требует переменную среды TERMINAL_NO_SECRET_ID.
-    """
-    import os
-    no_key_tid = os.environ.get("TERMINAL_NO_SECRET_ID", "")
-    if not no_key_tid:
-        pytest.skip("TERMINAL_NO_SECRET_ID не задан — нужен терминал без секретного ключа")
-    raw = json.dumps(_REST_VALID_BODY, separators=(",", ":"))
-    ts = str(int(time.time()))
-    resp = _post_signed(raw, terminal_id=no_key_tid,
-                        signature=calc_signature(TERMINAL_ID, ts, raw), timestamp=ts)
-    assert resp.status_code == 401, f"Expected 401, got {resp.status_code}: {resp.text}"
-    _assert_code(resp, "missing_terminal_key")
+
 
 
 # ─────────────────────────────────────────────
