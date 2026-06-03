@@ -13,6 +13,7 @@ import pytest
 from conftest import (
     calc_signature,
     get_request,
+    make_get_headers,
     post_transaction,
     post_operation,
     BASE_URL,
@@ -779,4 +780,77 @@ def test_get_by_order_id_returns_all_transactions():
     found_ids = {item.get("transaction_id") for item in data}
     assert tid1 in found_ids, f"transaction_id {tid1} не найден в ответе: {found_ids}"
     assert tid2 in found_ids, f"transaction_id {tid2} не найден в ответе: {found_ids}"
+
+
+# ─────────────────────────────────────────────
+# GET /api/v1/transactions — ошибки по order_id (TC-REST-400..402)
+# ─────────────────────────────────────────────
+
+def _get_error_code(resp) -> str | None:
+    body = resp.json()
+    return body.get("error", {}).get("code") or body.get("code")
+
+
+@pytest.mark.tcid("TC-REST-400")
+def test_get_missing_order_id():
+    """GET без параметра ?order_id=. Ожидается 400, code='missing_order_id'
+    (в текущей сборке может вернуть 'invalid_field')."""
+    resp = requests.get(BASE_URL, headers=make_get_headers(TERMINAL_ID), timeout=30)
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
+    assert _get_error_code(resp) in ("missing_order_id", "invalid_field"), \
+        f"Unexpected error code: {_get_error_code(resp)!r}"
+
+
+@pytest.mark.tcid("TC-REST-401")
+def test_get_invalid_order_id():
+    """GET с невалидным order_id (спецсимволы). Ожидается 400, code='invalid_order_id'."""
+    resp = requests.get(
+        BASE_URL,
+        params={"order_id": "<invalid!@#$%^&*()>"},
+        headers=make_get_headers(TERMINAL_ID),
+        timeout=30,
+    )
+    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
+    assert _get_error_code(resp) == "invalid_order_id", \
+        f"Expected 'invalid_order_id', got {_get_error_code(resp)!r}"
+
+
+@pytest.mark.tcid("TC-REST-402")
+def test_get_order_not_found():
+    """GET с корректным форматом order_id, которого нет в базе. Ожидается 404, code='order_not_found'."""
+    import uuid as _uuid
+    resp = requests.get(
+        BASE_URL,
+        params={"order_id": f"nonexistent_{_uuid.uuid4().hex}"},
+        headers=make_get_headers(TERMINAL_ID),
+        timeout=30,
+    )
+    assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+    assert _get_error_code(resp) == "order_not_found", \
+        f"Expected 'order_not_found', got {_get_error_code(resp)!r}"
+
+
+# ─────────────────────────────────────────────
+# GET /api/v1/transactions/<transaction_id> — ошибки (TC-REST-410..411)
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("TC-REST-410")
+def test_get_invalid_transaction_id():
+    """GET с transaction_id в неверном формате (не числовой). Ожидается 400 или 404, code='invalid_transaction_id'."""
+    url = f"{BASE_URL}/not-a-valid-id"
+    resp = requests.get(url, headers=make_get_headers(TERMINAL_ID), timeout=30)
+    assert resp.status_code in (400, 404), f"Expected 400/404, got {resp.status_code}: {resp.text}"
+    assert _get_error_code(resp) == "invalid_transaction_id", \
+        f"Expected 'invalid_transaction_id', got {_get_error_code(resp)!r}"
+
+
+@pytest.mark.tcid("TC-REST-411")
+def test_get_transaction_not_found():
+    """GET с числовым transaction_id, которого нет в базе. Ожидается 404, code='transaction_not_found'."""
+    url = f"{BASE_URL}/9999999999"
+    resp = requests.get(url, headers=make_get_headers(TERMINAL_ID), timeout=30)
+    assert resp.status_code == 404, f"Expected 404, got {resp.status_code}: {resp.text}"
+    assert _get_error_code(resp) == "transaction_not_found", \
+        f"Expected 'transaction_not_found', got {_get_error_code(resp)!r}"
 
