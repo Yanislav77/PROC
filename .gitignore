@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 reports/
 db_inspect.py
+.venv/
