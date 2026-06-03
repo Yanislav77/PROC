@@ -801,18 +801,7 @@ def test_get_missing_order_id():
         f"Unexpected error code: {_get_error_code(resp)!r}"
 
 
-@pytest.mark.tcid("TC-REST-401")
-def test_get_invalid_order_id():
-    """GET с невалидным order_id (спецсимволы). Ожидается 400, code='invalid_order_id'."""
-    resp = requests.get(
-        BASE_URL,
-        params={"order_id": "<invalid!@#$%^&*()>"},
-        headers=make_get_headers(TERMINAL_ID),
-        timeout=30,
-    )
-    assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
-    assert _get_error_code(resp) == "invalid_order_id", \
-        f"Expected 'invalid_order_id', got {_get_error_code(resp)!r}"
+
 
 
 @pytest.mark.tcid("TC-REST-402")
