@@ -7,3 +7,7 @@ __pycache__/
 reports/
 db_inspect.py
 .venv/
+_tc_dump.txt
+.idea/dataSources.xml
+.idea/dataSources.local.xml
+.idea/inspectionProfiles/
