@@ -21,6 +21,7 @@ from conftest import (
 )
 import _helpers.config as _cfg
 from _helpers.signatures import make_headers
+from _helpers.polling import poll_status
 
 # CVV < 500  → waiting_3DS   (используется _CARD_WAIT_3DS)
 # CVV >= 600  → без 3DS     (CARD_DETAILS использует cvv=666)
@@ -37,9 +38,6 @@ def _load_tr_ids() -> dict:
             return {}
     return {}
 
-_3DS_POLL_ATTEMPTS = 6
-_3DS_POLL_DELAY    = 2.0  # секунд между попытками
-
 
 def _create_payin(card: dict, oid: str) -> dict:
     body = {
@@ -54,21 +52,6 @@ def _create_payin(card: dict, oid: str) -> dict:
     if resp.status_code != 201:
         pytest.skip(f"Failed to create transaction: {resp.status_code}: {resp.text}")
     return resp.json()
-
-
-def _poll_status(tid: int, expected: str) -> None:
-    """Poll GET /{tid} until expected status or skip."""
-    for _ in range(_3DS_POLL_ATTEMPTS):
-        time.sleep(_3DS_POLL_DELAY)
-        r = get_request(f"{BASE_URL}/{tid}")
-        if r.status_code != 200:
-            continue
-        status = r.json().get("status", "")
-        if status == expected:
-            return
-        if status in ("completed", "authorized", "rejected", "cancelled", "failed"):
-            pytest.skip(f"Transaction {tid} reached {status!r} instead of {expected!r}")
-    pytest.skip(f"Transaction {tid} did not reach {expected!r} within timeout")
 
 
 @pytest.fixture
@@ -113,7 +96,7 @@ def waiting_3ds_tid(request) -> tuple[int, str]:
     data = _create_payin(_CARD_WAIT_3DS, oid)
     tid  = data["transaction_id"]
     if data.get("status") != "waiting_3DS":
-        _poll_status(tid, "waiting_3DS")
+        poll_status(tid, "waiting_3DS")
     return tid, oid
 
 

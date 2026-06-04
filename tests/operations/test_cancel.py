@@ -22,24 +22,7 @@ from conftest import (
     make_completed_payin,
     make_op_body,
 )
-
-_POLL_ATTEMPTS = 6
-_POLL_DELAY    = 2.0
-
-
-def _poll_status(tid: int, expected: str) -> None:
-    """Poll GET /{tid} until expected status or skip."""
-    for _ in range(_POLL_ATTEMPTS):
-        time.sleep(_POLL_DELAY)
-        r = get_request(f"{BASE_URL}/{tid}")
-        if r.status_code != 200:
-            continue
-        status = r.json().get("status", "")
-        if status == expected:
-            return
-        if status in ("completed", "authorized", "rejected", "cancelled", "failed"):
-            pytest.skip(f"Transaction {tid} reached {status!r} instead of {expected!r}")
-    pytest.skip(f"Transaction {tid} did not reach {expected!r} within timeout")
+from _helpers.polling import poll_status
 
 
 # ─────────────────────────────────────────────
@@ -60,7 +43,7 @@ def test_cancel_authorized_transaction():
     assert_transaction_response(data)
     assert data["type"] == "payin"
     if data.get("status") != "cancelled":
-        _poll_status(tid, "cancelled")
+        poll_status(tid, "cancelled")
 
 
 @pytest.mark.tcid("CAN-002")
@@ -77,7 +60,7 @@ def test_cancel_with_description():
     data = resp.json()
     assert_transaction_response(data)
     if data.get("status") != "cancelled":
-        _poll_status(tid, "cancelled")
+        poll_status(tid, "cancelled")
 
 
 # ─────────────────────────────────────────────
