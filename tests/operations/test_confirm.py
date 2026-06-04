@@ -8,6 +8,7 @@ import json
 import re
 import time
 import uuid
+from pathlib import Path
 
 import pytest
 import requests
@@ -24,6 +25,17 @@ from _helpers.signatures import make_headers
 # CVV < 500  → waiting_3DS   (используется _CARD_WAIT_3DS)
 # CVV >= 600  → без 3DS     (CARD_DETAILS использует cvv=666)
 _CARD_WAIT_3DS = {**CARD_DETAILS, "cvv": "123"}
+
+_TR_IDS_FILE = Path(__file__).parent.parent.parent / "tr_ids.json"
+
+
+def _load_tr_ids() -> dict:
+    if _TR_IDS_FILE.exists():
+        try:
+            return json.loads(_TR_IDS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
 
 _3DS_POLL_ATTEMPTS = 6
 _3DS_POLL_DELAY    = 2.0  # секунд между попытками
@@ -60,9 +72,43 @@ def _poll_status(tid: int, expected: str) -> None:
 
 
 @pytest.fixture
-def waiting_3ds_tid() -> tuple[int, str]:
+def waiting_3ds_tid(request) -> tuple[int, str]:
     """Создаёт свежий payin с CVV<500, ждёт статуса waiting_3DS. Возвращает (tid, order_id).
-    Function-scoped: каждый тест получает отдельную транзакцию (confirm меняет её состояние)."""
+    Function-scoped: каждый тест получает отдельную транзакцию (confirm меняет её состояние).
+    Если передан --tr-id, использует указанную транзакцию вместо создания новой."""
+    tcid_marker = request.node.get_closest_marker("tcid")
+    tcid_str = tcid_marker.args[0] if tcid_marker else None
+
+    # 1. CLI --tr-id overrides the file (format: TCID:ID or just ID as fallback)
+    manual_id = None
+    tr_id_args = request.config.getoption("--tr-id", default=None)
+    if tr_id_args:
+        fallback_id = None
+        for entry in tr_id_args:
+            if ":" in entry:
+                key, val = entry.split(":", 1)
+                if key == tcid_str:
+                    manual_id = val
+                    break
+            else:
+                fallback_id = entry
+        if manual_id is None:
+            manual_id = fallback_id
+
+    # 2. tr_ids.json — used when no CLI arg provided
+    if manual_id is None and tcid_str:
+        file_val = _load_tr_ids().get(tcid_str)
+        if file_val is not None:
+            manual_id = str(file_val)
+
+    if manual_id is not None:
+        tid = int(manual_id)
+        r = get_request(f"{BASE_URL}/{tid}")
+        if r.status_code != 200:
+            pytest.skip(f"Manual tr_id={tid}: GET returned {r.status_code}: {r.text}")
+        oid = r.json().get("merchant_data", {}).get("order_id", "")
+        return tid, oid
+
     oid  = gen_order_id("con_3ds_fixture")
     data = _create_payin(_CARD_WAIT_3DS, oid)
     tid  = data["transaction_id"]

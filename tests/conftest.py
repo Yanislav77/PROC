@@ -38,6 +38,20 @@ from _helpers.validators import assert_error_response, assert_transaction_respon
 from _helpers import report as _report
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--tr-id",
+        action="append",
+        default=None,
+        metavar="[TCID:]ID",
+        help=(
+            "Manually specify transaction ID for confirm tests. "
+            "Use TCID:ID to target a specific test (e.g. --tr-id CON-045:111 --tr-id CON-052:222), "
+            "or just ID as a fallback for all (e.g. --tr-id 111)."
+        ),
+    )
+
+
 def pytest_configure(config):
     _report.pytest_configure(config)
 
