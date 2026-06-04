@@ -23,6 +23,7 @@ from conftest import (
     calc_signature,
     assert_transaction_response,
     assert_error_response,
+    assert_idempotency_echo,
 )
 
 _VALID_BODY = {
@@ -56,7 +57,9 @@ def test_idempotency_key_deduplication():
             "Api-Signature":       sig,
             "Api-Timestamp":       ts,
         }
-        return requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+        r = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+        assert_idempotency_echo(headers, r)
+        return r
 
     resp1 = _send(timestamp)
     resp2 = _send(str(int(time.time())))
@@ -82,6 +85,7 @@ def test_invalid_signature():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -97,6 +101,7 @@ def test_missing_signature_header():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -112,6 +117,7 @@ def test_missing_terminal_id_header():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -131,6 +137,7 @@ def test_unknown_terminal_id():
         "Api-Timestamp":       timestamp,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (401, 403, 404), f"Expected 401/403/404, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -150,6 +157,7 @@ def test_timestamp_too_old():
         "Api-Timestamp":       old_ts,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -169,6 +177,7 @@ def test_invalid_json_body():
         "Api-Timestamp":       timestamp,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -191,6 +200,7 @@ def test_idempotency_key_non_uuid():
         "Api-Timestamp":       timestamp,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (200, 201, 400), f"Expected 2xx or 400, got {resp.status_code}"
 
 
@@ -208,6 +218,7 @@ def test_no_idempotency_key():
         "Api-Timestamp":   timestamp,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (200, 201, 400), f"Expected 2xx or 400, got {resp.status_code}"
 
 
@@ -226,6 +237,7 @@ def test_empty_idempotency_key():
         "Api-Timestamp":       timestamp,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (200, 201, 400), f"Expected 2xx or 400, got {resp.status_code}"
 
 
@@ -247,6 +259,7 @@ def test_empty_terminal_id():
         "Api-Timestamp":       timestamp,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -266,6 +279,7 @@ def test_empty_signature():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -284,6 +298,7 @@ def test_no_timestamp():
         "Api-Signature":       "0" * 64,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -303,6 +318,7 @@ def test_invalid_timestamp():
         "Api-Timestamp":       ts,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -322,6 +338,7 @@ def test_timestamp_recent_past():
         "Api-Timestamp":       ts,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
@@ -340,6 +357,7 @@ def test_timestamp_near_future():
         "Api-Timestamp":       ts,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
 
@@ -358,6 +376,7 @@ def test_timestamp_far_future():
         "Api-Timestamp":       ts,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -380,6 +399,7 @@ def test_post_without_body():
         "Api-Timestamp":       timestamp,
     }
     resp = requests.post(BASE_URL, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -402,6 +422,7 @@ def test_signature_computed_over_wrong_body():
         "Api-Timestamp": timestamp,
     }
     resp = requests.post(BASE_URL, data=raw_to_send, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -420,6 +441,7 @@ def test_signature_hex_uppercase():
         "Api-Timestamp": timestamp,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (201, 401, 403), f"Expected 2xx or 4xx, got {resp.status_code}"
 
 
@@ -435,6 +457,7 @@ def test_signature_wrong_length_32_chars():
         "Api-Timestamp": str(int(time.time())),
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -453,6 +476,7 @@ def test_timestamp_boundary_exactly_5min_ago():
         "Api-Timestamp": ts,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}"
 
 
@@ -470,6 +494,7 @@ def test_timestamp_as_float():
         "Api-Timestamp": ts,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -491,6 +516,7 @@ def test_idempotency_key_different_bodies_same_key():
         "Api-Timestamp": ts1,
     }
     resp1 = requests.post(BASE_URL, data=raw1, headers=h1, timeout=30)
+    assert_idempotency_echo(h1, resp1)
     assert resp1.status_code == 201, f"First request failed: {resp1.text}"
 
     raw2 = json.dumps(body2, separators=(",", ":"))
@@ -503,6 +529,7 @@ def test_idempotency_key_different_bodies_same_key():
         "Api-Timestamp": ts2,
     }
     resp2 = requests.post(BASE_URL, data=raw2, headers=h2, timeout=30)
+    assert_idempotency_echo(h2, resp2)
     assert resp2.status_code == 201, f"Expected 201 for same key different body, got {resp2.status_code}: {resp2.text}"
 
 
@@ -520,4 +547,5 @@ def test_content_type_not_json():
         "Api-Timestamp": timestamp,
     }
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}"

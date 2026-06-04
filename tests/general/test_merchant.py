@@ -16,6 +16,7 @@ from conftest import (
     TERMINAL_ID,
     SERVICE_SECRET,
     assert_error_response,
+    assert_idempotency_echo,
 )
 
 
@@ -238,6 +239,7 @@ def test_get_merchant_balance_idempotency_key_ignored():
         "Api-Idempotency-Key": str(_uuid.uuid4()),
     }
     resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
 
 

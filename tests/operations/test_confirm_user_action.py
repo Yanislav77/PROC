@@ -263,7 +263,10 @@ def test_idempotency_same_key_returns_same_transaction_id(waiting_action_tid):
             "Api-Signature":       sig,
             "Api-Timestamp":       ts,
         }
-        return _req.post(f"{BASE_URL}/{tid}/confirm", data=raw, headers=h, timeout=30)
+        from _helpers.validators import assert_idempotency_echo
+        r = _req.post(f"{BASE_URL}/{tid}/confirm", data=raw, headers=h, timeout=30)
+        assert_idempotency_echo(h, r)
+        return r
 
     r1 = _post()
     assert r1.status_code in (200, 201), f"First confirm failed: {r1.text}"
@@ -741,20 +744,19 @@ def test_ua_idempotency_same_key_same_body(waiting_action_tid):
     key = str(uuid.uuid4())
 
     def _post():
+        from _helpers.validators import assert_idempotency_echo
         ts  = str(int(time.time()))
         sig = calc_signature(TERMINAL_ID, ts, raw)
-        return _req.post(
-            f"{BASE_URL}/{tid}/confirm",
-            data=raw,
-            headers={
-                "Content-Type":        "application/json",
-                "Api-Terminal-ID":     TERMINAL_ID,
-                "Api-Idempotency-Key": key,
-                "Api-Signature":       sig,
-                "Api-Timestamp":       ts,
-            },
-            timeout=30,
-        )
+        h = {
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        }
+        r = _req.post(f"{BASE_URL}/{tid}/confirm", data=raw, headers=h, timeout=30)
+        assert_idempotency_echo(h, r)
+        return r
 
     r1 = _post()
     assert r1.status_code in (200, 201), f"First confirm failed: {r1.text}"

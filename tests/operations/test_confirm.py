@@ -17,7 +17,7 @@ from conftest import (
     calc_signature, post_operation, post_transaction, get_request,
     BASE_URL, TERMINAL_ID, MERCHANT_DATA, CUSTOMER_DATA, CARD_DETAILS,
     THREED, gen_order_id, SETUP_DELAY,
-    assert_error_response, assert_transaction_response,
+    assert_error_response, assert_idempotency_echo, assert_transaction_response,
 )
 import _helpers.config as _cfg
 from _helpers.signatures import make_headers
@@ -361,6 +361,7 @@ def test_confirm_invalid_signature():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -382,6 +383,7 @@ def test_confirm_missing_terminal_id():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -403,6 +405,7 @@ def test_confirm_missing_timestamp():
         "Api-Signature":       "0" * 64,
     }
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -430,7 +433,9 @@ def test_confirm_idempotency_same_key_second_returns_409():
             "Api-Signature": sig,
             "Api-Timestamp": ts,
         }
-        return requests.post(f"{BASE_URL}/000000000000/confirm", data=raw, headers=h, timeout=30)
+        r = requests.post(f"{BASE_URL}/000000000000/confirm", data=raw, headers=h, timeout=30)
+        assert_idempotency_echo(h, r)
+        return r
 
     r1 = _do(str(int(time.time())))
     r2 = _do(str(int(time.time())))
@@ -456,6 +461,7 @@ def test_confirm_missing_idempotency_key_returns_400():
         "Api-Timestamp": timestamp,
     }
     resp = requests.post(f"{BASE_URL}/000000000000/confirm", data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -1058,22 +1064,16 @@ def test_confirm_response_header_idempotency_key(waiting_3ds_tid):
     raw = json.dumps(body, separators=(",", ":"))
     ts  = str(int(time.time()))
     sig = calc_signature(TERMINAL_ID, ts, raw)
-    r = requests.post(
-        f"{BASE_URL}/{tid}/confirm",
-        data=raw,
-        headers={
-            "Content-Type":        "application/json",
-            "Api-Terminal-ID":     TERMINAL_ID,
-            "Api-Idempotency-Key": key,
-            "Api-Signature":       sig,
-            "Api-Timestamp":       ts,
-        },
-        timeout=30,
-    )
+    h = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": key,
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    }
+    r = requests.post(f"{BASE_URL}/{tid}/confirm", data=raw, headers=h, timeout=30)
     assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-    if "Api-Idempotency-Key" in r.headers:
-        assert r.headers["Api-Idempotency-Key"] == key, \
-            f"Api-Idempotency-Key mismatch: {r.headers['Api-Idempotency-Key']!r} != {key!r}"
+    assert_idempotency_echo(h, r)
 
 
 @pytest.mark.tcid("CON-074")

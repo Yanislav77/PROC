@@ -27,6 +27,7 @@ from conftest import (
     MERCHANT_BALANCE_URL,
     assert_transaction_response,
     assert_error_response,
+    assert_idempotency_echo,
     make_block_payin,
     make_completed_payin,
     make_op_body,
@@ -127,6 +128,7 @@ def test_get_transaction_invalid_signature(payin_transaction_id):
         "Api-Timestamp":       ts_header,
     }
     resp = requests.get(url, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -349,6 +351,7 @@ def test_get_transaction_invalid_signature_for_get():
         "Api-Timestamp":       timestamp,
     }
     resp = requests.get(MERCHANT_BALANCE_URL, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
     assert_error_response(resp)
 

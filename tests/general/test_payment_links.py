@@ -24,6 +24,7 @@ from conftest import (
     THREED,
     SERVICE_SECRET,
     assert_error_response,
+    assert_idempotency_echo,
     gen_order_id,
 )
 
@@ -164,7 +165,9 @@ _VALID_LINK_BODY = {
 def post_payment_link(body: dict) -> requests.Response:
     raw = json.dumps(body, separators=(",", ":"))
     headers = _make_pl_headers(raw_body=raw)
-    return requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
+    return resp
 
 
 # ─────────────────────────────────────────────
@@ -373,6 +376,7 @@ def test_payment_link_invalid_signature():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -388,6 +392,7 @@ def test_payment_link_missing_terminal_id():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -403,6 +408,7 @@ def test_payment_link_missing_timestamp():
         "Api-Signature":       "0" * 64,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -534,6 +540,7 @@ def test_payment_link_idempotency_same_key_returns_same_link():
         "Api-Timestamp": ts1,
     }
     r1 = requests.post(PAYMENT_LINKS_URL, data=raw, headers=h, timeout=30)
+    assert_idempotency_echo(h, r1)
     assert r1.status_code == 201, f"First link creation failed: {r1.text}"
     link_id_1 = r1.json().get("link_id")
 
@@ -541,6 +548,7 @@ def test_payment_link_idempotency_same_key_returns_same_link():
     h["Api-Signature"] = _sign_pl(TERMINAL_ID, ts2, raw)
     h["Api-Timestamp"] = ts2
     r2 = requests.post(PAYMENT_LINKS_URL, data=raw, headers=h, timeout=30)
+    assert_idempotency_echo(h, r2)
     assert r2.status_code in (200, 201), f"Expected 200/201 for idempotent request, got {r2.status_code}: {r2.text}"
     link_id_2 = r2.json().get("link_id")
     assert link_id_1 == link_id_2, f"Idempotent request returned different link_id: {link_id_1!r} vs {link_id_2!r}"
@@ -559,6 +567,7 @@ def test_payment_link_missing_idempotency_key_returns_400():
         "Api-Timestamp": timestamp,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -639,6 +648,7 @@ def test_payment_link_idempotency_different_body_returns_cached():
         "Api-Timestamp": ts1,
     }
     r1 = requests.post(PAYMENT_LINKS_URL, data=raw1, headers=h1, timeout=30)
+    assert_idempotency_echo(h1, r1)
     assert r1.status_code == 201, f"First request failed: {r1.text}"
     link_id_1 = r1.json().get("link_id")
 
@@ -655,6 +665,7 @@ def test_payment_link_idempotency_different_body_returns_cached():
         "Api-Timestamp": ts2,
     }
     r2 = requests.post(PAYMENT_LINKS_URL, data=raw2, headers=h2, timeout=30)
+    assert_idempotency_echo(h2, r2)
     assert r2.status_code in (200, 201), f"Expected cached 200/201, got {r2.status_code}: {r2.text}"
     link_id_2 = r2.json().get("link_id")
     assert link_id_1 == link_id_2, \
@@ -678,6 +689,7 @@ def test_payment_link_expired_timestamp():
         "Api-Timestamp": old_ts,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), \
         f"Expected 4xx for expired timestamp, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -697,6 +709,7 @@ def test_payment_link_future_timestamp():
         "Api-Timestamp": future_ts,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), \
         f"Expected 4xx for future timestamp, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -720,6 +733,7 @@ def test_payment_link_signature_computed_without_timestamp():
         "Api-Timestamp": ts,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), \
         f"Expected 4xx for signature without timestamp, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -739,6 +753,7 @@ def test_payment_link_missing_signature():
         "Api-Timestamp": str(int(time.time())),
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), \
         f"Expected 4xx for missing Api-Signature, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -762,6 +777,7 @@ def test_payment_link_unknown_terminal_id():
         "Api-Timestamp": ts,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403, 404), \
         f"Expected 4xx for unknown terminal, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -824,6 +840,7 @@ def test_payment_link_timestamp_at_minus_60s():
         "Api-Timestamp": ts,
     }
     resp = requests.post(PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 201, f"Expected 201 for timestamp -60s, got {resp.status_code}: {resp.text}"
 
 

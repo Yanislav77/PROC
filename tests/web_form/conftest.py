@@ -8,6 +8,7 @@ import _helpers.config as _cfg
 from _helpers.factories import gen_order_id
 from _helpers.payloads import MERCHANT_DATA
 from _helpers.signatures import make_headers
+from _helpers.validators import assert_idempotency_echo
 
 _UUID_RE   = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
@@ -40,6 +41,7 @@ def create_payment_token() -> str:
     raw = json.dumps(body, separators=(",", ":"))
     headers = make_headers(_cfg.TERMINAL_ID, raw)
     resp = requests.post(_cfg.PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=_cfg.HTTP_TIMEOUT)
+    assert_idempotency_echo(headers, resp)
     if resp.status_code != 201:
         pytest.skip(f"create_payment_token: expected 201, got {resp.status_code} — {resp.text}")
     url = resp.json().get("link_data", {}).get("url", "")
@@ -62,6 +64,7 @@ def payment_token():
         resp = requests.post(_cfg.PAYMENT_LINKS_URL, data=raw, headers=headers, timeout=_cfg.HTTP_TIMEOUT)
     except Exception as e:
         pytest.skip(f"Setup payment_token: request failed — {e}")
+    assert_idempotency_echo(headers, resp)
     if resp.status_code != 201:
         pytest.skip(f"Setup payment_token: expected 201, got {resp.status_code} — {resp.text}")
     url = resp.json().get("link_data", {}).get("url", "")

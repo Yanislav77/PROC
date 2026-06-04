@@ -18,6 +18,7 @@ from conftest import (
     TERMINAL_ID,
     assert_transaction_response,
     assert_error_response,
+    assert_idempotency_echo,
     gen_order_id,
     make_block_payin,
     make_completed_payin,
@@ -219,6 +220,7 @@ def test_capture_invalid_signature():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -239,6 +241,7 @@ def test_capture_missing_terminal_id():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -259,6 +262,7 @@ def test_capture_missing_timestamp():
         "Api-Signature":       "0" * 64,
     }
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -379,6 +383,7 @@ def test_capture_idempotency_same_key_returns_cached_response():
     key = str(uuid.uuid4())
 
     def _do(ts: str) -> requests.Response:
+        from _helpers.validators import assert_idempotency_echo
         sig = calc_signature(TERMINAL_ID, ts, raw)
         h = {
             "Content-Type":        "application/json",
@@ -387,7 +392,9 @@ def test_capture_idempotency_same_key_returns_cached_response():
             "Api-Signature":       sig,
             "Api-Timestamp":       ts,
         }
-        return requests.post(f"{BASE_URL}/{tid}/capture", data=raw, headers=h, timeout=30)
+        r = requests.post(f"{BASE_URL}/{tid}/capture", data=raw, headers=h, timeout=30)
+        assert_idempotency_echo(h, r)
+        return r
 
     r1 = _do(str(int(time.time())))
     assert r1.status_code == 200, f"First capture failed: {r1.text}"
@@ -491,6 +498,7 @@ def test_capture_idempotency_same_key_different_body():
     key = str(uuid.uuid4())
 
     def _do(amount: int, ts: str) -> requests.Response:
+        from _helpers.validators import assert_idempotency_echo
         body = {"merchant_data": {"order_id": order_id}, "financial_data": {"amount": amount, "currency": "RUB"}}
         raw = json.dumps(body, separators=(",", ":"))
         sig = calc_signature(TERMINAL_ID, ts, raw)
@@ -501,7 +509,9 @@ def test_capture_idempotency_same_key_different_body():
             "Api-Signature":       sig,
             "Api-Timestamp":       ts,
         }
-        return requests.post(f"{BASE_URL}/{tid}/capture", data=raw, headers=h, timeout=30)
+        r = requests.post(f"{BASE_URL}/{tid}/capture", data=raw, headers=h, timeout=30)
+        assert_idempotency_echo(h, r)
+        return r
 
     r1 = _do(1000, str(int(time.time())))
     assert r1.status_code == 200, f"First capture failed: {r1.text}"

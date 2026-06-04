@@ -23,6 +23,7 @@ from conftest import (
     SETUP_DELAY,
     assert_transaction_response,
     assert_error_response,
+    assert_idempotency_echo,
     gen_order_id,
     make_block_payin,
     make_completed_payin,
@@ -51,6 +52,7 @@ def _refund_url(tid) -> str:
 
 def _raw_refund(tid, body: dict, **header_overrides) -> requests.Response:
     """POST refund с произвольными заголовками поверх валидных (подпись по текущему времени)."""
+    from _helpers.validators import assert_idempotency_echo
     raw = json.dumps(body, separators=(",", ":"))
     ts = str(int(time.time()))
     sig = calc_signature(TERMINAL_ID, ts, raw)
@@ -62,11 +64,14 @@ def _raw_refund(tid, body: dict, **header_overrides) -> requests.Response:
         "Api-Timestamp":       ts,
         **header_overrides,
     }
-    return requests.post(_refund_url(tid), data=raw, headers=headers, timeout=30)
+    r = requests.post(_refund_url(tid), data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, r)
+    return r
 
 
 def _raw_refund_with_ts(tid, body: dict, ts: str) -> requests.Response:
     """POST refund с подписью, вычисленной по переданному timestamp."""
+    from _helpers.validators import assert_idempotency_echo
     raw = json.dumps(body, separators=(",", ":"))
     sig = calc_signature(TERMINAL_ID, ts, raw)
     headers = {
@@ -76,7 +81,9 @@ def _raw_refund_with_ts(tid, body: dict, ts: str) -> requests.Response:
         "Api-Signature":       sig,
         "Api-Timestamp":       ts,
     }
-    return requests.post(_refund_url(tid), data=raw, headers=headers, timeout=30)
+    r = requests.post(_refund_url(tid), data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, r)
+    return r
 
 
 @pytest.fixture
@@ -280,6 +287,7 @@ def test_refund_invalid_signature():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (401, 403), f"Expected 401/403, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -300,6 +308,7 @@ def test_refund_missing_terminal_id():
         "Api-Timestamp":       str(int(time.time())),
     }
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -320,6 +329,7 @@ def test_refund_missing_timestamp():
         "Api-Signature":       "0" * 64,
     }
     resp = requests.post(url, data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -375,6 +385,7 @@ def test_refund_idempotency_same_key_returns_cached_response(refund_tid):
     key = str(uuid.uuid4())
 
     def _do(ts: str) -> requests.Response:
+        from _helpers.validators import assert_idempotency_echo
         sig = calc_signature(TERMINAL_ID, ts, raw)
         h = {
             "Content-Type":        "application/json",
@@ -383,7 +394,9 @@ def test_refund_idempotency_same_key_returns_cached_response(refund_tid):
             "Api-Signature":       sig,
             "Api-Timestamp":       ts,
         }
-        return requests.post(f"{BASE_URL}/{refund_tid}/refund", data=raw, headers=h, timeout=30)
+        r = requests.post(f"{BASE_URL}/{refund_tid}/refund", data=raw, headers=h, timeout=30)
+        assert_idempotency_echo(h, r)
+        return r
 
     r1 = _do(str(int(time.time())))
     assert r1.status_code in (200, 201), f"First refund failed: {r1.text}"
@@ -410,6 +423,7 @@ def test_refund_missing_idempotency_key_returns_400(refund_tid):
         "Api-Timestamp":   timestamp,
     }
     resp = requests.post(f"{BASE_URL}/{refund_tid}/refund", data=raw, headers=headers, timeout=30)
+    assert_idempotency_echo(headers, resp)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}"
     assert_error_response(resp)
 
@@ -586,6 +600,7 @@ def test_refund_idempotency_same_key_different_body():
     key = str(uuid.uuid4())
 
     def _do(raw: str) -> requests.Response:
+        from _helpers.validators import assert_idempotency_echo
         sig = calc_signature(TERMINAL_ID, str(int(time.time())), raw)
         h = {
             "Content-Type":        "application/json",
@@ -594,7 +609,9 @@ def test_refund_idempotency_same_key_different_body():
             "Api-Signature":       sig,
             "Api-Timestamp":       str(int(time.time())),
         }
-        return requests.post(f"{BASE_URL}/{tid}/refund", data=raw, headers=h, timeout=30)
+        r = requests.post(f"{BASE_URL}/{tid}/refund", data=raw, headers=h, timeout=30)
+        assert_idempotency_echo(h, r)
+        return r
 
     r1 = _do(json.dumps(body1, separators=(",", ":")))
     assert r1.status_code in (200, 201), f"First refund failed: {r1.text}"

@@ -34,3 +34,13 @@ def assert_error_response(resp: requests.Response) -> None:
     data = resp.json()
     assert isinstance(data, dict), \
         f"Error response must be a JSON object, got {type(data).__name__}: {resp.text[:200]}"
+
+
+def assert_idempotency_echo(request_headers: dict, response: requests.Response) -> None:
+    """If the response echoes Api-Idempotency-Key, it must match what was sent."""
+    sent = request_headers.get("Api-Idempotency-Key")
+    if sent and "Api-Idempotency-Key" in response.headers:
+        assert response.headers["Api-Idempotency-Key"] == sent, (
+            f"Api-Idempotency-Key mismatch: sent {sent!r}, "
+            f"got {response.headers['Api-Idempotency-Key']!r}"
+        )

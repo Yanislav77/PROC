@@ -549,7 +549,10 @@ def test_idempotency_same_key_returns_same_transaction_id():
             "Api-Signature":       sig,
             "Api-Timestamp":       ts,
         }
-        return _req.post(BASE_URL, data=raw, headers=h, timeout=30)
+        from _helpers.validators import assert_idempotency_echo
+        r = _req.post(BASE_URL, data=raw, headers=h, timeout=30)
+        assert_idempotency_echo(h, r)
+        return r
 
     r1 = _post()
     assert r1.status_code == 201, f"First request failed: {r1.text}"

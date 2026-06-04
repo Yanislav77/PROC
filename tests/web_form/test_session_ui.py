@@ -45,17 +45,23 @@ def _make_headers(path_qs: str, raw_body: str = "", session_id: str | None = Non
 
 
 def _post(token: str, body: dict, headers: dict | None = None) -> requests.Response:
+    from _helpers.validators import assert_idempotency_echo
     path = f"{_BASE_PATH}/{token}/ui/logs"
     raw  = json.dumps(body, separators=(",", ":"))
     h    = headers if headers is not None else _make_headers(path, raw)
-    return requests.post(f"{_WEB3_HOST}{path}", data=raw, headers=h, timeout=_cfg.HTTP_TIMEOUT)
+    r    = requests.post(f"{_WEB3_HOST}{path}", data=raw, headers=h, timeout=_cfg.HTTP_TIMEOUT)
+    assert_idempotency_echo(h, r)
+    return r
 
 
 def _post_no_token(body: dict, headers: dict | None = None) -> requests.Response:
+    from _helpers.validators import assert_idempotency_echo
     path = f"{_BASE_PATH}/ui/logs"
     raw  = json.dumps(body, separators=(",", ":"))
     h    = headers if headers is not None else _make_headers(path, raw)
-    return requests.post(f"{_WEB3_HOST}{path}", data=raw, headers=h, timeout=_cfg.HTTP_TIMEOUT)
+    r    = requests.post(f"{_WEB3_HOST}{path}", data=raw, headers=h, timeout=_cfg.HTTP_TIMEOUT)
+    assert_idempotency_echo(h, r)
+    return r
 
 
 # ─────────────────────────────────────────────

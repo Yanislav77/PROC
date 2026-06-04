@@ -325,20 +325,19 @@ def test_idempotency_same_key_returns_same_result():
 
     def _post():
         import time as _t
+        from _helpers.validators import assert_idempotency_echo
         ts  = str(int(_t.time()))
         sig = calc_signature(TERMINAL_ID, ts, raw)
-        return requests.post(
-            f"{BASE_URL}",
-            data=raw,
-            headers={
-                "Content-Type":        "application/json",
-                "Api-Terminal-ID":     TERMINAL_ID,
-                "Api-Idempotency-Key": idem_key,
-                "Api-Signature":       sig,
-                "Api-Timestamp":       ts,
-            },
-            timeout=30,
-        )
+        h = {
+            "Content-Type":        "application/json",
+            "Api-Terminal-ID":     TERMINAL_ID,
+            "Api-Idempotency-Key": idem_key,
+            "Api-Signature":       sig,
+            "Api-Timestamp":       ts,
+        }
+        r = requests.post(f"{BASE_URL}", data=raw, headers=h, timeout=30)
+        assert_idempotency_echo(h, r)
+        return r
 
     r1 = _post()
     assert r1.status_code == 201, f"First request failed: {r1.status_code}: {r1.text}"
