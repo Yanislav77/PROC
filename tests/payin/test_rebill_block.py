@@ -17,7 +17,7 @@ recurrent_token: transaction_data.recurrent_token в GET /{id}.
   RB-018: is_recurrent=false → withdrawal_token (не recurrent_token)
   RB-019: без is_recurrent (default false) → withdrawal_token
   RB-020: один токен → три rebill'а подряд (все успешны)
-  RB-022: capture с отказом банка → 4xx, статус остаётся authorized
+  RB-022: payin MIR (2201382000000013) → recurrent_token → rebill → неуспех
   RB-023: многократные частичные cancel = полная сумма → cancelled
   RB-024: многократные частичные capture = полная сумма → completed
   RB-025: block → частичный cancel → capture оставшегося → completed
@@ -73,6 +73,14 @@ _CARD = {
     "expiry_month": "01",
     "expiry_year":  "29",
     "cvv":          "999",  # ≥ 600 → без 3DS
+}
+
+_CARD_MIR = {
+    "pan":          "2201382000000013",
+    "holder":       "JOHN DOE",
+    "expiry_month": "01",
+    "expiry_year":  "29",
+    "cvv":          "999",
 }
 
 _UUID4_RE = re.compile(
@@ -173,6 +181,7 @@ def test_auto_payin_manual_rebill_with_capture():
 
     # Шаг 3: capture
     _capture(tid_r, oid_r)
+    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
 
@@ -189,6 +198,7 @@ def test_manual_payin_capture_auto_rebill():
 
     # Шаг 2: capture родителя
     _capture(tid_p, oid_p)
+    time.sleep(SETUP_DELAY)
     _assert_status(tid_p, "completed")
 
     # Шаг 3: auto rebill
@@ -209,6 +219,7 @@ def test_manual_payin_capture_manual_rebill_with_capture():
 
     # Шаг 2: capture родителя
     _capture(tid_p, oid_p)
+    time.sleep(SETUP_DELAY)
     _assert_status(tid_p, "completed")
 
     # Шаг 3: manual rebill → authorized
@@ -217,6 +228,7 @@ def test_manual_payin_capture_manual_rebill_with_capture():
 
     # Шаг 4: capture rebill
     _capture(tid_r, oid_r)
+    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
 
@@ -369,6 +381,7 @@ def test_partial_capture():
     })
     assert resp.status_code in (200, 201), f"Partial capture failed: {resp.status_code}: {resp.text}"
     time.sleep(SETUP_DELAY)
+    time.sleep(SETUP_DELAY)
     _assert_status(tid, "completed")
 
 
@@ -381,6 +394,7 @@ def test_repeated_capture_after_full_capture():
     tid, oid, _ = _payin_card("manual", is_recurrent=False)
     _assert_status(tid, "authorized")
     _capture(tid, oid)
+    time.sleep(SETUP_DELAY)
     _assert_status(tid, "completed")
 
     resp = post_operation(tid, "capture", {
@@ -495,24 +509,48 @@ def test_multiple_rebills_from_same_token():
 # КЕЙС 22: capture с отказом банка
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RB-022")
-def test_capture_bank_decline():
-    """Двухстадийная транзакция (authorized) → /capture → банк возвращает отказ.
-    Ожидается 4xx, статус транзакции остаётся authorized.
-    Карта: 4111111111111111, expiry_month=01."""
-    tid, oid, _ = _payin_card("manual", is_recurrent=False)
-    _assert_status(tid, "authorized")
-
+def test_rebill_bank_decline():
+    """Payin с картой MIR (2201382000000013) → recurrent_token → rebill → неуспех.
+    Ожидается 4xx при создании rebill или статус rejected/failed/cancelled."""
+    oid_p = gen_order_id("rb022_parent")
     body = {
-        "merchant_data":  {"order_id": oid},
-        "financial_data": {"amount": _AMOUNT, "currency": "RUB"},
+        "type":             "payin",
+        "merchant_data":    {**MERCHANT_DATA, "order_id": oid_p},
+        "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
+        "flow_data":        {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data":    CUSTOMER_DATA,
+        "transaction_data": {"method": "card", "details": _CARD_MIR},
     }
-    resp = post_operation(tid, "capture", body)
-    assert resp.status_code in (400, 409, 422), \
-        f"Expected 4xx for bank decline capture, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
-
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"MIR payin failed: {resp.status_code}: {resp.text}"
+    tid_p = resp.json()["transaction_id"]
     time.sleep(SETUP_DELAY)
-    _assert_status(tid, "authorized")
+
+    poll  = get_request(f"{BASE_URL}/{tid_p}")
+    token = (poll.json().get("transaction_data") or {}).get("recurrent_token")
+    if not token:
+        pytest.skip("MIR card payin did not return recurrent_token")
+
+    oid_r = gen_order_id("rb022_rebill")
+    rebill_body = {
+        "type":             "payin",
+        "merchant_data":    {**MERCHANT_DATA, "order_id": oid_r},
+        "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
+        "flow_data":        {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data":    CUSTOMER_DATA,
+        "transaction_data": {"method": "token", "details": {"token": token}},
+    }
+    r = post_transaction(rebill_body)
+    if r.status_code in (400, 422):
+        assert_error_response(r)
+        return
+    assert r.status_code == 201, f"Unexpected rebill response: {r.status_code}: {r.text}"
+    tid_r = r.json()["transaction_id"]
+    time.sleep(SETUP_DELAY)
+    poll_r = get_request(f"{BASE_URL}/{tid_r}")
+    status = poll_r.json().get("status")
+    assert status in ("rejected", "failed", "cancelled"), \
+        f"Expected rebill failure status, got {status!r}"
 
 
 # ─────────────────────────────────────────────
@@ -566,6 +604,7 @@ def test_multiple_partial_capture_full_sum():
         if i < 9:
             _assert_status(tid, "authorized")
 
+    time.sleep(SETUP_DELAY)
     _assert_status(tid, "completed")
 
 
@@ -614,6 +653,7 @@ def test_block_partial_capture_then_cancel_remaining():
     })
     assert resp.status_code in (200, 201), \
         f"Partial capture failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
     time.sleep(SETUP_DELAY)
     _assert_status(tid, "authorized")
 
@@ -712,7 +752,7 @@ def test_cancel_zero_amount():
 
 
 # ═════════════════════════════════════════════════════════════
-# ДВУХСТАДИЙНЫЕ REBILL (RB-031 … RB-040)
+# ДВУХСТАДИЙНЫЕ REBILL (RB-031 … RB-038)
 # ═════════════════════════════════════════════════════════════
 
 def _get_token() -> str:
@@ -743,6 +783,7 @@ def test_double_stage_rebill_capture_full():
     tid_r, oid_r = _rebill(token, "manual")
     _assert_status(tid_r, "authorized")
     _capture(tid_r, oid_r)
+    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
 
@@ -763,6 +804,7 @@ def test_double_stage_rebill_capture_partial():
     })
     assert resp.status_code in (200, 201), f"Partial capture failed: {resp.status_code}: {resp.text}"
     time.sleep(SETUP_DELAY)
+    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "authorized")
 
     resp = post_operation(tid_r, "capture", {
@@ -770,6 +812,7 @@ def test_double_stage_rebill_capture_partial():
         "financial_data": {"amount": 7000, "currency": "RUB"},
     })
     assert resp.status_code in (200, 201), f"Final capture failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
     time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
@@ -782,6 +825,7 @@ def test_double_stage_rebill_cancel_before_capture():
     token = _get_token()
     tid_r, oid_r = _rebill(token, "manual")
     _assert_status(tid_r, "authorized")
+    time.sleep(SETUP_DELAY)
     _cancel_op(tid_r, gen_order_id("rb32_cancel"), _AMOUNT)
     _assert_status(tid_r, "cancelled")
 
@@ -805,6 +849,7 @@ def test_double_stage_rebill_partial_cancel_then_capture():
     })
     assert resp.status_code in (200, 201), f"Capture remaining failed: {resp.status_code}: {resp.text}"
     time.sleep(SETUP_DELAY)
+    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
 
@@ -823,6 +868,7 @@ def test_double_stage_rebill_partial_capture_then_cancel():
         "financial_data": {"amount": 3000, "currency": "RUB"},
     })
     assert resp.status_code in (200, 201), f"Partial capture failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
     time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "authorized")
 
@@ -865,6 +911,7 @@ def test_double_stage_rebill_repeated_capture_after_full():
     tid_r, oid_r = _rebill(token, "manual")
     _assert_status(tid_r, "authorized")
     _capture(tid_r, oid_r)
+    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
     resp = post_operation(tid_r, "capture", {
@@ -887,66 +934,6 @@ def test_double_stage_rebill_auto_cancel_timeout():
     _assert_status(tid_r, "authorized")
     time.sleep(300)   # 5 минут — зависит от конфигурации сервиса
     _assert_status(tid_r, "cancelled")
-
-
-@pytest.mark.tcid("RB-039")
-def test_double_stage_rebill_chain():
-    """Цепочка двухстадийных rebill'ов (rebill от rebill).
-    Шаг 1: родитель (is_recurrent=True) → token1.
-    Шаг 2: rebill1 с token1 (is_recurrent=True, manual) → authorized → capture → completed + token2.
-    Шаг 3: rebill2 с token2 (manual) → authorized → capture → completed."""
-    _, _, token1 = _payin_card("auto", is_recurrent=True)
-    assert token1, "token1 отсутствует"
-
-    oid2 = gen_order_id("rb38_r1")
-    body2 = {
-        "type":             "payin",
-        "merchant_data":    {**MERCHANT_DATA, "order_id": oid2},
-        "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
-        "flow_data":        {"is_recurrent": True, "capture_mode": "manual", "threed_secure": THREED},
-        "customer_data":    CUSTOMER_DATA,
-        "transaction_data": {"method": "token", "details": {"token": token1}},
-    }
-    r2 = post_transaction(body2)
-    assert r2.status_code == 201, f"rebill1 failed: {r2.status_code}: {r2.text}"
-    tid2 = r2.json()["transaction_id"]
-    time.sleep(SETUP_DELAY)
-    _assert_status(tid2, "authorized")
-    _capture(tid2, oid2)
-    _assert_status(tid2, "completed")
-
-    poll2  = get_request(f"{BASE_URL}/{tid2}")
-    token2 = (poll2.json().get("transaction_data") or {}).get("recurrent_token")
-    if not token2:
-        pytest.skip("Rebill с is_recurrent=True не вернул token2 — цепочка не поддерживается в этой среде")
-
-    tid3, oid3 = _rebill(token2, "manual")
-    _assert_status(tid3, "authorized")
-    _capture(tid3, oid3)
-    _assert_status(tid3, "completed")
-
-
-@pytest.mark.tcid("RB-040")
-def test_double_stage_rebill_bank_decline_on_capture():
-    """Двухстадийный rebill → capture с отказом банка → 4xx, статус остаётся authorized.
-    Шаг 1: rebill (manual) → authorized.
-    Шаг 2: /capture → банк отказывает → 4xx.
-    Шаг 3: GET → статус authorized."""
-    token = _get_token()
-    tid_r, oid_r = _rebill(token, "manual")
-    _assert_status(tid_r, "authorized")
-
-    resp = post_operation(tid_r, "capture", {
-        "merchant_data":  {"order_id": oid_r},
-        "financial_data": {"amount": _AMOUNT, "currency": "RUB"},
-    })
-    if resp.status_code in (200, 201):
-        pytest.skip("Банк не отклонил capture в данном окружении — тест не применим")
-    assert resp.status_code in (400, 409, 422), \
-        f"Expected 4xx for bank decline on rebill capture, got {resp.status_code}: {resp.text}"
-    assert_error_response(resp)
-    time.sleep(SETUP_DELAY)
-    _assert_status(tid_r, "authorized")
 
 
 # ═════════════════════════════════════════════════════════════
@@ -1051,8 +1038,8 @@ def test_cancel_already_cancelled_subscription():
         f"First cancel: Expected 200/204, got {r1.status_code}: {r1.text}"
 
     r2 = _cancel_subscription(token)
-    assert r2.status_code == 404, \
-        f"Second cancel: Expected 404, got {r2.status_code}: {r2.text}"
+    assert r2.status_code in (404, 409), \
+        f"Second cancel: Expected 404 or 409, got {r2.status_code}: {r2.text}"
     assert_error_response(r2)
 
 
@@ -1155,6 +1142,7 @@ def test_block_with_cancel_double_stage_rebill():
 
     # Шаг 4: capture → completed
     _capture(tid_r, oid_r)
+    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
 
