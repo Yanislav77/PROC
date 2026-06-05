@@ -177,62 +177,6 @@ def _create_cancelled_transaction() -> tuple[int, str]:
 
 
 # ─────────────────────────────────────────────
-# TRANSFER_CARD
-# ─────────────────────────────────────────────
-@pytest.mark.tcid("CON-046")
-def test_confirm_transfer_card_confirmed_true(waiting_action_tid):
-    """Confirm type=transfer_card, confirmed=true — пользователь принял перевод."""
-    tid, oid = waiting_action_tid
-    r = post_operation(tid, "confirm", {
-        "merchant_data": {"order_id": oid},
-        "financial_data": {"amount": 10000, "currency": "RUB"},
-        "result": {"type": "transfer_card", "details": {"confirmed": True}},
-    })
-    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-    data = r.json()
-    assert data.get("status") == "processing"
-    assert isinstance(data.get("transaction_id"), int)
-    assert_transaction_response(data)
-
-
-@pytest.mark.tcid("CON-047")
-def test_confirm_transfer_card_confirmed_false(waiting_action_tid):
-    """Confirm type=transfer_card, confirmed=false — пользователь отклонил перевод."""
-    tid, oid = waiting_action_tid
-    r = post_operation(tid, "confirm", {
-        "merchant_data": {"order_id": oid},
-        "financial_data": {"amount": 10000, "currency": "RUB"},
-        "result": {"type": "transfer_card", "details": {"confirmed": False}},
-    })
-    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-
-
-# ─────────────────────────────────────────────
-# ОСТАЛЬНЫЕ USER-ACTION ТИПЫ
-# ─────────────────────────────────────────────
-@pytest.mark.tcid("CON-048")
-@pytest.mark.parametrize("result_type", [
-    "redirect",
-    "transfer_phone",
-    "transfer_qr",
-    "transfer_account",
-    "top_up_mobile",
-])
-def test_confirm_user_action_types_confirmed_true(waiting_action_tid, result_type):
-    """Confirm с разными user-action типами, confirmed=true → 200, одинаковая структура ответа."""
-    tid, oid = waiting_action_tid
-    r = post_operation(tid, "confirm", {
-        "merchant_data": {"order_id": oid},
-        "financial_data": {"amount": 10000, "currency": "RUB"},
-        "result": {"type": result_type, "details": {"confirmed": True}},
-    })
-    assert r.status_code == 200, f"[{result_type}] Expected 200, got {r.status_code}: {r.text}"
-    data = r.json()
-    assert data.get("status") == "processing", f"[{result_type}] Expected status=processing"
-    assert isinstance(data.get("transaction_id"), int)
-
-
-# ─────────────────────────────────────────────
 # ИДЕМПОТЕНТНОСТЬ
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("CON-074")
@@ -778,3 +722,80 @@ def test_ua_idempotency_new_key_on_confirmed_transaction(waiting_action_tid):
     assert r2.status_code in range(400, 500), \
         f"Expected 4xx on second confirm with new key, got {r2.status_code}: {r2.text}"
     assert_error_response(r2)
+
+
+# ═════════════════════════════════════════════
+# ВАЛИДАЦИЯ ФИНАНСОВЫХ И MERCHANT ДАННЫХ (UA-046 … UA-047)
+# ═════════════════════════════════════════════
+
+@pytest.mark.tcid("UA-046")
+def test_ua_amount_mismatch_returns_4xx(waiting_action_tid):
+    """confirmed=true, amount в confirm не совпадает с суммой транзакции → 4xx."""
+    tid, oid = waiting_action_tid
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 1, "currency": "RUB"},
+        "result": {"type": "transfer_card", "details": {"confirmed": True}},
+    })
+    assert r.status_code in range(400, 500), \
+        f"Expected 4xx for amount mismatch, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+@pytest.mark.tcid("UA-047")
+def test_ua_order_id_mismatch_returns_4xx(waiting_action_tid):
+    """order_id в confirm не совпадает с реальным order_id транзакции → 4xx."""
+    tid, _ = waiting_action_tid
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": "wrong_order_id_xyz"},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "result": {"type": "transfer_card", "details": {"confirmed": True}},
+    })
+    assert r.status_code in range(400, 500), \
+        f"Expected 4xx for order_id mismatch, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
+# ═════════════════════════════════════════════
+# ФОРМАТ ОТВЕТА И ЗАГОЛОВКИ (UA-048 … UA-049)
+# ═════════════════════════════════════════════
+
+@pytest.mark.tcid("UA-048")
+def test_ua_response_format_confirmed_true(waiting_action_tid):
+    """confirmed=true: ответ содержит все обязательные поля и type='payin'."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    data = r.json()
+    assert_transaction_response(data)
+    assert data.get("type") == "payin", f"Expected type='payin', got {data.get('type')!r}"
+
+
+@pytest.mark.tcid("UA-049")
+def test_ua_response_headers_on_success(waiting_action_tid):
+    """Успешный confirm: ответ содержит Api-Terminal-ID и Api-Idempotency-Key."""
+    tid, oid = waiting_action_tid
+    body = {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "result": {"type": "transfer_card", "details": {"confirmed": True}},
+    }
+    raw = json.dumps(body, separators=(",", ":"))
+    key = str(uuid.uuid4())
+    ts  = str(int(time.time()))
+    sig = calc_signature(TERMINAL_ID, ts, raw)
+    h = {
+        "Content-Type":        "application/json",
+        "Api-Terminal-ID":     TERMINAL_ID,
+        "Api-Idempotency-Key": key,
+        "Api-Signature":       sig,
+        "Api-Timestamp":       ts,
+    }
+    r = _req.post(f"{BASE_URL}/{tid}/confirm", data=raw, headers=h, timeout=30)
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert "Api-Terminal-ID" in r.headers, "Response missing Api-Terminal-ID header"
+    assert r.headers["Api-Terminal-ID"] == TERMINAL_ID, \
+        f"Api-Terminal-ID mismatch: {r.headers.get('Api-Terminal-ID')!r} != {TERMINAL_ID!r}"
+    assert "Api-Idempotency-Key" in r.headers, "Response missing Api-Idempotency-Key header"
+    assert r.headers["Api-Idempotency-Key"] == key, \
+        f"Api-Idempotency-Key mismatch: {r.headers.get('Api-Idempotency-Key')!r} != {key!r}"
