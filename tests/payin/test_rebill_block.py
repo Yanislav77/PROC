@@ -142,11 +142,24 @@ def _capture(tid: int, oid: str, amount: int = _AMOUNT):
     return resp
 
 
+_POLL_ATTEMPTS = 10
+_POLL_DELAY    = 2.0
+
+
 def _assert_status(tid: int, expected: str):
-    poll = get_request(f"{BASE_URL}/{tid}")
-    assert poll.status_code == 200
-    status = poll.json().get("status")
-    assert status == expected, f"Expected status={expected!r}, got {status!r}"
+    """Poll GET /{tid} until status = expected (up to _POLL_ATTEMPTS × _POLL_DELAY sec)."""
+    status = None
+    for _ in range(_POLL_ATTEMPTS):
+        poll = get_request(f"{BASE_URL}/{tid}")
+        assert poll.status_code == 200
+        status = poll.json().get("status")
+        if status == expected:
+            return
+        time.sleep(_POLL_DELAY)
+    pytest.fail(
+        f"Transaction {tid}: expected {expected!r}, got {status!r} "
+        f"after {_POLL_ATTEMPTS} polls"
+    )
 
 
 # ─────────────────────────────────────────────
@@ -181,7 +194,6 @@ def test_auto_payin_manual_rebill_with_capture():
 
     # Шаг 3: capture
     _capture(tid_r, oid_r)
-    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
 
@@ -198,7 +210,6 @@ def test_manual_payin_capture_auto_rebill():
 
     # Шаг 2: capture родителя
     _capture(tid_p, oid_p)
-    time.sleep(SETUP_DELAY)
     _assert_status(tid_p, "completed")
 
     # Шаг 3: auto rebill
@@ -219,7 +230,6 @@ def test_manual_payin_capture_manual_rebill_with_capture():
 
     # Шаг 2: capture родителя
     _capture(tid_p, oid_p)
-    time.sleep(SETUP_DELAY)
     _assert_status(tid_p, "completed")
 
     # Шаг 3: manual rebill → authorized
@@ -228,7 +238,6 @@ def test_manual_payin_capture_manual_rebill_with_capture():
 
     # Шаг 4: capture rebill
     _capture(tid_r, oid_r)
-    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
 
@@ -381,7 +390,6 @@ def test_partial_capture():
     })
     assert resp.status_code in (200, 201), f"Partial capture failed: {resp.status_code}: {resp.text}"
     time.sleep(SETUP_DELAY)
-    time.sleep(SETUP_DELAY)
     _assert_status(tid, "completed")
 
 
@@ -394,7 +402,6 @@ def test_repeated_capture_after_full_capture():
     tid, oid, _ = _payin_card("manual", is_recurrent=False)
     _assert_status(tid, "authorized")
     _capture(tid, oid)
-    time.sleep(SETUP_DELAY)
     _assert_status(tid, "completed")
 
     resp = post_operation(tid, "capture", {
@@ -604,7 +611,6 @@ def test_multiple_partial_capture_full_sum():
         if i < 9:
             _assert_status(tid, "authorized")
 
-    time.sleep(SETUP_DELAY)
     _assert_status(tid, "completed")
 
 
@@ -653,7 +659,6 @@ def test_block_partial_capture_then_cancel_remaining():
     })
     assert resp.status_code in (200, 201), \
         f"Partial capture failed: {resp.status_code}: {resp.text}"
-    time.sleep(SETUP_DELAY)
     time.sleep(SETUP_DELAY)
     _assert_status(tid, "authorized")
 
@@ -783,7 +788,6 @@ def test_double_stage_rebill_capture_full():
     tid_r, oid_r = _rebill(token, "manual")
     _assert_status(tid_r, "authorized")
     _capture(tid_r, oid_r)
-    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
 
@@ -804,7 +808,6 @@ def test_double_stage_rebill_capture_partial():
     })
     assert resp.status_code in (200, 201), f"Partial capture failed: {resp.status_code}: {resp.text}"
     time.sleep(SETUP_DELAY)
-    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "authorized")
 
     resp = post_operation(tid_r, "capture", {
@@ -812,7 +815,6 @@ def test_double_stage_rebill_capture_partial():
         "financial_data": {"amount": 7000, "currency": "RUB"},
     })
     assert resp.status_code in (200, 201), f"Final capture failed: {resp.status_code}: {resp.text}"
-    time.sleep(SETUP_DELAY)
     time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
@@ -825,7 +827,6 @@ def test_double_stage_rebill_cancel_before_capture():
     token = _get_token()
     tid_r, oid_r = _rebill(token, "manual")
     _assert_status(tid_r, "authorized")
-    time.sleep(SETUP_DELAY)
     _cancel_op(tid_r, gen_order_id("rb32_cancel"), _AMOUNT)
     _assert_status(tid_r, "cancelled")
 
@@ -849,7 +850,6 @@ def test_double_stage_rebill_partial_cancel_then_capture():
     })
     assert resp.status_code in (200, 201), f"Capture remaining failed: {resp.status_code}: {resp.text}"
     time.sleep(SETUP_DELAY)
-    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
 
@@ -868,7 +868,6 @@ def test_double_stage_rebill_partial_capture_then_cancel():
         "financial_data": {"amount": 3000, "currency": "RUB"},
     })
     assert resp.status_code in (200, 201), f"Partial capture failed: {resp.status_code}: {resp.text}"
-    time.sleep(SETUP_DELAY)
     time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "authorized")
 
@@ -911,7 +910,6 @@ def test_double_stage_rebill_repeated_capture_after_full():
     tid_r, oid_r = _rebill(token, "manual")
     _assert_status(tid_r, "authorized")
     _capture(tid_r, oid_r)
-    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
     resp = post_operation(tid_r, "capture", {
@@ -1142,7 +1140,6 @@ def test_block_with_cancel_double_stage_rebill():
 
     # Шаг 4: capture → completed
     _capture(tid_r, oid_r)
-    time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
 
 
