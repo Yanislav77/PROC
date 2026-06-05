@@ -131,13 +131,30 @@ copy .env.example .env
 
 ```
 SERVICE_SECRET=вставьте_сюда_секрет
-TERMINAL_ID=374
+TERMINAL_ID=1234
+WEBPAY_SITE_ID=1234
+CUSTOMER_MAC_KEY=ваш_mac_ключ
+
+DB_HOST=ваш-хост.rds.amazonaws.com
+DB_USER=postgres
+DB_PASSWORD=ваш_пароль
+
+REDIS_HOST=ваш-хост.cache.amazonaws.com
+REDIS_PORT=6379
+REDIS_USER=ваш_пользователь
+REDIS_PASSWORD=ваш_пароль
 ```
 
-- `SERVICE_SECRET` — секрет для подписи запросов. Берётся из настроек платёжного шлюза.
-- `TERMINAL_ID` — ID вашего терминала. Используется по умолчанию для **всех** тестов (если не переопределён в `terminals.json`).
+| Переменная | Назначение |
+|---|---|
+| `SERVICE_SECRET` | Секрет для HMAC-подписи запросов. Берётся из настроек платёжного шлюза. |
+| `TERMINAL_ID` | ID терминала. Используется по умолчанию для **всех** тестов (если не переопределён в `terminals.json`). |
+| `WEBPAY_SITE_ID` | ID сайта для web_form тестов. |
+| `CUSTOMER_MAC_KEY` | MAC-ключ для авторизации в Web Form API. |
+| `DB_HOST` / `DB_USER` / `DB_PASSWORD` | PostgreSQL препрода — для прямых проверок статусов. Опционально: тесты работают без БД, но часть проверок будет пропущена. |
+| `REDIS_HOST` / `REDIS_PORT` / `REDIS_USER` / `REDIS_PASSWORD` | Redis препрода — аналогично. Опционально. |
 
-> `.env` не попадает в git, секрет виден только у вас локально.
+> `.env` не попадает в git, секреты видны только у вас локально.
 
 ---
 
@@ -479,7 +496,7 @@ tests/
 │   ├── test_capture.py                — списание (CAP-xxx)
 │   ├── test_cancel.py                 — отмена (CAN-xxx)
 │   ├── test_confirm.py                — подтверждение 3DS (CON-xxx)
-│   ├── test_confirm_user_action.py    — подтверждение user-action (UA-xxx, CON-046..048)
+│   ├── test_confirm_user_action.py    — подтверждение user-action (UA-xxx)
 │   └── test_refund.py                 — возврат (RF-xxx)
 ├── general/                           — общие сценарии
 │   ├── test_auth.py                   — авторизация (A-xxx)
@@ -559,7 +576,7 @@ Payin через P2P, QR-код, мобильный платёж и токен (
 
 ---
 
-### `payin/test_rebill_block.py` — Block, Rebill и Подписки (46 тестов, RB-001…RB-046)
+### `payin/test_rebill_block.py` — Block, Rebill и Подписки (46 тестов, RB-001…RB-054)
 
 Двухстадийные (block/capture), рекуррентные (rebill) транзакции и управление подписками.
 
@@ -567,12 +584,13 @@ Payin через P2P, QR-код, мобильный платёж и токен (
 |---|---|---|
 | Базовые комбинации | RB-001..004 | auto→auto rebill, auto→manual rebill + capture, manual + capture→rebill |
 | Частичный capture/cancel | RB-006..007, RB-023..026 | partial capture, 10× cancel = полная сумма, смешанные операции |
-| Негативные capture | RB-008, RB-013..014, RB-022 | несуществующая транзакция → 404; сумма > авторизованной → 4xx; банк отказывает |
+| Негативные capture | RB-008, RB-013..014, RB-022 | несуществующая транзакция → 404; сумма > авторизованной → 4xx; rebill с картой MIR → неуспех |
 | Негативные cancel | RB-027..030 | сумма > авторизованной → 4xx; после full capture → 409; auto-capture → 409; amount=0 → 400 |
 | Токены | RB-011..012, RB-016..020 | recurrent_token — UUID v4; is_recurrent=false → withdrawal_token; цепочки |
 | Идемпотентность | RB-010 | одинаковый ключ → один результат |
-| **Двухстадийные rebill** | RB-031..040 | manual rebill → full/partial capture, cancel, смешанные операции, банковский отказ на capture |
-| **Управление подписками** | RB-041..046 | cancel до/после rebill, pending rebill при отмене, повторный cancel → 404, несуществующий токен → 404 |
+| **Двухстадийные rebill** | RB-031..038 | manual rebill → full/partial capture, cancel, смешанные операции |
+| **Block без capture / с cancel** | RB-050..054 | block без capture → одностадийный/двухстадийный rebill; block→cancel→rebill; токен валиден после cancel |
+| **Управление подписками** | RB-041..046 | cancel до/после rebill, pending rebill при отмене, повторный cancel → 404/409, несуществующий токен → 404 |
 
 **DELETE** `/api/v1/subscriptions/{token}` — тесты RB-041..046.
 
@@ -630,22 +648,32 @@ GET `/api/v1/transactions/{id}` и GET `/api/v1/transactions?order_id=`.
 
 ---
 
-### `operations/test_capture.py` — Списание заблокированных средств (32 теста, CAP-001…CAP-032)
+### `operations/test_capture.py` — Списание заблокированных средств (57 тестов, CAP-001…CAP-057)
 
 POST `/api/v1/transactions/{id}/capture`.
 
-| Сценарий | Ожидаемый статус |
-|---|---|
-| Списание после Payin manual-capture | 200 / 201 |
-| Частичное списание | 200 / 201 |
-| Несуществующая транзакция | 404 |
-| Дублирующий idempotency key | 409 |
-| Отсутствует idempotency key | 400 |
-| Отсутствуют обязательные поля | 400 / 422 |
-| Нулевая / отрицательная сумма | 400 / 422 |
-| Auto-capture Payin → повторный capture | 409 |
-| Ответ содержит merchant_data, created_at | 200 / 201 |
-| description в ответе — из запроса capture, не из родительской транзы | 200 / 201 |
+| Группа | Сценарий | Ожидаемый статус |
+|---|---|---|
+| Happy path | Списание после Payin manual-capture | 200 / 201 |
+| Happy path | Частичное списание | 200 / 201 |
+| transaction_id | Несуществующая транзакция | 404 |
+| transaction_id | Уже захваченная транзакция (повторный capture) | 409 |
+| transaction_id | Отменённая транзакция | 409 |
+| transaction_id | Буквы/спецсимволы в URL | 400 / 404 |
+| Идемпотентность | Дублирующий idempotency key | 200 (кэш) |
+| Идемпотентность | Отсутствует idempotency key | 400 |
+| amount | Нулевая / отрицательная / дробная / строка | 400 |
+| amount | Сумма превышает авторизованную | 400 / 409 |
+| amount | null | 400 |
+| currency | Пустая / невалидная / нижний регистр / цифры | 400 |
+| currency | Не совпадает с валютой транзакции | 4xx |
+| order_id | Пустой / спецсимволы / 500+ символов | 400 / 404 |
+| webhook_url | Пустой / http:// вместо https:// / несуществующий домен | 200 или 400 |
+| Api-Terminal-ID | Пустой / несуществующий / спецсимволы / очень длинный | 400 / 401 / 403 |
+| Api-Idempotency-Key | Пустой / не-UUID / слишком короткий или длинный | 400 |
+| Api-Timestamp | Пустой / устаревший / будущий / нечисловой / отрицательный | 400 / 401 / 403 |
+| Ответ | merchant_data, created_at в ответе | 200 / 201 |
+| Ответ | description из запроса capture, не из родительской транзы | 200 / 201 |
 
 ---
 
@@ -699,7 +727,7 @@ User-action типы (transfer_card, transfer_phone, transfer_qr, transfer_accou
 
 ---
 
-### `operations/test_confirm_user_action.py` — Подтверждение user-action (UA-001…UA-045)
+### `operations/test_confirm_user_action.py` — Подтверждение user-action (UA-001…UA-049)
 
 POST `/api/v1/transactions/{id}/confirm` для транзакций в статусах `waiting_action` и `waiting_3DS_redirect`.
 
@@ -711,6 +739,8 @@ POST `/api/v1/transactions/{id}/confirm` для транзакций в стат
 | **Несовместимые комбинации** | UA-029..034 | transfer_card + 3DS-поля; redirect + 3DS-поля; waiting_3DS + transfer_card/redirect |
 | **Состояние транзакции** | UA-035..043 | nonexistent → 404; completed/cancelled/rejected → 4xx; waiting_3DS_redirect + redirect ✓ |
 | **Идемпотентность** | UA-044..045 | одинаковый ключ → 409/200; новый ключ на подтверждённой → 4xx |
+| **Валидация данных** | UA-046..047 | amount мисматч → 4xx; order_id мисматч → 4xx |
+| **Формат ответа и заголовки** | UA-048..049 | все обязательные поля + type='payin'; Api-Terminal-ID и Api-Idempotency-Key в ответе |
 
 Транзакция `waiting_action` создаётся через P2P (method=p2p).
 Транзакция `waiting_3DS_redirect` создаётся картой с CVV=550.
