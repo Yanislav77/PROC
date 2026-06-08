@@ -70,8 +70,8 @@ _AMOUNT = 10000
 _CARD = {
     "pan":          "4111111111111111",
     "holder":       "JOHN DOE",
-    "expiry_month": "01",
-    "expiry_year":  "29",
+    "expiry_month": "05",
+    "expiry_year":  "27",
     "cvv":          "999",  # ≥ 600 → без 3DS
 }
 
