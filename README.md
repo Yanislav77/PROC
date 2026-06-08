@@ -3,7 +3,7 @@
 Интеграционные тесты для CORE REST API платёжного шлюза.
 Тесты делают реальные HTTP-запросы к препрод-окружению — никаких моков.
 
-**1400+ тестов** в 31 файле, покрывают все эндпоинты API.
+**1430+ тестов** в 33 файлах, покрывают все эндпоинты API.
 
 ---
 
@@ -250,9 +250,14 @@ DB_HOST=...
 
 ### Ручные транзакции для confirm-тестов → `tr_ids.json`
 
-Happy-path тесты confirm (CON-045, CON-052, CON-072–075) требуют транзакцию в статусе `waiting_3DS`.
+Некоторые happy-path тесты требуют транзакцию в определённом статусе.
 По умолчанию каждый тест создаёт её сам через фикстуру. Если транзакция уже есть — можно указать её ID вручную,
 чтобы не тратить время на создание.
+
+| Ключ | Статус транзакции | Тесты |
+|---|---|---|
+| `CON-045`, `CON-052`, `CON-072–075` | `waiting_3DS` | `test_confirm.py` |
+| `UA-001..005` | `waiting_action` (P2P) | `test_confirm_user_action.py` |
 
 В корне проекта есть `tr_ids.json.example`. Создайте рядом файл `tr_ids.json`:
 
@@ -269,13 +274,16 @@ copy tr_ids.json.example tr_ids.json
   "CON-072": 12347,
   "CON-073": 12348,
   "CON-074": 12349,
-  "CON-075": 12350
+  "CON-075": 12350,
+  "UA-001": 12351,
+  "UA-002": 12352
 }
 ```
 
 - Если для кейса указан ID — тест использует эту транзакцию (GET /{id} для получения `order_id`)
 - Если оставить `null` — тест создаст транзакцию сам, как обычно
-- Каждый confirm-тест переводит транзакцию из `waiting_3DS` в другой статус, поэтому для каждого кейса нужна **отдельная** транзакция
+- Каждый тест переводит транзакцию в другой статус, поэтому для каждого кейса нужна **отдельная** транзакция
+- P2P-транзакции (`waiting_action`) одноразовые: после первого запуска теста нужно обновить ID
 
 > `tr_ids.json` не попадает в git — заполняется локально перед запуском, лежит рядом с `terminals.json`.
 
@@ -284,6 +292,8 @@ copy tr_ids.json.example tr_ids.json
 pytest tests/operations/test_confirm.py -k "CON-045" --tr-id CON-045:12345
 # несколько сразу:
 pytest tests/operations/test_confirm.py --tr-id CON-045:111 --tr-id CON-052:222
+# UA-тесты:
+pytest tests/operations/test_confirm_user_action.py --tr-id UA-001:12351
 # один ID для всех кейсов:
 pytest tests/operations/test_confirm.py --tr-id 12345
 ```
@@ -506,12 +516,14 @@ tests/
 │   ├── test_merchant.py               — баланс мерчанта (MB-xxx)
 │   └── test_subscriptions.py          — подписки (SB-xxx)
 └── web_form/                          — Web Form API (payment-sessions)
-    ├── test_session.py                — GET сессии (GP-xxx)
-    ├── test_session_bin.py            — BIN-lookup (BI-xxx)
-    ├── test_session_phone.py          — lookup по телефону (PH-xxx)
-    ├── test_session_transactions.py   — submit card/cardless (TX-xxx, CL-xxx)
-    ├── test_session_ui.py             — UI-логи и события (UL-xxx, UE-xxx)
-    └── test_session_ws.py             — WebSocket (WS-xxx)
+    ├── test_session.py                          — GET сессии (GP-xxx)
+    ├── test_session_bin.py                      — BIN-lookup (BI-xxx)
+    ├── test_session_phone.py                    — lookup по телефону (PH-xxx)
+    ├── test_session_transactions.py             — submit card/cardless (TX-xxx, CL-xxx)
+    ├── test_session_ui.py                       — UI-логи и события (UL-xxx, UE-xxx)
+    ├── test_session_ws.py                       — WebSocket (WS-xxx)
+    ├── test_session_actions_cancel.py           — отмена платежа пользователем (AC-xxx)
+    └── test_session_actions_change_requisite.py — смена реквизитов (RC-xxx)
 ```
 
 ---
@@ -827,7 +839,7 @@ DELETE `/api/v1/subscriptions/{token}`.
 
 ---
 
-### `web_form/` — Web Form API (132 теста)
+### `web_form/` — Web Form API (168 тестов)
 
 Тесты API веб-формы платёжной сессии (`https://web3preprod.testpaygate.com`).
 Используют отдельную авторизацию: `Api-Session-ID` + HMAC-SHA256 по `CUSTOMER_MAC_KEY`.
@@ -840,6 +852,8 @@ DELETE `/api/v1/subscriptions/{token}`.
 | `test_session_transactions.py` | TX-001…TX-023, CL-001…CL-021 | POST `.../transactions/card` и `.../cardless` — сабмит платежа |
 | `test_session_ui.py` | UL-001…UL-014, UE-001…UE-014 | POST `.../ui/logs` и `.../ui/events` — UI-логи и события |
 | `test_session_ws.py` | WS-001…WS-012 | GET `.../ws` — WebSocket-соединение |
+| `test_session_actions_cancel.py` | AC-001…AC-017 | POST `.../actions/transfer/cancel` — отмена платежа пользователем |
+| `test_session_actions_change_requisite.py` | RC-001…RC-018 | POST `.../actions/transfer/change-requisite` — смена реквизитов |
 
 | Сценарии (общие для web_form) | Ожидаемый результат |
 |---|---|
@@ -849,6 +863,53 @@ DELETE `/api/v1/subscriptions/{token}`.
 | Обязательные поля ответа присутствуют | 200 / 201 |
 | Повторный сабмит (double_confirmation) | 200, пустое тело |
 | WS: подключение, получение состояния, push 3DS_method | соответствующие WS-фреймы |
+
+---
+
+### `web_form/test_session_actions_cancel.py` — Отмена платежа пользователем (AC-001…AC-017)
+
+POST `/api/v1/payment-sessions/{token}/actions/transfer/cancel`
+(аналог `/payments/{token}/cancellation-by-user`).
+
+Подпись: HMAC-SHA256 по новой схеме (`Api-Session-ID` + `Api-Signature`).
+
+| Группа | Сценарии | Ожидаемый результат |
+|---|---|---|
+| State = `user_action` | Отмена с полным/пустым body, без CancellationScreenshots | 200 `{}` |
+| State ≠ `user_action` | Свежий токен (state=new) → тихий 200, PAPI не вызывается | 200 `{}` |
+| State ≠ `user_action` | Два запроса подряд — идемпотентно | 200 `{}` |
+| Авторизация | Нет Api-Session-ID / Api-Signature / невалидная подпись | 4xx |
+| Авторизация | Подпись от старого URL / от другого body | 4xx |
+| Авторизация | Новый URL + старые заголовки X-* | 4xx |
+| payment_token | Невалидный формат (не UUID) | 4xx |
+| payment_token | Несуществующий UUID | 4xx |
+| Регресс | Старый `/payments/.../cancellation-by-user` с X-* заголовками работает | 200 `{}` |
+| CORS | OPTIONS preflight возвращает `Api-Session-ID`, `Api-Signature` в Allow-Headers | 200 / 204 |
+
+> Тесты AC-001..003, AC-005, AC-015 скипнуты: требуют платёж в state=`user_action` (P2P).
+
+---
+
+### `web_form/test_session_actions_change_requisite.py` — Смена реквизитов (RC-001…RC-018)
+
+POST `/api/v1/payment-sessions/{token}/actions/transfer/change-requisite`
+(аналог `/payments/{token}/reselect`).
+
+Поведение: state=`user_action` → PAPI-вызов + push `state="pending"` через PaymentStateSync; bad JSON → 4xx (не поглощается).
+
+| Группа | Сценарии | Ожидаемый результат |
+|---|---|---|
+| State = `user_action` | Смена реквизитов с/без `payment_gateway_id` | 200 / 4xx |
+| State ≠ `user_action` | Свежий токен (state=new) → тихий 200 | 200 `{}` |
+| Битый JSON | Невалидный JSON → ошибка не поглощается | 4xx |
+| Авторизация | Нет Api-Session-ID / Api-Signature / невалидная подпись | 4xx |
+| Авторизация | Подпись от старого URL / от другого body | 4xx |
+| Авторизация | Новый URL + старые заголовки X-* | 4xx |
+| payment_token | Невалидный формат / несуществующий UUID | 4xx |
+| Регресс | Старый `/payments/.../reselect` с X-* заголовками работает | 200 `{}` |
+| CORS | OPTIONS preflight возвращает нужные заголовки | 200 / 204 |
+
+> Тесты RC-001..003, RC-013, RC-015, RC-016 скипнуты: требуют state=`user_action` или WS-клиент.
 
 ---
 
