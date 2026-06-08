@@ -175,7 +175,7 @@ copy terminals.json.example terminals.json
         "TERMINAL_ID": "3649",
         "SERVICE_SECRET": "секрет_другого_терминала"
     },
-    "general/test_auth.py": {
+    "operations/test_confirm_user_action.py": {
         "TERMINAL_ID": "9999",
         "SERVICE_SECRET": "ещё_один_секрет"
     }
