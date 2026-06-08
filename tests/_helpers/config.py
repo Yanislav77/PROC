@@ -50,6 +50,10 @@ SERVICE_SECRET   = os.environ["SERVICE_SECRET"]
 TERMINAL_ID      = os.environ.get("TERMINAL_ID", "374")
 CUSTOMER_MAC_KEY = os.environ.get("CUSTOMER_MAC_KEY", "")
 
+# Legacy (old) PAPI terminal — used only in CON-078..081 parity tests
+LEGACY_TERMINAL_ID    = os.environ.get("LEGACY_TERMINAL_ID", "")
+LEGACY_SERVICE_SECRET = os.environ.get("LEGACY_SERVICE_SECRET", "")
+
 INTER_TEST_DELAY = float(os.environ.get("TEST_DELAY", "3.0"))
 SETUP_DELAY      = float(os.environ.get("SETUP_DELAY", "1.0"))
 

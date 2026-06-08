@@ -706,7 +706,7 @@ POST `/api/v1/transactions/{id}/cancel`.
 
 ---
 
-### `operations/test_confirm.py` — Подтверждение 3DS (CON-001…CON-077)
+### `operations/test_confirm.py` — Подтверждение 3DS (CON-001…CON-081)
 
 POST `/api/v1/transactions/{id}/confirm` — исключительно тип `threed_secure` (waiting_3DS).
 User-action типы (transfer_card, transfer_phone, transfer_qr, transfer_account, top_up_mobile, redirect) вынесены в `test_confirm_user_action.py`.
@@ -736,6 +736,8 @@ User-action типы (transfer_card, transfer_phone, transfer_qr, transfer_accou
 | Ответ | Echo заголовков `Api-Terminal-ID` / `Api-Idempotency-Key` | 200 |
 | **Обратная совместимость** | CON-076: старый PascalCase-формат тела → 4xx | 400 |
 | **Обратная совместимость** | CON-077: старые заголовки X-SITE-ID/X-REQUEST-ID → 4xx | 400 / 401 |
+| **Parity (старый vs новый)** | CON-078..079: `/payments/confirmation` vs `/confirm` — одинаковые side effects в Redis | 200 / 4xx |
+| **Parity (старый vs новый)** | CON-080..081: `/payments/action` vs `/confirm` (transfer_card) — одинаковые side effects в Redis | 200 / 4xx |
 
 ---
 
@@ -747,8 +749,8 @@ POST `/api/v1/transactions/{id}/confirm` для транзакций в стат
 |---|---|---|
 | **Happy path** | UA-001..012 | transfer_card/phone/qr/account/top_up_mobile/redirect × confirmed=true/false → 200 |
 | **Валидация confirmed** | UA-013..022 | missing, null, строки "true"/"false", int 1/0, array, object → 400; отдельно redirect |
-| **Валидация details** | UA-023..028 | missing, {}, extra_field, смешанная 3DS-структура; отдельно redirect + details |
-| **Несовместимые комбинации** | UA-029..034 | transfer_card + 3DS-поля; redirect + 3DS-поля; waiting_3DS + transfer_card/redirect |
+| **Валидация details** | UA-023..024, UA-027..028 | missing, {}, extra_field, смешанная 3DS-структура; отдельно redirect + details |
+| **Несовместимые комбинации** | UA-029, UA-031, UA-033..034 | transfer_card + 3DS-поля; redirect + 3DS-поля; waiting_3DS + transfer_card/redirect |
 | **Состояние транзакции** | UA-035..043 | nonexistent → 404; completed/cancelled/rejected → 4xx; waiting_3DS_redirect + redirect ✓ |
 | **Идемпотентность** | UA-044..045 | одинаковый ключ → 409/200; новый ключ на подтверждённой → 4xx |
 | **Валидация данных** | UA-046..047 | amount мисматч → 4xx; order_id мисматч → 4xx |

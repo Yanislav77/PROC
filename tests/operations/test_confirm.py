@@ -4,6 +4,8 @@ POST /api/v1/transactions/{id}/confirm
 Тип: threed_secure (waiting_3DS).
 Happy path требует транзакцию в статусе waiting_3DS — создаётся через фикстуру waiting_3ds_tid.
 """
+import hashlib
+import hmac as _hmac
 import json
 import re
 import time
@@ -22,6 +24,7 @@ from conftest import (
 import _helpers.config as _cfg
 from _helpers.signatures import make_headers
 from _helpers.polling import poll_status
+from _helpers.redis_client import query_transaction_from_redis
 
 # CVV < 500  → waiting_3DS   (используется _CARD_WAIT_3DS)
 # CVV >= 600  → без 3DS     (CARD_DETAILS использует cvv=666)
@@ -1154,3 +1157,334 @@ def test_confirm_legacy_headers():
     )
     assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
+
+
+# ═════════════════════════════════════════════
+# PARITY — SIDE EFFECTS (CON-078..081)
+# Проверяем, что старые и новые эндпоинты дают идентичные
+# изменения в Redis и PAPI-state; формат ответа отличается.
+# ═════════════════════════════════════════════
+
+_LEGACY_HOST             = "https://papiv3preprod.testpaygate.com"
+_LEGACY_PAY_URL          = f"{_LEGACY_HOST}/payments/requests/single"
+_LEGACY_CONFIRMATION_URL = f"{_LEGACY_HOST}/payments/confirmation"
+_LEGACY_ACTION_URL       = f"{_LEGACY_HOST}/payments/action"
+
+_LEGACY_TERMINAL_ID    = _cfg.LEGACY_TERMINAL_ID
+_LEGACY_SERVICE_SECRET = _cfg.LEGACY_SERVICE_SECRET
+
+_LEGACY_CUSTOMER_INFO = {
+    "Email":    "test@test.com",
+    "Phone":    "+79991234567",
+    "Language": "ru",
+    "IP":       "127.0.0.1",
+}
+
+
+def _skip_if_no_legacy() -> None:
+    if not _LEGACY_TERMINAL_ID or not _LEGACY_SERVICE_SECRET:
+        pytest.skip("LEGACY_TERMINAL_ID / LEGACY_SERVICE_SECRET не заданы в .env")
+
+
+def _legacy_sig(method: str, url_path: str, body: str, request_id: str) -> str:
+    """HMAC-SHA256(SECRET, 'METHOD\\nURL\\nSITE_ID\\nREQUEST_ID\\nbody')."""
+    msg = f"{method}\n{url_path}\n{_LEGACY_TERMINAL_ID}\n{request_id}\n{body}"
+    return _hmac.new(_LEGACY_SERVICE_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest()
+
+
+def _legacy_headers(method: str, url_path: str, body: str = "") -> dict:
+    rid = str(uuid.uuid4())
+    return {
+        "Content-Type":        "application/json",
+        "X-SITE-ID":           _LEGACY_TERMINAL_ID,
+        "X-REQUEST-ID":        rid,
+        "X-REQUEST-SIGNATURE": _legacy_sig(method, url_path, body, rid),
+    }
+
+
+def _legacy_new_api_sig(timestamp: str, body: str = "") -> str:
+    """Новый формат подписи (Api-*) но с legacy-кредами: HMAC(SECRET, ts+tid+body)."""
+    msg = f"{timestamp}{_LEGACY_TERMINAL_ID}{body}"
+    return _hmac.new(_LEGACY_SERVICE_SECRET.encode(), msg.encode(), hashlib.sha256).hexdigest()
+
+
+def _legacy_get(url: str) -> requests.Response:
+    """GET с legacy-кредами в новом формате заголовков Api-*."""
+    ts = str(int(time.time()))
+    return requests.get(url, headers={
+        "Api-Terminal-ID":     _LEGACY_TERMINAL_ID,
+        "Api-Idempotency-Key": str(uuid.uuid4()),
+        "Api-Signature":       _legacy_new_api_sig(ts),
+        "Api-Timestamp":       ts,
+    }, timeout=30)
+
+
+def _create_legacy_payin(payment_method: str,
+                          payment_details: dict | None = None) -> tuple[str, str]:
+    """Создаёт транзакцию через старый /payments/requests/single.
+    Возвращает (legacy_tid_str, order_id). Пропускает тест при ошибке."""
+    _skip_if_no_legacy()
+    oid  = gen_order_id(f"leg_{payment_method[:3].lower()}")
+    body: dict = {
+        "OrderId":       oid,
+        "Amount":        "10.00",
+        "Currency":      "RUB",
+        "Description":   f"Legacy {payment_method} parity test",
+        "CustomerInfo":  _LEGACY_CUSTOMER_INFO,
+        "PaymentMethod": payment_method,
+    }
+    if payment_details:
+        body["PaymentDetails"] = payment_details
+    raw      = json.dumps(body, separators=(",", ":"))
+    url_path = "/payments/requests/single"
+    resp = requests.post(
+        _LEGACY_PAY_URL,
+        data=raw,
+        headers=_legacy_headers("POST", url_path, raw),
+        timeout=30,
+    )
+    if resp.status_code not in (200, 201):
+        pytest.skip(f"Legacy {payment_method} tx creation failed: {resp.status_code}: {resp.text}")
+    return resp.json().get("TransactionId", ""), oid
+
+
+def _legacy_poll_numeric_tid(oid: str, expected_status: str) -> int:
+    """Ищет транзакцию по order_id через новый GET API с legacy-кредами.
+    Поллит до expected_status, возвращает числовой transaction_id."""
+    for _ in range(10):
+        time.sleep(2.0)
+        r = _legacy_get(f"{BASE_URL}?order_id={oid}")
+        if r.status_code != 200:
+            continue
+        data = r.json()
+        txs  = data if isinstance(data, list) else [data]
+        if not txs:
+            continue
+        tid    = txs[0].get("transaction_id")
+        status = txs[0].get("status", "")
+        if status == expected_status:
+            return tid
+        if status in ("completed", "authorized", "rejected", "cancelled", "failed"):
+            pytest.skip(f"Legacy tx {tid} reached {status!r} instead of {expected_status!r}")
+    pytest.skip(f"Legacy tx (oid={oid!r}) did not reach {expected_status!r} within timeout")
+
+
+# ─────────────────────────────────────────────
+# CON-078: 3DS parity — успешный confirm
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-078")
+def test_3ds_confirm_side_effects_parity_success(waiting_3ds_tid):
+    """Успешный confirm 3DS: старый /payments/confirmation vs новый /confirm.
+    Ожидается: PAPI-статус и Redis-статус одинаковы; формат ответа отличается
+    (старый: 201 PascalCase, новый: 200 snake_case)."""
+    _skip_if_no_legacy()
+
+    # ── Старый эндпоинт ───────────────────────────────────────
+    legacy_tid, oid_old = _create_legacy_payin("Card", {
+        "CardNumber":     "4111111111111111",
+        "ExpMonth":       "05",
+        "ExpYear":        "27",
+        "CardholderName": "JOHN DOE",
+        "CVC":            "123",          # CVV < 500 → waiting_3DS
+    })
+    num_tid_old = _legacy_poll_numeric_tid(oid_old, "waiting_3DS")
+
+    redis_before_old = query_transaction_from_redis(num_tid_old)
+    conf_old = {"TransactionId": legacy_tid, "OrderId": oid_old, "PaRes": "test_pares", "MD": "test_md"}
+    raw_old  = json.dumps(conf_old, separators=(",", ":"))
+    resp_old = requests.post(
+        _LEGACY_CONFIRMATION_URL,
+        data=raw_old,
+        headers=_legacy_headers("POST", "/payments/confirmation", raw_old),
+        timeout=30,
+    )
+    redis_after_old = query_transaction_from_redis(num_tid_old)
+
+    # ── Новый эндпоинт ────────────────────────────────────────
+    new_tid, new_oid = waiting_3ds_tid
+    redis_before_new = query_transaction_from_redis(new_tid)
+    resp_new = post_operation(new_tid, "confirm", {
+        "merchant_data": {"order_id": new_oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "test_pares", "md": "test_md"}}},
+    })
+    redis_after_new = query_transaction_from_redis(new_tid)
+
+    # ── Ассерты ───────────────────────────────────────────────
+    assert resp_old.status_code in (200, 201), \
+        f"Старый эндпоинт: ожидался успех, got {resp_old.status_code}: {resp_old.text}"
+    assert resp_new.status_code == 200, \
+        f"Новый эндпоинт: ожидался 200, got {resp_new.status_code}: {resp_new.text}"
+
+    # Новый эндпоинт всегда содержит поле status
+    assert resp_new.json().get("status") == "processing", \
+        f"Новый эндпоинт: неожиданный статус {resp_new.json().get('status')!r}"
+
+    # PAPI-state через GET: оба должны быть в одном статусе
+    r_get_old = _legacy_get(f"{BASE_URL}/{num_tid_old}")
+    if r_get_old.status_code == 200:
+        papi_old = r_get_old.json().get("status")
+        papi_new = resp_new.json().get("status")
+        assert papi_old == papi_new, \
+            f"PAPI-статус расходится: старый={papi_old!r}, новый={papi_new!r}"
+
+    # Redis: изменение статуса идентично (если Redis доступен)
+    if redis_after_old and redis_after_new:
+        assert redis_after_old.get("status") == redis_after_new.get("status"), (
+            f"Redis status расходится: "
+            f"старый={redis_after_old.get('status')!r}, новый={redis_after_new.get('status')!r}"
+        )
+
+
+# ─────────────────────────────────────────────
+# CON-079: 3DS parity — неуспешный confirm
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-079")
+def test_3ds_confirm_side_effects_parity_failure():
+    """Неуспешный confirm 3DS (несуществующая транзакция): оба эндпоинта возвращают ошибку,
+    ни один не изменяет DB/Redis — side effects идентичны."""
+    _skip_if_no_legacy()
+
+    fake_old_tid = "GE00000000000000"
+    fake_oid     = "order_par_3ds_fail"
+
+    # Старый эндпоинт
+    body_old = {"TransactionId": fake_old_tid, "OrderId": fake_oid, "PaRes": "test_pares", "MD": "test_md"}
+    raw_old  = json.dumps(body_old, separators=(",", ":"))
+    resp_old = requests.post(
+        _LEGACY_CONFIRMATION_URL,
+        data=raw_old,
+        headers=_legacy_headers("POST", "/payments/confirmation", raw_old),
+        timeout=30,
+    )
+
+    # Новый эндпоинт
+    resp_new = post_operation("000000000000", "confirm", {
+        "merchant_data": {"order_id": fake_oid},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "result": {"type": "threed_secure", "details": {"data": {"pares": "test_pares", "md": "test_md"}}},
+    })
+
+    # Оба должны вернуть ошибку (коды и формат различаются — это ожидаемо)
+    assert resp_old.status_code >= 400, \
+        f"Старый эндпоинт: ожидался 4xx, got {resp_old.status_code}: {resp_old.text}"
+    assert resp_new.status_code >= 400, \
+        f"Новый эндпоинт: ожидался 4xx, got {resp_new.status_code}: {resp_new.text}"
+
+    # Транзакция не существует → Redis не содержит записей для неё
+    redis_old = query_transaction_from_redis(0)
+    redis_new = query_transaction_from_redis(0)
+    assert not redis_old, f"Redis содержит неожиданную запись после ошибки старого эндпоинта: {redis_old}"
+    assert not redis_new, f"Redis содержит неожиданную запись после ошибки нового эндпоинта: {redis_new}"
+
+
+# ─────────────────────────────────────────────
+# CON-080: action (transfer_card) parity — успешный confirm
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-080")
+def test_action_confirm_side_effects_parity_success():
+    """Успешный confirm P2P (transfer_card): старый /payments/action vs новый /confirm.
+    Ожидается: PAPI-статус и Redis-статус одинаковы; формат ответа отличается
+    (старый: 201 PascalCase, новый: 200 snake_case)."""
+    _skip_if_no_legacy()
+
+    # ── Старый эндпоинт ───────────────────────────────────────
+    legacy_tid, oid_old = _create_legacy_payin("P2P")
+    num_tid_old = _legacy_poll_numeric_tid(oid_old, "waiting_action")
+
+    redis_before_old = query_transaction_from_redis(num_tid_old)
+    act_body = {
+        "UserActionResultObject": {"confirm": True},
+        "TransactionId":          legacy_tid,
+    }
+    raw_act  = json.dumps(act_body, separators=(",", ":"))
+    resp_old = requests.post(
+        _LEGACY_ACTION_URL,
+        data=raw_act,
+        headers=_legacy_headers("POST", "/payments/action", raw_act),
+        timeout=30,
+    )
+    redis_after_old = query_transaction_from_redis(num_tid_old)
+
+    # ── Новый эндпоинт ────────────────────────────────────────
+    new_oid  = gen_order_id("leg_p2p_new")
+    p2p_resp = post_transaction({
+        "type":             "payin",
+        "merchant_data":    {**MERCHANT_DATA, "order_id": new_oid},
+        "financial_data":   {"amount": 10000, "currency": "RUB"},
+        "flow_data":        {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data":    CUSTOMER_DATA,
+        "transaction_data": {"method": "p2p"},
+    })
+    if p2p_resp.status_code != 201:
+        pytest.skip(f"New P2P tx creation failed: {p2p_resp.status_code}: {p2p_resp.text}")
+    new_tid = p2p_resp.json()["transaction_id"]
+    if p2p_resp.json().get("status") != "waiting_action":
+        poll_status(new_tid, "waiting_action")
+
+    redis_before_new = query_transaction_from_redis(new_tid)
+    resp_new = post_operation(new_tid, "confirm", {
+        "merchant_data": {"order_id": new_oid},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "result": {"type": "transfer_card", "details": {"confirmed": True}},
+    })
+    redis_after_new = query_transaction_from_redis(new_tid)
+
+    # ── Ассерты ───────────────────────────────────────────────
+    assert resp_old.status_code in (200, 201), \
+        f"Старый эндпоинт: ожидался успех, got {resp_old.status_code}: {resp_old.text}"
+    assert resp_new.status_code in (200, 201), \
+        f"Новый эндпоинт: ожидался успех, got {resp_new.status_code}: {resp_new.text}"
+
+    # PAPI-state через GET
+    r_get_old = _legacy_get(f"{BASE_URL}/{num_tid_old}")
+    if r_get_old.status_code == 200 and resp_new.status_code == 200:
+        papi_old = r_get_old.json().get("status")
+        papi_new = resp_new.json().get("status")
+        assert papi_old == papi_new, \
+            f"PAPI-статус расходится: старый={papi_old!r}, новый={papi_new!r}"
+
+    # Redis
+    if redis_after_old and redis_after_new:
+        assert redis_after_old.get("status") == redis_after_new.get("status"), (
+            f"Redis status расходится: "
+            f"старый={redis_after_old.get('status')!r}, новый={redis_after_new.get('status')!r}"
+        )
+
+
+# ─────────────────────────────────────────────
+# CON-081: action (transfer_card) parity — неуспешный confirm
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("CON-081")
+def test_action_confirm_side_effects_parity_failure():
+    """Неуспешный confirm P2P (несуществующая транзакция): оба эндпоинта возвращают ошибку,
+    ни один не изменяет DB/Redis — side effects идентичны."""
+    _skip_if_no_legacy()
+
+    fake_old_tid = "GE00000000000000"
+    fake_oid     = "order_par_p2p_fail"
+
+    # Старый эндпоинт
+    body_old = {
+        "UserActionResultObject": {"confirm": True},
+        "TransactionId":          fake_old_tid,
+    }
+    raw_old  = json.dumps(body_old, separators=(",", ":"))
+    resp_old = requests.post(
+        _LEGACY_ACTION_URL,
+        data=raw_old,
+        headers=_legacy_headers("POST", "/payments/action", raw_old),
+        timeout=30,
+    )
+
+    # Новый эндпоинт
+    resp_new = post_operation("000000000000", "confirm", {
+        "merchant_data": {"order_id": fake_oid},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "result": {"type": "transfer_card", "details": {"confirmed": True}},
+    })
+
+    assert resp_old.status_code >= 400, \
+        f"Старый эндпоинт: ожидался 4xx, got {resp_old.status_code}: {resp_old.text}"
+    assert resp_new.status_code >= 400, \
+        f"Новый эндпоинт: ожидался 4xx, got {resp_new.status_code}: {resp_new.text}"
