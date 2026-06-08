@@ -517,19 +517,25 @@ def test_multiple_rebills_from_same_token():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RB-022")
 def test_rebill_bank_decline():
-    """Payin с картой MIR (2201382000000013) → recurrent_token → rebill → неуспех.
-    Ожидается 4xx при создании rebill или статус rejected/failed/cancelled."""
+    """Block MIR (2201382000000013, cvv=666, manual) → recurrent_token → rebill block (manual) → rejected."""
+    _CARD_MIR_BLOCK = {
+        "pan":          "2201382000000013",
+        "holder":       "JOHN DOE",
+        "expiry_month": "05",
+        "expiry_year":  "27",
+        "cvv":          "666",
+    }
     oid_p = gen_order_id("rb022_parent")
     body = {
         "type":             "payin",
         "merchant_data":    {**MERCHANT_DATA, "order_id": oid_p},
-        "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
-        "flow_data":        {"is_recurrent": True, "capture_mode": "auto", "threed_secure": THREED},
+        "financial_data":   {"amount": 1000, "currency": "RUB"},
+        "flow_data":        {"is_recurrent": True, "capture_mode": "manual", "threed_secure": THREED},
         "customer_data":    CUSTOMER_DATA,
-        "transaction_data": {"method": "card", "details": _CARD_MIR},
+        "transaction_data": {"method": "card", "details": _CARD_MIR_BLOCK},
     }
     resp = post_transaction(body)
-    assert resp.status_code == 201, f"MIR payin failed: {resp.status_code}: {resp.text}"
+    assert resp.status_code == 201, f"MIR block payin failed: {resp.status_code}: {resp.text}"
     tid_p = resp.json()["transaction_id"]
     time.sleep(SETUP_DELAY)
 
@@ -542,8 +548,8 @@ def test_rebill_bank_decline():
     rebill_body = {
         "type":             "payin",
         "merchant_data":    {**MERCHANT_DATA, "order_id": oid_r},
-        "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
-        "flow_data":        {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "financial_data":   {"amount": 1100, "currency": "RUB"},
+        "flow_data":        {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
         "customer_data":    CUSTOMER_DATA,
         "transaction_data": {"method": "token", "details": {"token": token}},
     }
