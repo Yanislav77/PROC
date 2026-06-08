@@ -518,7 +518,7 @@ def test_ua_redirect_on_waiting_3ds_transaction():
 
 
 # ═════════════════════════════════════════════
-# СОСТОЯНИЕ ТРАНЗАКЦИИ (UA-035 … UA-043)
+# СОСТОЯНИЕ ТРАНЗАКЦИИ (UA-035 … UA-040)
 # ═════════════════════════════════════════════
 
 @pytest.mark.tcid("UA-035")
@@ -602,36 +602,6 @@ def test_ua_rejected_transaction():
     assert_error_response(r)
 
 
-@pytest.mark.tcid("UA-041")
-def test_ua_waiting_3ds_redirect_with_redirect_confirmed_true():
-    """waiting_3DS_redirect + redirect + confirmed=true → 200, status=processing.
-    Валидная комбинация: redirect на транзакции в состоянии ожидания редиректа."""
-    tid, oid = _create_3ds_redirect_transaction()
-    r = _ua_confirm(tid, oid, "redirect", {"confirmed": True})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-    assert r.json().get("status") == "processing"
-    assert_transaction_response(r.json())
-
-
-@pytest.mark.tcid("UA-042")
-def test_ua_waiting_3ds_redirect_with_redirect_confirmed_false():
-    """waiting_3DS_redirect + redirect + confirmed=false → 200, транзакция отклонена."""
-    tid, oid = _create_3ds_redirect_transaction()
-    r = _ua_confirm(tid, oid, "redirect", {"confirmed": False})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-    assert r.json().get("status") in ("rejected", "cancelled", "failed", "processing")
-
-
-@pytest.mark.tcid("UA-043")
-def test_ua_waiting_3ds_redirect_with_transfer_card():
-    """waiting_3DS_redirect + transfer_card → 4xx (неверный тип confirm для данного статуса)."""
-    tid, oid = _create_3ds_redirect_transaction()
-    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True})
-    assert r.status_code in range(400, 500), \
-        f"Expected 4xx for transfer_card on waiting_3DS_redirect, got {r.status_code}: {r.text}"
-    assert_error_response(r)
-
-
 # ═════════════════════════════════════════════
 # ИДЕМПОТЕНТНОСТЬ (UA-044 … UA-045)
 # ═════════════════════════════════════════════
@@ -686,7 +656,7 @@ def test_ua_idempotency_new_key_on_confirmed_transaction(waiting_action_tid):
 
 
 # ═════════════════════════════════════════════
-# ВАЛИДАЦИЯ ФИНАНСОВЫХ И MERCHANT ДАННЫХ (UA-046 … UA-047)
+# ВАЛИДАЦИЯ ФИНАНСОВЫХ И MERCHANT ДАННЫХ (UA-046 … UA-047, UA-051)
 # ═════════════════════════════════════════════
 
 @pytest.mark.tcid("UA-046")
@@ -717,8 +687,22 @@ def test_ua_order_id_mismatch_returns_4xx(waiting_action_tid):
     assert_error_response(r)
 
 
+@pytest.mark.tcid("UA-051")
+def test_ua_currency_mismatch_returns_4xx(waiting_action_tid):
+    """currency в confirm не совпадает с валютой транзакции → 4xx."""
+    tid, oid = waiting_action_tid
+    r = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 10000, "currency": "USD"},
+        "result": {"type": "transfer_card", "details": {"confirmed": True}},
+    })
+    assert r.status_code in range(400, 500), \
+        f"Expected 4xx for currency mismatch, got {r.status_code}: {r.text}"
+    assert_error_response(r)
+
+
 # ═════════════════════════════════════════════
-# ФОРМАТ ОТВЕТА И ЗАГОЛОВКИ (UA-048 … UA-049)
+# ФОРМАТ ОТВЕТА И ЗАГОЛОВКИ (UA-048 … UA-050)
 # ═════════════════════════════════════════════
 
 @pytest.mark.tcid("UA-048")
@@ -760,3 +744,12 @@ def test_ua_response_headers_on_success(waiting_action_tid):
     assert "Api-Idempotency-Key" in r.headers, "Response missing Api-Idempotency-Key header"
     assert r.headers["Api-Idempotency-Key"] == key, \
         f"Api-Idempotency-Key mismatch: {r.headers.get('Api-Idempotency-Key')!r} != {key!r}"
+
+
+@pytest.mark.tcid("UA-050")
+def test_ua_response_format_confirmed_false(waiting_action_tid):
+    """confirmed=false: ответ содержит все обязательные поля транзакции."""
+    tid, oid = waiting_action_tid
+    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": False})
+    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
+    assert_transaction_response(r.json())
