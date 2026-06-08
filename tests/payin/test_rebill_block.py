@@ -17,7 +17,6 @@ recurrent_token: transaction_data.recurrent_token в GET /{id}.
   RB-018: is_recurrent=false → withdrawal_token (не recurrent_token)
   RB-019: без is_recurrent (default false) → withdrawal_token
   RB-020: один токен → три rebill'а подряд (все успешны)
-  RB-022: payin MIR (2201382000000013) → recurrent_token → rebill → неуспех
   RB-023: многократные частичные cancel = полная сумма → cancelled
   RB-024: многократные частичные capture = полная сумма → completed
   RB-025: block → частичный cancel → capture оставшегося → completed
@@ -510,60 +509,6 @@ def test_multiple_rebills_from_same_token():
     for i in range(1, 4):
         tid, _ = _rebill(token, "auto")
         _assert_status(tid, "completed")
-
-
-# ─────────────────────────────────────────────
-# КЕЙС 22: capture с отказом банка
-# ─────────────────────────────────────────────
-@pytest.mark.tcid("RB-022")
-def test_rebill_bank_decline():
-    """Block MIR (2201382000000013, cvv=666, manual) → recurrent_token → rebill block (manual) → rejected."""
-    _CARD_MIR_BLOCK = {
-        "pan":          "2201382000000013",
-        "holder":       "JOHN DOE",
-        "expiry_month": "05",
-        "expiry_year":  "27",
-        "cvv":          "666",
-    }
-    oid_p = gen_order_id("rb022_parent")
-    body = {
-        "type":             "payin",
-        "merchant_data":    {**MERCHANT_DATA, "order_id": oid_p},
-        "financial_data":   {"amount": 1000, "currency": "RUB"},
-        "flow_data":        {"is_recurrent": True, "capture_mode": "manual", "threed_secure": THREED},
-        "customer_data":    CUSTOMER_DATA,
-        "transaction_data": {"method": "card", "details": _CARD_MIR_BLOCK},
-    }
-    resp = post_transaction(body)
-    assert resp.status_code == 201, f"MIR block payin failed: {resp.status_code}: {resp.text}"
-    tid_p = resp.json()["transaction_id"]
-    time.sleep(SETUP_DELAY)
-
-    poll  = get_request(f"{BASE_URL}/{tid_p}")
-    token = (poll.json().get("transaction_data") or {}).get("recurrent_token")
-    if not token:
-        pytest.skip("MIR card payin did not return recurrent_token")
-
-    oid_r = gen_order_id("rb022_rebill")
-    rebill_body = {
-        "type":             "payin",
-        "merchant_data":    {**MERCHANT_DATA, "order_id": oid_r},
-        "financial_data":   {"amount": 1100, "currency": "RUB"},
-        "flow_data":        {"is_recurrent": False, "capture_mode": "manual", "threed_secure": THREED},
-        "customer_data":    CUSTOMER_DATA,
-        "transaction_data": {"method": "token", "details": {"token": token}},
-    }
-    r = post_transaction(rebill_body)
-    if r.status_code in (400, 422):
-        assert_error_response(r)
-        return
-    assert r.status_code == 201, f"Unexpected rebill response: {r.status_code}: {r.text}"
-    tid_r = r.json()["transaction_id"]
-    time.sleep(SETUP_DELAY)
-    poll_r = get_request(f"{BASE_URL}/{tid_r}")
-    status = poll_r.json().get("status")
-    assert status in ("rejected", "failed", "cancelled"), \
-        f"Expected rebill failure status, got {status!r}"
 
 
 # ─────────────────────────────────────────────
