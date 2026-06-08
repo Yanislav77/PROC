@@ -206,7 +206,9 @@ def test_capture_no_auth():
 @pytest.mark.tcid("CAP-014")
 def test_capture_invalid_signature():
     """Capture с подписью из нулей. Ожидается 401 или 403."""
-    url = f"{BASE_URL}/000000000000/capture"
+    oid = gen_order_id("cap_inv_sig")
+    tid = make_block_payin(oid)
+    url = f"{BASE_URL}/{tid}/capture"
     body = {
         "merchant_data": {"order_id": "order_capture_test"},
         "financial_data": {"amount": 1000, "currency": "RUB"},
@@ -588,7 +590,9 @@ def test_capture_special_chars_terminal_id():
 @pytest.mark.tcid("CAP-036")
 def test_capture_very_long_terminal_id():
     """Api-Terminal-ID = 1000 символов → 400/401/403."""
-    r = _raw_capture(_FAKE_TID_CAP, **{"Api-Terminal-ID": "1" * 1000})
+    oid = gen_order_id("cap_long_tid")
+    tid = make_block_payin(oid)
+    r = _raw_capture(tid, **{"Api-Terminal-ID": "1" * 1000})
     assert r.status_code in (400, 401, 403), f"Expected 4xx, got {r.status_code}: {r.text}"
     assert_error_response(r)
 
@@ -607,8 +611,10 @@ def test_capture_empty_idempotency_key():
 
 @pytest.mark.tcid("CAP-038")
 def test_capture_non_uuid_idempotency_key():
-    """Api-Idempotency-Key не в формате UUID ('8762c97713384ec08a2829312e4a2456') → 400."""
-    r = _raw_capture(_FAKE_TID_CAP, **{"Api-Idempotency-Key": "8762c97713384ec08a2829312e4a2456"})
+    """Api-Idempotency-Key не в формате UUID ('8762c97713384ec') → 400."""
+    oid = gen_order_id("cap_non_uuid")
+    tid = make_block_payin(oid)
+    r = _raw_capture(tid, **{"Api-Idempotency-Key": "8762c97713384ec"})
     assert r.status_code in (400, 401, 403), f"Expected 4xx, got {r.status_code}: {r.text}"
     assert_error_response(r)
 
