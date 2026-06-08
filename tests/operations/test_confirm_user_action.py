@@ -325,21 +325,20 @@ def test_ua_top_up_mobile_confirmed_false(waiting_action_tid):
 
 @pytest.mark.tcid("UA-011")
 def test_ua_redirect_confirmed_true(waiting_action_tid):
-    """redirect + confirmed=true → 200, status=processing."""
+    """redirect + confirmed=true → 409, need_confirm=false — confirm не применим."""
     tid, oid = waiting_action_tid
     r = _ua_confirm(tid, oid, "redirect", {"confirmed": True})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-    assert r.json().get("status") == "processing"
-    assert_transaction_response(r.json())
+    assert r.status_code == 409, f"Expected 409, got {r.status_code}: {r.text}"
+    assert_error_response(r)
 
 
 @pytest.mark.tcid("UA-012")
 def test_ua_redirect_confirmed_false(waiting_action_tid):
-    """redirect + confirmed=false → 200, транзакция отклонена."""
+    """redirect + confirmed=false → 409, need_confirm=false — confirm не применим."""
     tid, oid = waiting_action_tid
     r = _ua_confirm(tid, oid, "redirect", {"confirmed": False})
-    assert r.status_code == 200, f"Expected 200, got {r.status_code}: {r.text}"
-    assert r.json().get("status") in ("rejected", "cancelled", "failed", "processing")
+    assert r.status_code == 409, f"Expected 409, got {r.status_code}: {r.text}"
+    assert_error_response(r)
 
 
 # ═════════════════════════════════════════════
