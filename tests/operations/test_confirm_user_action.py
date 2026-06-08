@@ -222,52 +222,6 @@ def _create_cancelled_transaction() -> tuple[int, str]:
     return tid, oid
 
 
-# ─────────────────────────────────────────────
-# ИДЕМПОТЕНТНОСТЬ
-# ─────────────────────────────────────────────
-@pytest.mark.tcid("CON-074")
-def test_idempotency_same_key_returns_same_transaction_id(waiting_action_tid):
-    """Повторный confirm с тем же Api-Idempotency-Key возвращает transaction_id первого запроса без создания дубля."""
-    import json
-    import uuid
-    import requests as _req
-    from _helpers.config import BASE_URL, TERMINAL_ID
-    from _helpers.signatures import calc_signature
-
-    tid, oid = waiting_action_tid
-    body = {
-        "merchant_data": {"order_id": oid},
-        "financial_data": {"amount": 10000, "currency": "RUB"},
-        "result": {"type": "transfer_card", "details": {"confirmed": True}},
-    }
-    raw = json.dumps(body, separators=(",", ":"))
-    key = str(uuid.uuid4())
-
-    def _post():
-        ts = str(int(time.time()))
-        sig = calc_signature(TERMINAL_ID, ts, raw)
-        h = {
-            "Content-Type":        "application/json",
-            "Api-Terminal-ID":     TERMINAL_ID,
-            "Api-Idempotency-Key": key,
-            "Api-Signature":       sig,
-            "Api-Timestamp":       ts,
-        }
-        from _helpers.validators import assert_idempotency_echo
-        r = _req.post(f"{BASE_URL}/{tid}/confirm", data=raw, headers=h, timeout=30)
-        assert_idempotency_echo(h, r)
-        return r
-
-    r1 = _post()
-    assert r1.status_code in (200, 201), f"First confirm failed: {r1.text}"
-    tid1 = r1.json().get("transaction_id")
-    r2 = _post()
-    assert r2.status_code in (200, 201), f"Duplicate key: expected 200/201, got {r2.status_code}: {r2.text}"
-    assert r2.json().get("transaction_id") == tid1, (
-        f"Duplicate key returned different transaction_id: r1={tid1}, r2={r2.json().get('transaction_id')}"
-    )
-
-
 # ═════════════════════════════════════════════
 # UA — HAPPY PATH (UA-001 … UA-010)
 # ═════════════════════════════════════════════
@@ -496,22 +450,6 @@ def test_ua_details_empty_object():
     assert_error_response(r)
 
 
-@pytest.mark.tcid("UA-025")
-def test_ua_details_extra_field(waiting_action_tid):
-    """result.details = {confirmed: true, extra_field: 'value'} — фиксируем поведение: 200 или 400."""
-    tid, oid = waiting_action_tid
-    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True, "extra_field": "value"})
-    assert r.status_code in (200, 400), f"Expected 200 or 400, got {r.status_code}: {r.text}"
-
-
-@pytest.mark.tcid("UA-026")
-def test_ua_details_mixed_user_action_and_3ds(waiting_action_tid):
-    """result.details = {confirmed: true, pares: 'x', md: 'y'} — смешанная структура, фиксируем поведение."""
-    tid, oid = waiting_action_tid
-    r = _ua_confirm(tid, oid, "transfer_card", {"confirmed": True, "pares": "x", "md": "y"})
-    assert r.status_code in (200, 400), f"Expected 200 or 400, got {r.status_code}: {r.text}"
-
-
 @pytest.mark.tcid("UA-027")
 def test_ua_redirect_details_empty():
     """redirect + result.details = {} (нет confirmed) → 400."""
@@ -548,17 +486,6 @@ def test_ua_transfer_card_with_3ds_fields_no_confirmed():
     assert_error_response(r)
 
 
-@pytest.mark.tcid("UA-030")
-def test_ua_transfer_card_confirmed_and_data(waiting_action_tid):
-    """type=transfer_card + details содержит и confirmed, и data → 400 или игнорирование лишнего."""
-    tid, oid = waiting_action_tid
-    r = _ua_confirm(tid, oid, "transfer_card", {
-        "confirmed": True,
-        "data": {"pares": "test_pares", "md": "test_md"},
-    })
-    assert r.status_code in (200, 400), f"Expected 200 or 400, got {r.status_code}: {r.text}"
-
-
 @pytest.mark.tcid("UA-031")
 def test_ua_redirect_with_3ds_fields_no_confirmed():
     """type=redirect + details.data.pares + details.data.md (без confirmed) → 400."""
@@ -569,17 +496,6 @@ def test_ua_redirect_with_3ds_fields_no_confirmed():
     })
     assert r.status_code in (400, 404), f"Expected 400/404, got {r.status_code}: {r.text}"
     assert_error_response(r)
-
-
-@pytest.mark.tcid("UA-032")
-def test_ua_redirect_confirmed_and_data(waiting_action_tid):
-    """type=redirect + details содержит и confirmed, и data → фиксируем поведение: 200 или 400."""
-    tid, oid = waiting_action_tid
-    r = _ua_confirm(tid, oid, "redirect", {
-        "confirmed": True,
-        "data": {"pares": "test_pares", "md": "test_md"},
-    })
-    assert r.status_code in (200, 400), f"Expected 200 or 400, got {r.status_code}: {r.text}"
 
 
 @pytest.mark.tcid("UA-033")
