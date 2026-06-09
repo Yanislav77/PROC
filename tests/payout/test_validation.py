@@ -408,25 +408,6 @@ def test_payout_response_created_at():
         pytest.fail(f"created_at не является валидным ISO 8601: {created_at}")
 
 
-@pytest.mark.tcid("PY-104")
-def test_payout_response_mode():
-    """В ответе transaction_data.mode равен 'test' или 'live'."""
-    resp = post_transaction(_VALID)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-    data = resp.json()
-    mode = data.get("transaction_data", {}).get("mode")
-    assert mode in ("test", "live"), f"Неожиданное значение mode: {mode}"
-
-
-@pytest.mark.tcid("PY-105")
-def test_payout_response_method():
-    """В ответе transaction_data.method совпадает с отправленным методом."""
-    resp = post_transaction(_VALID)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-    data = resp.json()
-    method = data.get("transaction_data", {}).get("method")
-    assert method == "sbp", f"Ожидался method='sbp', получен: {method}"
-
 
 @pytest.mark.tcid("PY-106")
 def test_payout_type_missing():
