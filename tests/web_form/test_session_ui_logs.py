@@ -2,6 +2,20 @@
 Тесты эндпоинта UI-логирования:
   POST /api/v1/payment-sessions/{payment_token}/ui/logs    (аналог /payments/{payment_token}/ui_logger)
   POST /api/v1/payment-sessions/ui/logs                    (аналог /payments/ui_logger)
+
+Изменения по сравнению со старым эндпоинтом /payments/<token>/ui_logger:
+  Параметр              Старый                            Новый
+  Путь (с токеном)      /payments/<token>/ui_logger       /api/v1/payment-sessions/<token>/ui/logs
+  Путь (без токена)     /payments/ui_logger               /api/v1/payment-sessions/ui/logs
+  Заголовок сессии      X-CUSTOMER-SESSION-ID             Api-Session-ID
+  Заголовок подписи     X-REQUEST-SIGNATURE               Api-Signature
+  Идемпотентность       —                                 Api-Idempotency-Key (новый обязательный заголовок)
+  Тело запроса          {message, params}                 без изменений
+  Тело ответа           {"message": "Log with id ..."}    без изменений
+  HTTP-метод            POST                              POST
+  Алгоритм подписи      signature_v3                      без изменений
+
+Обратная совместимость: старый эндпоинт с X-* заголовками продолжает работать (UL-012).
 """
 import hashlib
 import hmac
