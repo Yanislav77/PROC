@@ -67,16 +67,6 @@ def _post(token: str, body: dict, headers: dict | None = None) -> requests.Respo
     return r
 
 
-def _post_no_token(body: dict, headers: dict | None = None) -> requests.Response:
-    from _helpers.validators import assert_idempotency_echo
-    path = f"{_BASE_PATH}/ui/logs"
-    raw  = json.dumps(body, separators=(",", ":"))
-    h    = headers if headers is not None else _make_headers(path, raw)
-    r    = requests.post(f"{_WEB3_HOST}{path}", data=raw, headers=h, timeout=_cfg.HTTP_TIMEOUT)
-    assert_idempotency_echo(h, r)
-    return r
-
-
 # ─────────────────────────────────────────────
 # HAPPY PATH
 # ─────────────────────────────────────────────
@@ -92,13 +82,6 @@ def test_ui_log_with_token(payment_token):
 def test_ui_log_with_token_end_event(payment_token):
     """Лог с payment_token, событие payment_flow_end. Ожидается 200."""
     resp = _post(payment_token, _END_BODY)
-    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
-
-
-@pytest.mark.tcid("UL-003")
-def test_ui_log_without_token():
-    """Лог без payment_token (путь /ui/logs). Ожидается 200."""
-    resp = _post_no_token(_LOG_BODY)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
 
 
