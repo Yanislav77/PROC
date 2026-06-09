@@ -4,12 +4,14 @@
   POST /api/v1/payment-sessions/{payment_token}/gate/return/data     (аналог /payments/{payment_token}/confirm)
   GET  /api/v1/payment-sessions/{payment_token}/gate/return/no-data  (объединяет confirm_void GET и confirm_void_no_body POST)
   POST /api/v1/payment-sessions/{payment_token}/gate/3ds2/method     (аналог /payments/{payment_token}/threedsecure/method)
+  POST /api/v1/payment-sessions/{payment_token}/gate/3ds2/result     (аналог /payments/{payment_token}/threedsecure/confirm)
 
 Текущий файл покрывает:
-  GR-001..016  GET  /gate/redirect
-  GD-001..017  GET/POST /gate/return/data
-  GN-001..019  GET/POST /gate/return/no-data
-  G3-001..014  POST /gate/3ds2/method
+  GR-001..016   GET  /gate/redirect
+  GD-001..017   GET/POST /gate/return/data
+  GN-001..019   GET/POST /gate/return/no-data
+  G3-001..014   POST /gate/3ds2/method
+  G3R-001..024  POST /gate/3ds2/result  (TC-04, TC-05 в спеке отсутствуют)
 """
 import pytest
 import requests
@@ -1021,5 +1023,321 @@ def test_gate_3ds2_method_auth_headers_ignored():
         "Api-Signature":  "0" * 64,
     }
     resp = _post_3ds2_method(token, headers=headers)
+    assert resp.status_code not in range(401, 404), \
+        f"Expected no auth error (headers ignored), got {resp.status_code}: {resp.text[:200]}"
+
+
+# ══════════════════════════════════════════════════════════════
+# G3R — POST /gate/3ds2/result
+# (аналог POST /payments/{payment_token}/threedsecure/confirm)
+# Три ветки: fingerprinting (200), widget (200 text/plain), обычный 3DS (302)
+# ══════════════════════════════════════════════════════════════
+
+_3DS_RESULT_CRES      = "cres=eyJ0aHJlZURTU2VydmVyVHJhbnNJRCI6IjAwMC4uLiJ9&MD=MD12345"
+_3DS_RESULT_SMS       = "sms_code=12345"
+_3DS_RESULT_CREQ_SKIP = "creq=skipped"
+_3DS_RESULT_FINGERPRINT = _3DS_METHOD_DATA   # threeDSMethodData — та же константа из G3-блока
+_3DS_RESULT_FORM_HEADERS = _3DS_FORM_HEADERS  # Content-Type: form-encoded + X-SPG-Origin
+
+
+def _3ds2_result_path(token: str) -> str:
+    return f"{_BASE_PATH}/{token}/gate/3ds2/result"
+
+
+def _old_3ds_confirm_path(token: str) -> str:
+    return f"{_OLD_PATH}/{token}/threedsecure/confirm"
+
+
+def _post_3ds2_result(token: str, body: str = _3DS_RESULT_CRES,
+                      headers: dict | None = None) -> requests.Response:
+    path = _3ds2_result_path(token)
+    h    = headers if headers is not None else _3DS_RESULT_FORM_HEADERS
+    return requests.post(
+        f"{_WEB3_HOST}{path}",
+        data=body,
+        headers=h,
+        allow_redirects=False,
+        timeout=_cfg.HTTP_TIMEOUT,
+    )
+
+
+def _post_old_3ds_confirm(token: str, body: str = _3DS_RESULT_CRES) -> requests.Response:
+    return requests.post(
+        f"{_WEB3_HOST}{_old_3ds_confirm_path(token)}",
+        data=body,
+        headers=_3DS_RESULT_FORM_HEADERS,
+        allow_redirects=False,
+        timeout=_cfg.HTTP_TIMEOUT,
+    )
+
+
+# ─────────────────────────────────────────────
+# ВЕТКИ ОБРАБОТКИ (ручная настройка — state-dependent)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("G3R-001")
+@pytest.mark.skip(reason="Требует платёж в состоянии 3DS fingerprinting + WS-клиент — настроить вручную")
+def test_gate_3ds2_result_fingerprint_branch(payment_token):
+    """TC-01: POST с threeDSMethodData → 200 OK; state='fingerprint'; PaymentStateSync push."""
+    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_FINGERPRINT,
+                             headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
+    assert resp.text.strip() == "", f"Expected empty body, got: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("G3R-002")
+@pytest.mark.skip(reason="Требует платёж с initiator не Widget, customer_info.term_url задан — настроить вручную")
+def test_gate_3ds2_result_regular_3ds_branch_302(payment_token):
+    """TC-02: POST cres, не виджет, term_url есть → 302, Location=/payment-sessions/<token>, state='3ds'."""
+    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES)
+    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
+    location = resp.headers.get("Location", "")
+    assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected /payment-sessions/ in Location, got: {location!r}"
+    assert _OLD_RESULT_URL_FRAGMENT not in location, f"Old /pay/ leaked into Location: {location!r}"
+    assert payment_token in location, f"Expected token in Location, got: {location!r}"
+
+
+@pytest.mark.tcid("G3R-003")
+@pytest.mark.skip(reason="Требует платёж с initiator не Widget, customer_info.term_url отсутствует — настроить вручную")
+def test_gate_3ds2_result_regular_3ds_no_term_url_state_3ds2ws(payment_token):
+    """TC-03: POST cres, не виджет, term_url отсутствует → 302; state='3ds2.ws'; tds_acs_url=false."""
+    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES)
+    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
+    location = resp.headers.get("Location", "")
+    assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
+
+
+@pytest.mark.tcid("G3R-006")
+@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — MD из query — настроить вручную")
+def test_gate_3ds2_result_md_from_query(payment_token):
+    """TC-06: POST ?MD=MD123 с cres в body, без MD в body → state_data.tds_md='MD123'."""
+    path    = _3ds2_result_path(payment_token)
+    resp    = requests.post(
+        f"{_WEB3_HOST}{path}?MD=MD123",
+        data="cres=eyJ0aHJlZURTU2VydmVyVHJhbnNJRCI6IjAwMC4uLiJ9",
+        headers=_3DS_RESULT_FORM_HEADERS,
+        allow_redirects=False,
+        timeout=_cfg.HTTP_TIMEOUT,
+    )
+    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("G3R-007")
+@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — MD из body — настроить вручную")
+def test_gate_3ds2_result_md_from_body(payment_token):
+    """TC-07: POST с form-data cres=..., MD=MD456, без ?MD → state_data.tds_md='MD456'."""
+    resp = _post_3ds2_result(payment_token,
+                             body="cres=eyJ0aHJlZURTU2VydmVyVHJhbnNJRCI6IjAwMC4uLiJ9&MD=MD456")
+    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("G3R-008")
+@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — MD по умолчанию — настроить вручную")
+def test_gate_3ds2_result_md_default(payment_token):
+    """TC-08: POST с cres без MD ни в body ни в query → state_data.tds_md='MD'+transaction_id."""
+    resp = _post_3ds2_result(payment_token,
+                             body="cres=eyJ0aHJlZURTU2VydmVyVHJhbnNJRCI6IjAwMC4uLiJ9")
+    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("G3R-009")
+@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — creq=skipped → синтетический cres — настроить вручную")
+def test_gate_3ds2_result_creq_skipped_synthetic_cres(payment_token):
+    """TC-09: POST с creq=skipped → tds_pares=base64('3DS_AUTHENTICATE'), tds_md='MD'+transaction_id."""
+    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CREQ_SKIP)
+    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
+    location = resp.headers.get("Location", "")
+    assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
+
+
+@pytest.mark.tcid("G3R-010")
+@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — legacy sms_code — настроить вручную")
+def test_gate_3ds2_result_sms_code_legacy(payment_token):
+    """TC-10: POST с sms_code (без cres) → tds_pares=base64(sms_code); 302."""
+    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_SMS)
+    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
+    location = resp.headers.get("Location", "")
+    assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
+
+
+@pytest.mark.tcid("G3R-012")
+@pytest.mark.skip(reason="Требует платёж в состоянии 3DS (не виджет, cres) — настроить вручную")
+def test_gate_3ds2_result_302_location_new_format(payment_token):
+    """TC-12: 302 Location содержит /payment-sessions/<token>, не /pay/<token>."""
+    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES)
+    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
+    location = resp.headers.get("Location", "")
+    assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected /payment-sessions/ in Location, got: {location!r}"
+    assert _OLD_RESULT_URL_FRAGMENT not in location, f"Old /pay/ leaked: {location!r}"
+    assert "?" not in location, f"Unexpected query params in Location: {location!r}"
+
+
+@pytest.mark.tcid("G3R-017")
+@pytest.mark.skip(reason="Требует платёж в состоянии 3DS fingerprinting — X-SPG-Origin не нужен в этой ветке")
+def test_gate_3ds2_result_fingerprint_no_x_spg_origin(payment_token):
+    """TC-17: POST threeDSMethodData без X-SPG-Origin → 200 OK (result_url не используется в ветке fingerprinting)."""
+    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_FINGERPRINT,
+                             headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("G3R-018")
+@pytest.mark.skip(reason="Требует платёж с initiator=Widget + cres — настроить вручную")
+def test_gate_3ds2_result_widget_branch_no_x_spg_origin(payment_token):
+    """TC-18: POST cres, MetaData.Initiator='Widget', без X-SPG-Origin → 200 OK text/plain."""
+    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES,
+                             headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
+    assert "text/plain" in resp.headers.get("Content-Type", ""), \
+        f"Expected text/plain, got: {resp.headers.get('Content-Type')!r}"
+
+
+@pytest.mark.tcid("G3R-019")
+@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — проверка игнорирования auth-заголовков в реальном флоу")
+def test_gate_3ds2_result_auth_headers_ignored_real_flow(payment_token):
+    """TC-19: POST с Api-Session-ID / Api-Signature → то же поведение, что и без них."""
+    headers = {
+        **_3DS_RESULT_FORM_HEADERS,
+        "Api-Session-ID": "00000000-0000-0000-0000-000000000001",
+        "Api-Signature":  "0" * 64,
+    }
+    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES, headers=headers)
+    assert resp.status_code == 302, f"Expected 302 (auth headers ignored), got {resp.status_code}: {resp.text[:200]}"
+    location = resp.headers.get("Location", "")
+    assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
+
+
+@pytest.mark.tcid("G3R-020")
+@pytest.mark.skip(reason="Требует платёж в состоянии 3DS (не виджет, cres) — настроить вручную")
+def test_gate_3ds2_result_old_endpoint_location_unchanged(payment_token):
+    """TC-20: Регресс — POST на /threedsecure/confirm → Location=/pay/<token>, не /payment-sessions/."""
+    resp = _post_old_3ds_confirm(payment_token, body=_3DS_RESULT_CRES)
+    assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
+    location = resp.headers.get("Location", "")
+    assert _OLD_RESULT_URL_FRAGMENT in location, f"Expected /pay/ in old endpoint, got: {location!r}"
+    assert _NEW_RESULT_URL_FRAGMENT not in location, f"New /payment-sessions/ leaked into old endpoint: {location!r}"
+
+
+@pytest.mark.tcid("G3R-021")
+@pytest.mark.skip(reason="Требует два платежа в состоянии 3DS (не виджет) — настроить вручную")
+def test_gate_3ds2_result_result_url_differs_old_vs_new():
+    """TC-21: POST на старый и новый URL (cres, не виджет) — оба 302, Location разный."""
+    token_new = create_payment_token()
+    token_old = create_payment_token()
+    resp_new  = _post_3ds2_result(token_new, body=_3DS_RESULT_CRES)
+    resp_old  = _post_old_3ds_confirm(token_old, body=_3DS_RESULT_CRES)
+    assert resp_new.status_code == 302, f"New: Expected 302, got {resp_new.status_code}"
+    assert resp_old.status_code == 302, f"Old: Expected 302, got {resp_old.status_code}"
+    loc_new = resp_new.headers.get("Location", "")
+    loc_old = resp_old.headers.get("Location", "")
+    assert _NEW_RESULT_URL_FRAGMENT in loc_new, f"New: expected /payment-sessions/: {loc_new!r}"
+    assert _OLD_RESULT_URL_FRAGMENT in loc_old, f"Old: expected /pay/: {loc_old!r}"
+
+
+@pytest.mark.tcid("G3R-022")
+@pytest.mark.skip(reason="Требует платежи в состоянии fingerprinting и Widget — настроить вручную")
+def test_gate_3ds2_result_fingerprint_and_widget_identical_old_vs_new():
+    """TC-22: Fingerprinting и widget ветки — оба 200; side effects идентичны между старым и новым URL."""
+    token_fp_new = create_payment_token()
+    token_fp_old = create_payment_token()
+    resp_fp_new = _post_3ds2_result(token_fp_new, body=_3DS_RESULT_FINGERPRINT,
+                                    headers={"Content-Type": "application/x-www-form-urlencoded"})
+    resp_fp_old = _post_old_3ds_confirm(token_fp_old, body=_3DS_RESULT_FINGERPRINT)
+    assert resp_fp_new.status_code == 200, f"FP new: Expected 200, got {resp_fp_new.status_code}"
+    assert resp_fp_old.status_code == 200, f"FP old: Expected 200, got {resp_fp_old.status_code}"
+
+
+@pytest.mark.tcid("G3R-023")
+@pytest.mark.skip(reason="Требует платёж с initiator=Widget + cres — проверка skip_tds_confirm_logic не активен")
+def test_gate_3ds2_result_skip_tds_confirm_not_active(payment_token):
+    """TC-23: is_skip_tds_confirm=False — widget-ветка идёт по обычной логике, не по skip_tds_confirm_logic."""
+    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES,
+                             headers={"Content-Type": "application/x-www-form-urlencoded"})
+    assert resp.status_code == 200, f"Expected 200 (widget branch), got {resp.status_code}: {resp.text[:200]}"
+    assert "text/plain" in resp.headers.get("Content-Type", ""), \
+        f"Expected text/plain (widget branch), got: {resp.headers.get('Content-Type')!r}"
+
+
+@pytest.mark.tcid("G3R-024")
+@pytest.mark.skip(reason="Ручная проверка: Kibana flow_log enter — raw_body, payment_id, content_type")
+def test_gate_3ds2_result_flow_log_attributes(payment_token):
+    """TC-24: В Kibana flow_log enter-событие содержит raw_body, payment_id, content_type для всех трёх веток."""
+    pass
+
+
+# ─────────────────────────────────────────────
+# НЕГАТИВНЫЕ: payment_token (автоматизированы)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("G3R-011")
+def test_gate_3ds2_result_empty_body_invalid_state_data():
+    """TC-11: POST с пустым/нераспознанным body (нет cres/sms_code/threeDSMethodData/creq) → 4xx (InvalidStateData)."""
+    token = create_payment_token()
+    resp  = _post_3ds2_result(token, body="random_field=value")
+    assert resp.status_code in range(400, 500), \
+        f"Expected 4xx for unrecognized body, got {resp.status_code}: {resp.text[:200]}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("G3R-013")
+def test_gate_3ds2_result_invalid_token_format():
+    """TC-13: Невалидный payment_token (не UUID) → 4xx (validation_uuid_decorator)."""
+    resp = _post_3ds2_result("not-a-uuid")
+    assert resp.status_code in range(400, 500), \
+        f"Expected 4xx for non-UUID token, got {resp.status_code}: {resp.text[:200]}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("G3R-014")
+def test_gate_3ds2_result_nonexistent_token():
+    """TC-14: Несуществующий payment_token (валидный UUID, не в БД) → 4xx (PaymentNotFound)."""
+    resp = _post_3ds2_result("00000000-0000-4000-8000-000000000000")
+    assert resp.status_code in range(400, 500), \
+        f"Expected 4xx for nonexistent token, got {resp.status_code}: {resp.text[:200]}"
+    assert_error_response(resp)
+
+
+# ─────────────────────────────────────────────
+# HTTP-МЕТОД (автоматизирован)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("G3R-015")
+def test_gate_3ds2_result_get_not_allowed():
+    """TC-15: GET на /gate/3ds2/result → 405 Method Not Allowed (маршрут только POST)."""
+    token = create_payment_token()
+    resp  = requests.get(
+        f"{_WEB3_HOST}{_3ds2_result_path(token)}",
+        headers={"X-SPG-Origin": _SPG_ORIGIN},
+        allow_redirects=False,
+        timeout=_cfg.HTTP_TIMEOUT,
+    )
+    assert resp.status_code == 405, \
+        f"Expected 405 for GET, got {resp.status_code}: {resp.text[:200]}"
+
+
+# ─────────────────────────────────────────────
+# X-SPG-ORIGIN И АВТОРИЗАЦИЯ (автоматизированы)
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("G3R-016")
+def test_gate_3ds2_result_missing_x_spg_origin_302_branch():
+    """TC-16: POST с cres (302-ветка) без X-SPG-Origin — не может построить result_url.
+    Ожидается 4xx или 5xx (зафиксировать actual у разработчика)."""
+    token = create_payment_token()
+    resp  = _post_3ds2_result(
+        token,
+        body=_3DS_RESULT_CRES,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    assert resp.status_code not in (200, 302), \
+        f"Expected error without X-SPG-Origin, got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("G3R-019a")
+def test_gate_3ds2_result_auth_headers_ignored_no_401():
+    """TC-19 (автоматизированная часть): POST с Api-Session-ID / Api-Signature → не 401/403 auth-ошибка."""
+    token = create_payment_token()
+    headers = {
+        **_3DS_RESULT_FORM_HEADERS,
+        "Api-Session-ID": "00000000-0000-0000-0000-000000000001",
+        "Api-Signature":  "0" * 64,
+    }
+    resp = _post_3ds2_result(token, headers=headers)
     assert resp.status_code not in range(401, 404), \
         f"Expected no auth error (headers ignored), got {resp.status_code}: {resp.text[:200]}"
