@@ -166,6 +166,7 @@ def log_http_calls(request, _apply_terminal_override):
     ungrouped: list = []
     groups: list = []
     seen: set = set()
+    op_count: dict = {}  # counts occurrences of (tr_id, label) for POST ops
     tr_id_type_violations: list = []
     redis_status_violations: list = []
 
@@ -213,7 +214,16 @@ def log_http_calls(request, _apply_terminal_override):
                         if suffix in url:
                             poll_title = pt
                             break
-                    key = (tr_id, label)
+                    # GET status polls deduplicate per tr_id to avoid noise from
+                    # polling loops (_assert_status etc.). POST operations use a
+                    # per-occurrence counter so every action — including repeated
+                    # partial captures/cancels — gets its own group and Redis check.
+                    if prep.method == "GET":
+                        key = (tr_id, "poll")
+                    else:
+                        op_key = (tr_id, label)
+                        op_count[op_key] = op_count.get(op_key, 0) + 1
+                        key = (tr_id, label, op_count[op_key])
                     if key not in seen:
                         seen.add(key)
                         time.sleep(_cfg.STATUS_POLL_DELAY)
