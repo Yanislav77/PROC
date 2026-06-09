@@ -1,5 +1,5 @@
 """
-Тесты эндпоинта смены платёжного реквизита:
+Тесты эндпоинта смены платёжного реквизита (PROC-72):
   POST /api/v1/payment-sessions/{payment_token}/actions/transfer/change-requisite
   (аналог /payments/{payment_token}/reselect)
 

@@ -1,5 +1,5 @@
 """
-Тесты эндпоинта отмены платежа пользователем:
+Тесты эндпоинта отмены платежа пользователем (PROC-71):
   POST /api/v1/payment-sessions/{payment_token}/actions/transfer/cancel
   (аналог /payments/{payment_token}/cancellation-by-user)
 

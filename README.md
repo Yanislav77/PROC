@@ -3,7 +3,7 @@
 Интеграционные тесты для CORE REST API платёжного шлюза.
 Тесты делают реальные HTTP-запросы к препрод-окружению — никаких моков.
 
-**1430+ тестов** в 33 файлах, покрывают все эндпоинты API.
+**1530+ тестов** в 35 файлах, покрывают все эндпоинты API.
 
 ---
 
@@ -516,14 +516,16 @@ tests/
 │   ├── test_merchant.py               — баланс мерчанта (MB-xxx)
 │   └── test_subscriptions.py          — подписки (SB-xxx)
 └── web_form/                          — Web Form API (payment-sessions)
-    ├── test_session.py                          — GET сессии (GP-xxx)
-    ├── test_session_bin.py                      — BIN-lookup (BI-xxx)
-    ├── test_session_phone.py                    — lookup по телефону (PH-xxx)
-    ├── test_session_transactions.py             — submit card/cardless (TX-xxx, CL-xxx)
-    ├── test_session_ui.py                       — UI-логи и события (UL-xxx, UE-xxx)
-    ├── test_session_ws.py                       — WebSocket (WS-xxx)
-    ├── test_session_actions_cancel.py           — отмена платежа пользователем (AC-xxx)
-    └── test_session_actions_change_requisite.py — смена реквизитов (RC-xxx)
+    ├── test_session.py                          — GET сессии (GP-xxx)                          [PROC-66]
+    ├── test_session_bin.py                      — BIN-lookup (BI-xxx)                          [PROC-67]
+    ├── test_session_phone.py                    — lookup по телефону (PH-xxx)                  [PROC-68]
+    ├── test_session_transactions.py             — submit card/cardless (TX-xxx, CL-xxx)        [PROC-69, 70]
+    ├── test_session_ui.py                       — UI-логи и события (UL-xxx, UE-xxx)           [PROC-63, 64]
+    ├── test_session_ws.py                       — WebSocket (WS-xxx)                           [PROC-65]
+    ├── test_session_actions_cancel.py           — отмена платежа пользователем (AC-xxx)        [PROC-71]
+    ├── test_session_actions_change_requisite.py — смена реквизитов (RC-xxx)                    [PROC-72]
+    ├── test_session_actions_confirm.py          — подтверждение действия (CA-xxx)              [PROC-73]
+    └── test_session_gate.py                     — gate-эндпоинты (GR/GD/GN/G3/G3R-xxx)       [PROC-74..78]
 ```
 
 ---
@@ -846,16 +848,18 @@ DELETE `/api/v1/subscriptions/{token}`.
 Тесты API веб-формы платёжной сессии (`https://web3preprod.testpaygate.com`).
 Используют отдельную авторизацию: `Api-Session-ID` + HMAC-SHA256 по `CUSTOMER_MAC_KEY`.
 
-| Файл | ID | Что тестирует |
-|---|---|---|
-| `test_session.py` | GP-001…GP-014 | GET `/api/v1/payment-sessions/{token}` — получение сессии |
-| `test_session_bin.py` | BI-001…BI-016 | POST `.../bin` — BIN-lookup по номеру карты |
-| `test_session_phone.py` | PH-001…PH-018 | POST `.../phone` — lookup страны по номеру телефона |
-| `test_session_transactions.py` | TX-001…TX-023, CL-001…CL-021 | POST `.../transactions/card` и `.../cardless` — сабмит платежа |
-| `test_session_ui.py` | UL-001…UL-014, UE-001…UE-014 | POST `.../ui/logs` и `.../ui/events` — UI-логи и события |
-| `test_session_ws.py` | WS-001…WS-012 | GET `.../ws` — WebSocket-соединение |
-| `test_session_actions_cancel.py` | AC-001…AC-017 | POST `.../actions/transfer/cancel` — отмена платежа пользователем |
-| `test_session_actions_change_requisite.py` | RC-001…RC-018 | POST `.../actions/transfer/change-requisite` — смена реквизитов |
+| Файл | ID | Что тестирует | PROC |
+|---|---|---|---|
+| `test_session.py` | GP-001…GP-014 | GET `/api/v1/payment-sessions/{token}` — получение сессии | PROC-66 |
+| `test_session_bin.py` | BI-001…BI-016 | POST `.../bin` — BIN-lookup по номеру карты | PROC-67 |
+| `test_session_phone.py` | PH-001…PH-018 | POST `.../phone` — lookup страны по номеру телефона | PROC-68 |
+| `test_session_transactions.py` | TX-001…TX-023, CL-001…CL-021 | POST `.../transactions/card` и `.../cardless` | PROC-69, 70 |
+| `test_session_ui.py` | UL-001…UL-014, UE-001…UE-014 | POST `.../ui/logs` и `.../ui/events` — UI-логи и события | PROC-63, 64 |
+| `test_session_ws.py` | WS-001…WS-012 | GET `.../ws` — WebSocket-соединение | PROC-65 |
+| `test_session_actions_cancel.py` | AC-001…AC-017 | POST `.../actions/transfer/cancel` — отмена платежа | PROC-71 |
+| `test_session_actions_change_requisite.py` | RC-001…RC-018 | POST `.../actions/transfer/change-requisite` — смена реквизитов | PROC-72 |
+| `test_session_actions_confirm.py` | CA-001…CA-020 | POST `.../actions/transfer/confirm` — подтверждение действия | PROC-73 |
+| `test_session_gate.py` | GR-001…GR-016, GD-001…GD-017, GN-001…GN-019, G3-001…G3-014, G3R-001…G3R-024 | gate-эндпоинты (redirect, return/data, return/no-data, 3ds2/method, 3ds2/result) | PROC-74..78 |
 
 | Сценарии (общие для web_form) | Ожидаемый результат |
 |---|---|
@@ -912,6 +916,57 @@ POST `/api/v1/payment-sessions/{token}/actions/transfer/change-requisite`
 | CORS | OPTIONS preflight возвращает нужные заголовки | 200 / 204 |
 
 > Тесты RC-001..003, RC-013, RC-015, RC-016 скипнуты: требуют state=`user_action` или WS-клиент.
+
+---
+
+### `web_form/test_session_actions_confirm.py` — Подтверждение действия (CA-001…CA-020) · PROC-73
+
+POST `/api/v1/payment-sessions/{token}/actions/transfer/confirm`
+(аналог `/payments/{token}/user_action`).
+
+Подпись: HMAC-SHA256 по новой схеме (`Api-Session-ID` + `Api-Signature`).
+
+| Группа | Сценарии | Ожидаемый результат |
+|---|---|---|
+| State = `user_action` | resultObject задан → state → pending / skip_pending | 201 |
+| State ≠ `user_action` | `BadStatusForUserAction` — state не меняется | 201 с response_entity |
+| resultObject | Отсутствует / null / не объект | 4xx InvalidStateData |
+| Авторизация | Нет Api-Session-ID / Api-Signature / невалидная подпись | 4xx |
+| Авторизация | Подпись от старого URL / от другого body | 4xx |
+| payment_token | Невалидный формат / несуществующий UUID | 4xx |
+| Регресс | Старый `/payments/.../user_action` без авторизационных заголовков работает | 201 |
+| Формат ответа | `confirmed=false` → проверить структуру response_entity | 201 |
+| Финансовая валидация | Несоответствие валюты → 4xx | 4xx |
+| CORS | OPTIONS preflight | 200 / 204 |
+
+> Тесты CA-001..004, CA-017..019 скипнуты: требуют платёж в state=`user_action` или WS-клиент.
+
+---
+
+### `web_form/test_session_gate.py` — Gate-эндпоинты (GR/GD/GN/G3/G3R) · PROC-74..78
+
+Покрывает пять gate-эндпоинтов нового `/api/v1/*`-контура. Все — браузерная/шлюзовая навигация, авторизация отсутствует.
+
+| Группа | ID | Эндпоинт | Аналог | PROC |
+|---|---|---|---|---|
+| Redirect | GR-001…GR-016 | GET `.../gate/redirect` | `/payments/{token}/redirect` | PROC-74 |
+| Return data | GD-001…GD-017 | GET/POST `.../gate/return/data` | `/payments/{token}/confirm` | PROC-75 |
+| Return no-data | GN-001…GN-019 | GET/POST `.../gate/return/no-data` | `/confirm_void` + `/confirm_void_no_body` | PROC-76 |
+| 3DS2 method | G3-001…G3-014 | POST `.../gate/3ds2/method` | `/threedsecure/method` | PROC-77 |
+| 3DS2 result | G3R-001…G3R-024 | POST `.../gate/3ds2/result` | `/threedsecure/confirm` | PROC-78 |
+
+Общие сценарии по каждому эндпоинту:
+
+| Сценарий | Ожидаемый результат |
+|---|---|
+| Невалидный / несуществующий payment_token | 4xx |
+| Запрос без X-SPG-Origin (ветки с 302) | 4xx / 5xx |
+| Авторизационные заголовки игнорируются | не 401 / 403 |
+| Неверный HTTP-метод (PUT / DELETE / GET где только POST) | 405 |
+| Регресс старых эндпоинтов | старый result_url `/pay/<token>` |
+| Новый result_url | `/payment-sessions/<token>` (не `/pay/<token>`) |
+
+Большинство success-кейсов (`state=3ds`, `state=redirect`, ветки с реальными 3DS-данными) скипнуты — требуют платёж в конкретном состоянии, настраивается вручную.
 
 ---
 

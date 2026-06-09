@@ -1,5 +1,5 @@
 """
-Тесты эндпоинта подтверждения пользовательского действия:
+Тесты эндпоинта подтверждения пользовательского действия (PROC-73):
   POST /api/v1/payment-sessions/{payment_token}/actions/transfer/confirm
   (аналог /payments/{payment_token}/user_action)
 

@@ -7,11 +7,11 @@
   POST /api/v1/payment-sessions/{payment_token}/gate/3ds2/result     (аналог /payments/{payment_token}/threedsecure/confirm)
 
 Текущий файл покрывает:
-  GR-001..016   GET  /gate/redirect
-  GD-001..017   GET/POST /gate/return/data
-  GN-001..019   GET/POST /gate/return/no-data
-  G3-001..014   POST /gate/3ds2/method
-  G3R-001..024  POST /gate/3ds2/result  (TC-04, TC-05 в спеке отсутствуют)
+  GR-001..016   GET  /gate/redirect          (PROC-74)
+  GD-001..017   GET/POST /gate/return/data   (PROC-75)
+  GN-001..019   GET/POST /gate/return/no-data (PROC-76)
+  G3-001..014   POST /gate/3ds2/method       (PROC-77)
+  G3R-001..024  POST /gate/3ds2/result       (PROC-78, TC-04 и TC-05 в спеке отсутствуют)
 """
 import pytest
 import requests
