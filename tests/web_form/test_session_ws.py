@@ -97,12 +97,14 @@ def test_ws_no_auth_headers_accepted(payment_token):
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("WS-004")
 def test_ws_invalid_token_format():
-    """Невалидный UUID в path — handshake отклоняется (validation_uuid_decorator)."""
-    with pytest.raises(websocket.WebSocketBadStatusException):
+    """Невалидный UUID в path — handshake отклоняется с 4xx (validation_uuid_decorator)."""
+    with pytest.raises(websocket.WebSocketBadStatusException) as exc_info:
         websocket.create_connection(
             f"{_BASE_PATH}/not-a-uuid/ws",
             timeout=_WS_TIMEOUT,
         )
+    status = exc_info.value.status_code
+    assert status in range(400, 500), f"Expected 4xx for invalid UUID token, got {status}"
 
 
 # ─────────────────────────────────────────────
