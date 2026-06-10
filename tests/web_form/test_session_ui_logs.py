@@ -32,8 +32,20 @@ from web_form.conftest import options_preflight
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
 _BASE_PATH  = "/api/v1/payment-sessions"
 
-_LOG_BODY   = {"message": "card_form_opened"}
-_END_BODY   = {"message": "payment_flow_end"}
+_LOG_BODY = {
+    "message": "card_form_opened",
+    "params": {
+        "device": {"platform": "web"},
+        "step": "card",
+    },
+}
+_END_BODY = {
+    "message": "payment_flow_end",
+    "params": {
+        "device": {"platform": "web"},
+        "step": "card",
+    },
+}
 _EMPTY_BODY = {}
 
 
