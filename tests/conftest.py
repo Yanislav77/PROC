@@ -318,9 +318,16 @@ def log_http_calls(request, _apply_terminal_override):
         phrase = _report._status_phrase(resp.status_code)
         print(f"\n{bar}")
         print(f"  {prep.method} {prep.url}")
+        if prep.headers:
+            print(f"  -- Request headers {'-' * 44}")
+            for k, v in prep.headers.items():
+                print(f"  {k}: {v}")
         print(f"  -- Request body {'-' * 46}")
         print(_report._fmt_body(prep.body))
         print(f"  -- Response: {resp.status_code} {phrase} {'-' * max(0, 44 - len(phrase))}")
+        if resp.headers:
+            for k, v in resp.headers.items():
+                print(f"  {k}: {v}")
         print(_report._fmt_body(resp.text))
         print(bar)
 

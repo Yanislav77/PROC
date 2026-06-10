@@ -64,7 +64,23 @@ def _get_old(token: str, headers: dict | None = None) -> requests.Response:
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GP-001")
 def test_get_payment_session(payment_token):
-    """Получение данных платежа. Ожидается 200, ответ содержит ключевые поля."""
+    """
+    Получение данных платежа.
+
+    Request:
+      GET /api/v1/payment-sessions/{payment_token}
+      Api-Session-ID: <uuid4>
+      Api-Signature:  HMAC-SHA256(customer_mac_key, "GET\\n/api/v1/payment-sessions/{token}\\n{session_id}\\n")
+
+    Response 200 OK:
+      Content-Type: application/json
+      {
+        "service_id": "...",
+        "state": "...",
+        "payment_request": { ... },
+        "theme": { ... }
+      }
+    """
     resp = _get(payment_token)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     data = resp.json()
@@ -74,7 +90,18 @@ def test_get_payment_session(payment_token):
 
 @pytest.mark.tcid("GP-014")
 def test_get_payment_session_options_preflight(payment_token):
-    """OPTIONS preflight: Access-Control-Allow-Headers содержит Api-Session-ID и Api-Signature."""
+    """
+    OPTIONS preflight: Access-Control-Allow-Headers содержит Api-Session-ID и Api-Signature.
+
+    Request:
+      OPTIONS /api/v1/payment-sessions/{payment_token}
+      Origin: https://merchant.example.com
+      Access-Control-Request-Method: GET
+      Access-Control-Request-Headers: Api-Session-ID, Api-Signature, Content-Type
+
+    Response 200/204:
+      Access-Control-Allow-Headers: ..., Api-Session-ID, Api-Signature, ...
+    """
     resp = options_preflight(f"{_BASE_PATH}/{payment_token}", request_method="GET")
     assert resp.status_code in (200, 204), f"Expected 200/204, got {resp.status_code}: {resp.text}"
     allow = resp.headers.get("Access-Control-Allow-Headers", "")
@@ -84,7 +111,21 @@ def test_get_payment_session_options_preflight(payment_token):
 
 @pytest.mark.tcid("GP-013")
 def test_get_payment_session_response_identical_to_old(payment_token):
-    """Ответы нового и старого эндпоинта идентичны для одного платежа."""
+    """
+    Ответы нового и старого эндпоинта идентичны для одного платежа.
+
+    New request:
+      GET /api/v1/payment-sessions/{token}
+      Api-Session-ID: <uuid4>
+      Api-Signature:  HMAC-SHA256(customer_mac_key, "GET\\n/api/v1/payment-sessions/{token}\\n{session_id}\\n")
+
+    Old request:
+      GET /payments/{token}
+      X-CUSTOMER-SESSION-ID: <uuid4>
+      X-REQUEST-SIGNATURE:   HMAC-SHA256(customer_mac_key, "GET\\n/payments/{token}\\n{session_id}\\n")
+
+    Both → 200 OK, поля service_id / state / payment_request совпадают.
+    """
     resp_new = _get(payment_token)
     resp_old = _get_old(payment_token)
     assert resp_new.status_code == 200, f"New endpoint: {resp_new.status_code}: {resp_new.text}"
@@ -133,7 +174,17 @@ def test_get_payment_session_final_state_expired(payment_token):
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GP-005")
 def test_get_payment_session_missing_session_id(payment_token):
-    """Нет Api-Session-ID. Ожидается 4xx."""
+    """
+    Нет Api-Session-ID. Ожидается 4xx.
+
+    Request:
+      GET /api/v1/payment-sessions/{payment_token}
+      Api-Signature: HMAC-SHA256(customer_mac_key, ...)   # Api-Session-ID отсутствует
+
+    Response 4xx:
+      Content-Type: application/json
+      { ... }   (ErrorResponse)
+    """
     path = f"{_BASE_PATH}/{payment_token}"
     sid  = str(uuid.uuid4())
     headers = {"Api-Signature": _calc_get_sig(path, sid)}
@@ -144,7 +195,16 @@ def test_get_payment_session_missing_session_id(payment_token):
 
 @pytest.mark.tcid("GP-006")
 def test_get_payment_session_missing_signature(payment_token):
-    """Нет Api-Signature. Ожидается 4xx."""
+    """
+    Нет Api-Signature. Ожидается 4xx.
+
+    Request:
+      GET /api/v1/payment-sessions/{payment_token}
+      Api-Session-ID: <uuid4>   # Api-Signature отсутствует
+
+    Response 4xx:
+      { ... }   (ErrorResponse)
+    """
     headers = {"Api-Session-ID": str(uuid.uuid4())}
     resp = _get(payment_token, headers=headers)
     assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
@@ -156,7 +216,17 @@ def test_get_payment_session_missing_signature(payment_token):
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GP-007")
 def test_get_payment_session_invalid_signature(payment_token):
-    """Невалидная подпись (строка из нулей). Ожидается 4xx."""
+    """
+    Невалидная подпись (строка из нулей). Ожидается 4xx.
+
+    Request:
+      GET /api/v1/payment-sessions/{payment_token}
+      Api-Session-ID: <uuid4>
+      Api-Signature:  "0000000000000000000000000000000000000000000000000000000000000000"   (64 нуля)
+
+    Response 4xx:
+      { ... }   (ErrorResponse: signature mismatch)
+    """
     headers = {
         "Api-Session-ID": str(uuid.uuid4()),
         "Api-Signature":  "0" * 64,
@@ -168,7 +238,17 @@ def test_get_payment_session_invalid_signature(payment_token):
 
 @pytest.mark.tcid("GP-008")
 def test_get_payment_session_signature_from_old_url(payment_token):
-    """Подпись посчитана от старого пути /payments/{token}. Ожидается 4xx."""
+    """
+    Подпись посчитана от старого пути /payments/{token}. Ожидается 4xx.
+
+    Request:
+      GET /api/v1/payment-sessions/{payment_token}
+      Api-Session-ID: <uuid4>
+      Api-Signature:  HMAC-SHA256(customer_mac_key, "GET\\n/payments/{token}\\n{session_id}\\n")   # ← неверный path в сообщении
+
+    Response 4xx:
+      { ... }   (ErrorResponse: signature mismatch)
+    """
     old_path = f"{_OLD_PATH}/{payment_token}"
     sid = str(uuid.uuid4())
     headers = {
@@ -185,7 +265,17 @@ def test_get_payment_session_signature_from_old_url(payment_token):
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GP-009")
 def test_get_payment_session_invalid_token_format():
-    """Невалидный payment_token (не UUID). Ожидается 4xx."""
+    """
+    Невалидный payment_token (не UUID). Ожидается 4xx.
+
+    Request:
+      GET /api/v1/payment-sessions/not-a-uuid
+      Api-Session-ID: <uuid4>
+      Api-Signature:  HMAC-SHA256(customer_mac_key, "GET\\n/api/v1/payment-sessions/not-a-uuid\\n{session_id}\\n")
+
+    Response 4xx:
+      { ... }   (ErrorResponse: validation_uuid_decorator)
+    """
     resp = _get("not-a-uuid")
     assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -193,7 +283,17 @@ def test_get_payment_session_invalid_token_format():
 
 @pytest.mark.tcid("GP-010")
 def test_get_payment_session_nonexistent_token():
-    """Несуществующий payment_token (валидный UUID, не в БД). Ожидается 4xx."""
+    """
+    Несуществующий payment_token (валидный UUID, не в БД). Ожидается 4xx.
+
+    Request:
+      GET /api/v1/payment-sessions/00000000-0000-4000-8000-000000000000
+      Api-Session-ID: <uuid4>
+      Api-Signature:  HMAC-SHA256(customer_mac_key, "GET\\n/api/v1/payment-sessions/00000000-...\\n{session_id}\\n")
+
+    Response 4xx:
+      { ... }   (ErrorResponse: PaymentNotFound)
+    """
     resp = _get("00000000-0000-4000-8000-000000000000")
     assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -204,7 +304,18 @@ def test_get_payment_session_nonexistent_token():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GP-011")
 def test_get_payment_session_old_endpoint_regression(payment_token):
-    """Регресс: старый /payments/{token} с X-* заголовками продолжает работать."""
+    """
+    Регресс: старый /payments/{token} с X-* заголовками продолжает работать.
+
+    Request:
+      GET /payments/{payment_token}
+      X-CUSTOMER-SESSION-ID: <uuid4>
+      X-REQUEST-SIGNATURE:   HMAC-SHA256(customer_mac_key, "GET\\n/payments/{token}\\n{session_id}\\n")
+
+    Response 200 OK:
+      Content-Type: application/json
+      { "state": "...", ... }
+    """
     resp = _get_old(payment_token)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     assert "state" in resp.json(), f"Missing 'state' in old endpoint response"
@@ -212,7 +323,17 @@ def test_get_payment_session_old_endpoint_regression(payment_token):
 
 @pytest.mark.tcid("GP-012")
 def test_get_payment_session_old_headers_on_new_url(payment_token):
-    """Новый URL + старые заголовки X-*. Ожидается 4xx (MissingHTTPHeader: Api-Session-ID)."""
+    """
+    Новый URL + старые заголовки X-*. Ожидается 4xx (MissingHTTPHeader: Api-Session-ID).
+
+    Request:
+      GET /api/v1/payment-sessions/{payment_token}
+      X-CUSTOMER-SESSION-ID: <uuid4>
+      X-REQUEST-SIGNATURE:   HMAC-SHA256(customer_mac_key, "GET\\n/payments/{token}\\n{session_id}\\n")   # старые заголовки
+
+    Response 4xx:
+      { ... }   (ErrorResponse: MissingHTTPHeader Api-Session-ID)
+    """
     old_path = f"{_OLD_PATH}/{payment_token}"
     sid = str(uuid.uuid4())
     headers = {
