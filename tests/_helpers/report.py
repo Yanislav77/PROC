@@ -9,6 +9,7 @@ _REDIS_CELL_MAX_LEN = 300  # chars, Redis field value truncation
 
 _report_file = None
 _http_captures: dict = {}
+_ws_captures:   dict = {}
 _call_reports:  dict = {}
 _tc_ids:        dict = {}
 _test_counter = 0
@@ -100,6 +101,36 @@ def _render_http_block(f, prep, resp, title, css_class, indent="    ") -> None:
     f.write(f'{i}  </div>\n{i}</div>\n')
 
 
+def _render_ws_block(f, entry: dict, indent="    ") -> None:
+    url    = entry.get("url", "")
+    frames = entry.get("frames", [])
+    error  = entry.get("error")
+    i = indent
+    f.write(f'{i}<div class="http-block">\n')
+    f.write(f'{i}  <div class="http-block-title ws">WebSocket</div>\n')
+    f.write(f'{i}  <div class="http-block-body">\n')
+    f.write(f'{i}    <div class="section-label">Connection</div>\n')
+    f.write(f'{i}    <p class="http-line">'
+            f'<span class="method" style="color:#a78bfa">WS</span>'
+            f' <span class="url">{_esc(url)}</span></p>\n')
+    if error:
+        f.write(f'{i}    <div class="section-label">Error</div>\n')
+        f.write(f'{i}    <pre class="body">{_esc(error)}</pre>\n')
+    if frames:
+        f.write(f'{i}    <div class="section-label">Frames</div>\n')
+        lines = []
+        for fr in frames:
+            raw = fr["data"]
+            try:
+                pretty = json.dumps(json.loads(raw), ensure_ascii=False, indent=2)
+            except (ValueError, TypeError):
+                pretty = str(raw)
+            indented = pretty.replace("\n", "\n    ")
+            lines.append(f'{fr["dir"]} {indented}')
+        f.write(f'{i}    <pre class="body">{_esc(chr(10).join(lines))}</pre>\n')
+    f.write(f'{i}  </div>\n{i}</div>\n')
+
+
 def _render_db_section(f, db_data: list, indent="    ") -> None:
     if not db_data:
         return
@@ -171,7 +202,7 @@ def _render_redis_section(f, redis_entry: dict, indent="    ") -> None:
     f.write(f'{i}</div>\n')
 
 
-def _write_report_entry(nodeid: str, status: str, error, ungrouped: list, tc_id: str = "", groups: list = None) -> None:
+def _write_report_entry(nodeid: str, status: str, error, ungrouped: list, tc_id: str = "", groups: list = None, ws_entries: list = None) -> None:
     global _test_counter
     _test_counter += 1
     idx = _test_counter
@@ -196,6 +227,9 @@ def _write_report_entry(nodeid: str, status: str, error, ungrouped: list, tc_id:
     if error:
         f.write('    <div class="section-label">Error</div>\n')
         f.write(f'    <div class="error-block"><pre>{_esc(error)}</pre></div>\n')
+
+    for entry in (ws_entries or []):
+        _render_ws_block(f, entry)
 
     for prep, resp, title, css_class in (ungrouped or []):
         _render_http_block(f, prep, resp, title, css_class)
@@ -309,7 +343,7 @@ pre.headers{{background:#0a0f1a;border:1px solid #1e2a3a;border-radius:4px;paddi
   max-height:400px;overflow-y:auto;margin:0}}
 .http-block{{border:1px solid #2a2a4a;border-radius:6px;margin-top:12px;overflow:hidden}}
 .http-block-title{{background:#1a1a38;padding:6px 12px;font-size:.75em;font-weight:bold;letter-spacing:.07em;text-transform:uppercase;border-bottom:1px solid #2a2a4a}}
-.http-block-title.create{{color:#82aaff}}.http-block-title.operation{{color:#ffb74d}}.http-block-title.poll{{color:#c3e88d}}
+.http-block-title.create{{color:#82aaff}}.http-block-title.operation{{color:#ffb74d}}.http-block-title.poll{{color:#c3e88d}}.http-block-title.ws{{color:#a78bfa}}
 .http-block-body{{padding:10px 14px}}
 details.tx-group{{border:1px solid #2a2a4a;border-radius:6px;margin-top:12px;overflow:hidden}}
 details.tx-group>summary{{background:#1a1a38;padding:9px 14px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;user-select:none;border-bottom:1px solid transparent}}
@@ -449,6 +483,7 @@ def pytest_runtest_logreport(report):
         if call is None:
             return
         ungrouped, groups = _http_captures.pop(report.nodeid, ([], []))
+        ws_entries = _ws_captures.pop(report.nodeid, [])
         if call.passed:
             status = "PASSED"
         elif call.skipped:
@@ -457,4 +492,4 @@ def pytest_runtest_logreport(report):
             status = "FAILED"
         error = str(call.longrepr) if call.failed or call.skipped else None
         tc_id = _tc_ids.get(report.nodeid, "")
-        _write_report_entry(report.nodeid, status, error, ungrouped, tc_id, groups)
+        _write_report_entry(report.nodeid, status, error, ungrouped, tc_id, groups, ws_entries)
