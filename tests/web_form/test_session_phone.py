@@ -5,8 +5,7 @@
 Отличия от старого эндпоинта:
   - Обязательна авторизация: Api-Session-ID + Api-Signature
   - Валидируется UUID-формат payment_token
-  - payment_token НЕ используется в бизнес-логике (load_payment не вызывается)
-  - Несуществующий UUID → 200 OK (не 4xx)
+  - Несуществующий UUID → 4xx (PaymentNotFound)
 
 Подпись (POST):
   HMAC-SHA256(customer_mac_key, "POST\n{path}\n{Api-Session-ID}\n{raw_body}")
@@ -126,10 +125,10 @@ def test_phone_lookup_invalid_format(payment_token):
 
 @pytest.mark.tcid("PH-017")
 def test_phone_lookup_nonexistent_token():
-    """Валидный UUID, которого нет в БД → 200 (load_payment не вызывается)."""
-    _assert_null_country(
-        _post_phone("00000000-0000-4000-8000-000000000000", _PHONE_NONE)
-    )
+    """Несуществующий payment_token (валидный UUID, не в БД) → 4xx (PaymentNotFound)."""
+    resp = _post_phone("00000000-0000-4000-8000-000000000000", _PHONE_RU)
+    assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
