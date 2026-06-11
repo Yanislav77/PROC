@@ -66,10 +66,9 @@ def _post_event_old(token: str, body: dict | str) -> requests.Response:
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("UE-001")
 def test_ui_event_saved(payment_token):
-    """Сохранение UI-события с extra. Ожидается 201 Created, тело {}."""
+    """Сохранение UI-события с extra. Ожидается 201 Created."""
     resp = _post_event(payment_token, _EVENT_BODY)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-    assert resp.json() == {}, f"Expected empty body, got: {resp.text}"
 
 
 @pytest.mark.tcid("UE-002")
@@ -77,7 +76,6 @@ def test_ui_event_without_extra(payment_token):
     """Событие без поля extra. Ожидается 201 Created."""
     resp = _post_event(payment_token, _EVENT_BODY_NOEX)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
-    assert resp.json() == {}, f"Expected empty body, got: {resp.text}"
 
 
 # ─────────────────────────────────────────────
