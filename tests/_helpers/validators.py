@@ -1,7 +1,5 @@
 import requests
 
-PARITY_BUG_PREFIX = "⚠ PARITY BUG"
-
 _VALID_STATUSES = frozenset({
     "completed", "authorized", "processing",
     "waiting_action", "cancelled", "rejected", "refunded",
@@ -36,33 +34,6 @@ def assert_error_response(resp: requests.Response) -> None:
     data = resp.json()
     assert isinstance(data, dict), \
         f"Error response must be a JSON object, got {type(data).__name__}: {resp.text[:200]}"
-
-
-def assert_parity_bug(
-    resp_new: requests.Response,
-    resp_old: requests.Response,
-    msg: str = "",
-) -> None:
-    """Raise AssertionError with a prominent PARITY BUG marker.
-
-    Call this when both the new and old endpoints show the same incorrect behavior.
-    The HTML report renders this with a distinct orange block and sidebar badge.
-    """
-    try:
-        new_url = resp_new.request.url if resp_new.request else ""
-        old_url = resp_old.request.url if resp_old.request else ""
-    except Exception:
-        new_url = old_url = ""
-    new_body = resp_new.text[:500] if resp_new.text else "(no body)"
-    old_body = resp_old.text[:500] if resp_old.text else "(no body)"
-    detail   = f"\n{msg}" if msg else ""
-    raise AssertionError(
-        f"{PARITY_BUG_PREFIX}{detail}\n"
-        f"Та же ошибка воспроизводится на старом эндпоинте.\n"
-        f"Требуется отдельная задача разработки.\n\n"
-        f"Новый:  [{resp_new.status_code}]  {new_url}\n{new_body}\n\n"
-        f"Старый: [{resp_old.status_code}]  {old_url}\n{old_body}"
-    )
 
 
 def assert_idempotency_echo(request_headers: dict, response: requests.Response) -> None:
