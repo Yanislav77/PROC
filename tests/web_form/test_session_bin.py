@@ -116,10 +116,9 @@ def test_bin_lookup_8digits_extended(payment_token):
 
 
 @pytest.mark.tcid("BI-003")
-@pytest.mark.skip(reason="Требует BIN карты МИР — подобрать вручную")
 def test_bin_lookup_mir_card(payment_token):
     """BIN карты МИР — bank_info.mir=True, convert_currency не вызывается."""
-    mir_bin = {"bin": "220000"}  # заменить на реальный MIR BIN
+    mir_bin = {"bin": "123666"}
     resp = _post_bin(payment_token, mir_bin)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     data = resp.json()
