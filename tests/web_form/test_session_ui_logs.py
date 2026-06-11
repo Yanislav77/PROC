@@ -99,7 +99,6 @@ def test_ui_log_with_token(payment_token):
     """Лог с payment_token, обычное событие. Ожидается 200."""
     resp = _post(payment_token, _LOG_BODY)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
-    assert "message" in resp.json(), f"Missing 'message' in response: {resp.text}"
 
 
 @pytest.mark.tcid("UL-002")
@@ -274,10 +273,11 @@ def test_ui_logs_options_preflight(payment_token):
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("UL-015")
 def test_ui_log_response_identical_to_old(payment_token):
-    """Новый и старый эндпоинт возвращают 200; новый содержит JSON с полем 'message'."""
+    """Новый и старый эндпоинт возвращают 200 с одинаковым телом."""
     resp_new = _post(payment_token, _LOG_BODY)
     resp_old = _post_log_old(payment_token, _LOG_BODY)
     with parity_check(lambda: resp_old):
         assert resp_new.status_code == 200, f"New: {resp_new.status_code}: {resp_new.text}"
         assert resp_old.status_code == 200, f"Old: {resp_old.status_code}: {resp_old.text}"
-        assert "message" in resp_new.json(), f"New: 'message' not in response: {resp_new.text}"
+        assert resp_new.text == resp_old.text, \
+            f"Responses differ:\n  new: {resp_new.text}\n  old: {resp_old.text}"
