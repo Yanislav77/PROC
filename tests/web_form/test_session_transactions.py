@@ -44,7 +44,7 @@ _SUBMIT_BODY = {
         "ExpYear":    "27",
         "ExpMonth":   "05",
         "CVV":        "666",
-        "CardHolder": "JOHN DOE",
+        "CardholderName": "JOHN DOE",
     },
     "CustomerInfo": {
         "Email": "test@example.com",
