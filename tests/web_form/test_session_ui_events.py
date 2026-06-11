@@ -11,7 +11,7 @@ import pytest
 import requests
 
 import _helpers.config as _cfg
-from _helpers.validators import assert_error_response
+from _helpers.validators import assert_error_response, assert_parity_bug
 from web_form.conftest import options_preflight
 
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
@@ -223,6 +223,29 @@ def test_ui_event_duplicate(payment_token):
     resp2 = _post_event(payment_token, _EVENT_BODY)
     assert resp1.status_code == 201, f"First request: expected 201, got {resp1.status_code}: {resp1.text}"
     assert resp2.status_code == 201, f"Second request: expected 201, got {resp2.status_code}: {resp2.text}"
+
+
+@pytest.mark.tcid("UE-015")
+def test_ui_event_response_identical_to_old(payment_token):
+    """Тело ответа нового и старого эндпоинта идентично для одного и того же события."""
+    resp_new = _post_event(payment_token, _EVENT_BODY)
+
+    path_old = f"/payments/{payment_token}/ui-interactions"
+    raw      = json.dumps(_EVENT_BODY, separators=(",", ":"))
+    sid      = str(uuid.uuid4())
+    headers_old = {
+        "Content-Type":          "application/json",
+        "X-CUSTOMER-SESSION-ID": sid,
+        "X-REQUEST-SIGNATURE":   _calc_sig(path_old, sid, raw),
+    }
+    resp_old = requests.post(f"{_WEB3_HOST}{path_old}", data=raw, headers=headers_old, timeout=_cfg.HTTP_TIMEOUT)
+
+    if resp_new.status_code != 201 and resp_old.status_code != 200:
+        assert_parity_bug(resp_new, resp_old, "Оба эндпоинта /ui/events и /ui-interactions не принимают событие")
+    assert resp_new.status_code == 201, f"New: expected 201, got {resp_new.status_code}: {resp_new.text}"
+    assert resp_old.status_code == 200, f"Old: expected 200, got {resp_old.status_code}: {resp_old.text}"
+    assert resp_new.json() == resp_old.json(), \
+        f"Response bodies differ:\n  new: {resp_new.json()}\n  old: {resp_old.json()}"
 
 
 # ─────────────────────────────────────────────

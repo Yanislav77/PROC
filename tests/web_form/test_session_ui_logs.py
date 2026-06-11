@@ -26,7 +26,7 @@ import pytest
 import requests
 
 import _helpers.config as _cfg
-from _helpers.validators import assert_error_response
+from _helpers.validators import assert_error_response, assert_parity_bug
 from web_form.conftest import options_preflight
 
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
@@ -242,6 +242,29 @@ def test_ui_log_old_headers_on_new_url(payment_token):
     resp = _post(payment_token, _LOG_BODY, headers=headers)
     assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
+
+
+@pytest.mark.tcid("UL-015")
+def test_ui_log_response_identical_to_old(payment_token):
+    """Структура тела ответа нового и старого эндпоинта совпадает для одного и того же лога."""
+    resp_new = _post(payment_token, _LOG_BODY)
+
+    path_old = f"/payments/{payment_token}/ui_logger"
+    raw      = json.dumps(_LOG_BODY, separators=(",", ":"))
+    sid      = str(uuid.uuid4())
+    headers_old = {
+        "Content-Type":          "application/json",
+        "X-CUSTOMER-SESSION-ID": sid,
+        "X-REQUEST-SIGNATURE":   _calc_sig(path_old, sid, raw),
+    }
+    resp_old = requests.post(f"{_WEB3_HOST}{path_old}", data=raw, headers=headers_old, timeout=_cfg.HTTP_TIMEOUT)
+
+    if resp_new.status_code != 200 and resp_old.status_code != 200:
+        assert_parity_bug(resp_new, resp_old, "Оба эндпоинта /ui/logs и /ui_logger не принимают лог")
+    assert resp_new.status_code == 200, f"New: expected 200, got {resp_new.status_code}: {resp_new.text}"
+    assert resp_old.status_code == 200, f"Old: expected 200, got {resp_old.status_code}: {resp_old.text}"
+    assert set(resp_new.json().keys()) == set(resp_old.json().keys()), \
+        f"Response keys differ:\n  new: {resp_new.json()}\n  old: {resp_old.json()}"
 
 
 # ─────────────────────────────────────────────
