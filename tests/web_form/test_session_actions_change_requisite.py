@@ -325,6 +325,6 @@ def test_change_requisite_options_preflight(payment_token):
     """OPTIONS preflight /actions/transfer/change-requisite: Access-Control-Allow-Headers содержит Api-Session-ID и Api-Signature."""
     resp = options_preflight(_reselect_path(payment_token))
     assert resp.status_code in (200, 204), f"Expected 200/204, got {resp.status_code}: {resp.text}"
-    allow = resp.headers.get("Access-Control-Allow-Headers", "")
-    assert "Api-Session-ID" in allow, f"Api-Session-ID not in Allow-Headers: {allow}"
-    assert "Api-Signature"  in allow, f"Api-Signature not in Allow-Headers: {allow}"
+    allow = resp.headers.get("Access-Control-Allow-Headers", "").upper()
+    assert "API-SESSION-ID" in allow, f"Api-Session-ID not in Allow-Headers: {allow}"
+    assert "API-SIGNATURE"  in allow, f"Api-Signature not in Allow-Headers: {allow}"

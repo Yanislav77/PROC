@@ -325,6 +325,6 @@ def test_confirm_options_preflight(payment_token):
     resp = options_preflight(_confirm_path(payment_token))
     assert resp.status_code in (200, 204), \
         f"Expected 200/204 for OPTIONS, got {resp.status_code}: {resp.text}"
-    allow = resp.headers.get("Access-Control-Allow-Headers", "")
-    assert "Api-Session-ID" in allow, f"Api-Session-ID not in Allow-Headers: {allow!r}"
-    assert "Api-Signature"  in allow, f"Api-Signature not in Allow-Headers: {allow!r}"
+    allow = resp.headers.get("Access-Control-Allow-Headers", "").upper()
+    assert "API-SESSION-ID" in allow, f"Api-Session-ID not in Allow-Headers: {allow!r}"
+    assert "API-SIGNATURE"  in allow, f"Api-Signature not in Allow-Headers: {allow!r}"
