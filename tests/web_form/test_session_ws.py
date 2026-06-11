@@ -216,7 +216,12 @@ def test_ws_no_pong_closes_connection(payment_token):
     )
     threading.Thread(target=ws_app.run_forever, daemon=True).start()
     closed.wait(timeout=120)
-    ws_app.close()
+    ws_app.keep_running = False
+    if ws_app.sock:
+        try:
+            ws_app.sock.shutdown()
+        except Exception:
+            pass
     assert closed.is_set(), "Server should close connection when pong responses are suppressed"
 
 
@@ -244,7 +249,12 @@ def test_ws_explicit_pong_keeps_connection(payment_token):
         assert not closed.is_set(), \
             f"Connection should remain open for {DURATION}s with explicit pong responses"
     finally:
-        ws_app.close()
+        ws_app.keep_running = False
+        if ws_app.sock:
+            try:
+                ws_app.sock.shutdown()
+            except Exception:
+                pass
 
 
 # ─────────────────────────────────────────────
