@@ -43,7 +43,7 @@ _SUBMIT_BODY = {
         "CardNumber": "4111111111111111",
         "ExpYear":    "27",
         "ExpMonth":   "05",
-        "CVV":        "666",
+        "CVC":        "666",
         "CardholderName": "JOHN DOE",
     },
     "CustomerInfo": {

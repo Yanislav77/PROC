@@ -19,6 +19,7 @@ import uuid
 
 import pytest
 import requests
+import websocket
 
 import _helpers.config as _cfg
 from _helpers.validators import assert_error_response, parity_check
@@ -28,6 +29,29 @@ _WEB3_HOST  = "https://web3preprod.testpaygate.com"
 _BASE_PATH   = "/api/v1/payment-sessions"
 _OLD_PATH    = "/payments"
 _INVALID_JSON = "{not_a_json"
+
+_USER_ACTION_TOKEN = "bf7cfa91-bd4b-4797-b874-2c06eb745b58"
+
+
+@pytest.fixture
+def user_action_token():
+    """Токен платежа в state 'user_action'. Проверяет состояние через WS и пропускает тест если оно изменилось."""
+    try:
+        ws = websocket.create_connection(
+            f"wss://web3preprod.testpaygate.com/api/v1/payment-sessions/{_USER_ACTION_TOKEN}/ws",
+            timeout=5,
+        )
+        msg = json.loads(ws.recv())
+        ws.close()
+    except Exception as e:
+        pytest.skip(f"user_action_token: не удалось подключиться — {e}")
+    state = msg.get("state")
+    if state != "user_action":
+        pytest.skip(
+            f"user_action_token: ожидается state='user_action', получен '{state}' — "
+            f"обновите _USER_ACTION_TOKEN вручную"
+        )
+    return _USER_ACTION_TOKEN
 
 _CANCEL_BODY = {
     "CancellationReason":            "too_long",
@@ -91,56 +115,49 @@ def _post_cancel_old(token: str, body: dict | str) -> requests.Response:
 # (требуют платёж в state "user_action" — настроить вручную)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("AC-001")
-@pytest.mark.skip(reason="Требует платёж в state 'user_action' — настроить вручную")
-def test_transfer_cancel_user_action_state(payment_token):
+def test_transfer_cancel_user_action_state(user_action_token):
     """TC-01: Отмена платежа на стадии user_action. Ожидается 200 OK, тело {}."""
-    resp = _post_cancel(payment_token, _CANCEL_BODY)
+    resp = _post_cancel(user_action_token, _CANCEL_BODY)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     assert resp.json() == {}, f"Expected empty body, got: {resp.text}"
 
 
 @pytest.mark.tcid("AC-002")
-@pytest.mark.skip(reason="Требует платёж в state 'user_action' — настроить вручную")
-def test_transfer_cancel_empty_body(payment_token):
+def test_transfer_cancel_empty_body(user_action_token):
     """TC-02: Отмена с пустым body {}. Ожидается 200 OK, тело {}."""
-    resp = _post_cancel(payment_token, {})
+    resp = _post_cancel(user_action_token, {})
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     assert resp.json() == {}
 
 
 @pytest.mark.tcid("AC-003")
-@pytest.mark.skip(reason="Требует платёж в state 'user_action' — настроить вручную")
-def test_transfer_cancel_invalid_json_body(payment_token):
+def test_transfer_cancel_invalid_json_body(user_action_token):
     """TC-03: Битый JSON в body — ошибка поглощается try/except. Ожидается 200 OK, тело {}."""
-    path = _cancel_path(payment_token)
-    resp = _post_cancel(payment_token, _INVALID_JSON,
+    path = _cancel_path(user_action_token)
+    resp = _post_cancel(user_action_token, _INVALID_JSON,
                         headers=_make_headers(path, _INVALID_JSON))
     assert resp.status_code == 200, f"Expected 200 (bad JSON swallowed), got {resp.status_code}: {resp.text}"
     assert resp.json() == {}
 
 
 @pytest.mark.tcid("AC-005")
-@pytest.mark.skip(reason="Требует платёж в state 'user_action' — настроить вручную")
-def test_transfer_cancel_without_screenshots(payment_token):
+def test_transfer_cancel_without_screenshots(user_action_token):
     """TC-05: Отмена без опционального CancellationScreenshots. Ожидается 200 OK, тело {}."""
     body = {
         "CancellationReason":            "too_long",
         "CancellationReasonDescription": "Очень долго ждал перевод",
     }
-    resp = _post_cancel(payment_token, body)
+    resp = _post_cancel(user_action_token, body)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     assert resp.json() == {}
 
 
 @pytest.mark.tcid("AC-015")
-@pytest.mark.skip(reason="Требует платёж в state 'user_action' — настроить вручную")
-def test_transfer_cancel_behavior_identical_to_old_endpoint():
+def test_transfer_cancel_behavior_identical_to_old_endpoint(user_action_token):
     """TC-15: Одинаковое поведение старого и нового эндпоинта при state='user_action'.
     Оба возвращают 200 OK, тело {}."""
-    token_new = create_payment_token()
-    token_old = create_payment_token()
-    resp_new  = _post_cancel(token_new, _CANCEL_BODY)
-    resp_old  = _post_cancel_old(token_old, _CANCEL_BODY)
+    resp_new = _post_cancel(user_action_token, _CANCEL_BODY)
+    resp_old = _post_cancel_old(user_action_token, _CANCEL_BODY)
     with parity_check(lambda: resp_old):
         assert resp_new.status_code == 200, f"New: {resp_new.status_code}: {resp_new.text}"
         assert resp_old.status_code == 200, f"Old: {resp_old.status_code}: {resp_old.text}"
