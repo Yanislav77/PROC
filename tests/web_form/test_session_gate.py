@@ -17,7 +17,7 @@ import pytest
 import requests
 
 import _helpers.config as _cfg
-from _helpers.validators import assert_error_response
+from _helpers.validators import assert_error_response, parity_check
 from web_form.conftest import create_payment_token
 
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
@@ -146,13 +146,14 @@ def test_gate_redirect_old_endpoint_regression_with_tr_fields(payment_token):
     """TC-12: Старый /payments/{token}/redirect и новый дают одинаковый ответ (status, Location/body)."""
     resp_new = _get_redirect(payment_token, allow_redirects=False)
     resp_old = _get_redirect_old(payment_token, allow_redirects=False)
-    assert resp_new.status_code == resp_old.status_code, \
-        f"Status mismatch: new={resp_new.status_code}, old={resp_old.status_code}"
-    if resp_new.status_code == 302:
-        assert resp_new.headers.get("Location") == resp_old.headers.get("Location"), \
-            f"Location mismatch: new={resp_new.headers.get('Location')!r}, old={resp_old.headers.get('Location')!r}"
-    else:
-        assert resp_new.text == resp_old.text, "HTML body mismatch between old and new endpoint"
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == resp_old.status_code, \
+            f"Status mismatch: new={resp_new.status_code}, old={resp_old.status_code}"
+        if resp_new.status_code == 302:
+            assert resp_new.headers.get("Location") == resp_old.headers.get("Location"), \
+                f"Location mismatch: new={resp_new.headers.get('Location')!r}, old={resp_old.headers.get('Location')!r}"
+        else:
+            assert resp_new.text == resp_old.text, "HTML body mismatch between old and new endpoint"
 
 
 @pytest.mark.tcid("GR-013")
@@ -419,8 +420,9 @@ def test_gate_return_data_identical_to_old_endpoint():
     token_old = create_payment_token()
     resp_new  = _post_return_data(token_new)
     resp_old  = _post_return_data_old(token_old)
-    assert resp_new.status_code == resp_old.status_code == 302, \
-        f"Status mismatch: new={resp_new.status_code}, old={resp_old.status_code}"
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == resp_old.status_code == 302, \
+            f"Status mismatch: new={resp_new.status_code}, old={resp_old.status_code}"
 
 
 @pytest.mark.tcid("GD-016")
@@ -692,12 +694,13 @@ def test_gate_return_no_data_result_url_differs_old_vs_new():
     token_old = create_payment_token()
     resp_new  = _get_return_no_data(token_new)
     resp_old  = _get_old_confirm_void(token_old)
-    assert resp_new.status_code == 302, f"New: Expected 302, got {resp_new.status_code}"
-    assert resp_old.status_code == 302, f"Old: Expected 302, got {resp_old.status_code}"
-    loc_new = resp_new.headers.get("Location", "")
-    loc_old = resp_old.headers.get("Location", "")
-    assert _NEW_RESULT_URL_FRAGMENT in loc_new, f"New endpoint missing /payment-sessions/ in Location: {loc_new!r}"
-    assert _OLD_RESULT_URL_FRAGMENT in loc_old, f"Old endpoint missing /pay/ in Location: {loc_old!r}"
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == 302, f"New: Expected 302, got {resp_new.status_code}"
+        assert resp_old.status_code == 302, f"Old: Expected 302, got {resp_old.status_code}"
+        loc_new = resp_new.headers.get("Location", "")
+        loc_old = resp_old.headers.get("Location", "")
+        assert _NEW_RESULT_URL_FRAGMENT in loc_new, f"New endpoint missing /payment-sessions/ in Location: {loc_new!r}"
+        assert _OLD_RESULT_URL_FRAGMENT in loc_old, f"Old endpoint missing /pay/ in Location: {loc_old!r}"
 
 
 @pytest.mark.tcid("GN-017")
@@ -708,8 +711,9 @@ def test_gate_return_no_data_post_identical_to_old():
     token_old = create_payment_token()
     resp_new  = _post_return_no_data(token_new)
     resp_old  = _post_old_confirm_void_no_body(token_old)
-    assert resp_new.status_code == resp_old.status_code == 201, \
-        f"Status mismatch: new={resp_new.status_code}, old={resp_old.status_code}"
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == resp_old.status_code == 201, \
+            f"Status mismatch: new={resp_new.status_code}, old={resp_old.status_code}"
 
 
 @pytest.mark.tcid("GN-018")
@@ -927,12 +931,13 @@ def test_gate_3ds2_method_result_url_differs_old_vs_new():
     token_old = create_payment_token()
     resp_new  = _post_3ds2_method(token_new)
     resp_old  = _post_old_3ds_method(token_old)
-    assert resp_new.status_code == 302, f"New: Expected 302, got {resp_new.status_code}"
-    assert resp_old.status_code == 302, f"Old: Expected 302, got {resp_old.status_code}"
-    loc_new = resp_new.headers.get("Location", "")
-    loc_old = resp_old.headers.get("Location", "")
-    assert _NEW_RESULT_URL_FRAGMENT in loc_new, f"New endpoint missing /payment-sessions/: {loc_new!r}"
-    assert _OLD_RESULT_URL_FRAGMENT in loc_old, f"Old endpoint missing /pay/: {loc_old!r}"
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == 302, f"New: Expected 302, got {resp_new.status_code}"
+        assert resp_old.status_code == 302, f"Old: Expected 302, got {resp_old.status_code}"
+        loc_new = resp_new.headers.get("Location", "")
+        loc_old = resp_old.headers.get("Location", "")
+        assert _NEW_RESULT_URL_FRAGMENT in loc_new, f"New endpoint missing /payment-sessions/: {loc_new!r}"
+        assert _OLD_RESULT_URL_FRAGMENT in loc_old, f"Old endpoint missing /pay/: {loc_old!r}"
 
 
 @pytest.mark.tcid("G3-013")
@@ -1225,12 +1230,13 @@ def test_gate_3ds2_result_result_url_differs_old_vs_new():
     token_old = create_payment_token()
     resp_new  = _post_3ds2_result(token_new, body=_3DS_RESULT_CRES)
     resp_old  = _post_old_3ds_confirm(token_old, body=_3DS_RESULT_CRES)
-    assert resp_new.status_code == 302, f"New: Expected 302, got {resp_new.status_code}"
-    assert resp_old.status_code == 302, f"Old: Expected 302, got {resp_old.status_code}"
-    loc_new = resp_new.headers.get("Location", "")
-    loc_old = resp_old.headers.get("Location", "")
-    assert _NEW_RESULT_URL_FRAGMENT in loc_new, f"New: expected /payment-sessions/: {loc_new!r}"
-    assert _OLD_RESULT_URL_FRAGMENT in loc_old, f"Old: expected /pay/: {loc_old!r}"
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == 302, f"New: Expected 302, got {resp_new.status_code}"
+        assert resp_old.status_code == 302, f"Old: Expected 302, got {resp_old.status_code}"
+        loc_new = resp_new.headers.get("Location", "")
+        loc_old = resp_old.headers.get("Location", "")
+        assert _NEW_RESULT_URL_FRAGMENT in loc_new, f"New: expected /payment-sessions/: {loc_new!r}"
+        assert _OLD_RESULT_URL_FRAGMENT in loc_old, f"Old: expected /pay/: {loc_old!r}"
 
 
 @pytest.mark.tcid("G3R-022")

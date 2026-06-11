@@ -28,7 +28,7 @@ import requests
 
 import _helpers.config as _cfg
 from _helpers.db import _query_addinfo_by_token
-from _helpers.validators import assert_error_response
+from _helpers.validators import assert_error_response, parity_check
 from web_form.conftest import create_payment_token, options_preflight
 
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
@@ -344,12 +344,13 @@ def test_card_submit_response_structure_identical_to_old():
     token_old = create_payment_token()
     resp_new  = _post_card(token_new, _SUBMIT_BODY)
     resp_old  = _post_card_old(token_old, _SUBMIT_BODY)
-    assert resp_new.status_code == 201, f"New: {resp_new.status_code}: {resp_new.text}"
-    assert resp_old.status_code == 201, f"Old: {resp_old.status_code}: {resp_old.text}"
-    data_new = resp_new.json()
-    data_old = resp_old.json()
-    assert set(data_new.keys()) == set(data_old.keys()), \
-        f"Response keys differ: new={set(data_new.keys())}, old={set(data_old.keys())}"
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == 201, f"New: {resp_new.status_code}: {resp_new.text}"
+        assert resp_old.status_code == 201, f"Old: {resp_old.status_code}: {resp_old.text}"
+        data_new = resp_new.json()
+        data_old = resp_old.json()
+        assert set(data_new.keys()) == set(data_old.keys()), \
+            f"Response keys differ: new={set(data_new.keys())}, old={set(data_old.keys())}"
 
 
 # ─────────────────────────────────────────────
@@ -669,10 +670,11 @@ def test_cardless_response_identical_to_old_without_bankinfo():
         pytest.skip("Card submit failed — can't reach submited state")
     resp_new = _post_cardless(token_new, _CARDLESS_BODY)
     resp_old = _post_cardless_old(token_old, _CARDLESS_BODY)
-    assert resp_new.status_code == 201, f"New: {resp_new.status_code}: {resp_new.text}"
-    assert resp_old.status_code == 201, f"Old: {resp_old.status_code}: {resp_old.text}"
-    assert set(resp_new.json().keys()) == set(resp_old.json().keys()), \
-        f"Response keys differ: new={set(resp_new.json().keys())}, old={set(resp_old.json().keys())}"
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == 201, f"New: {resp_new.status_code}: {resp_new.text}"
+        assert resp_old.status_code == 201, f"Old: {resp_old.status_code}: {resp_old.text}"
+        assert set(resp_new.json().keys()) == set(resp_old.json().keys()), \
+            f"Response keys differ: new={set(resp_new.json().keys())}, old={set(resp_old.json().keys())}"
     # Оба не должны иметь bank_info в addinfo при отсутствии bankInfo в теле
     for token in (token_new, token_old):
         addinfo = _query_addinfo_by_token(token)

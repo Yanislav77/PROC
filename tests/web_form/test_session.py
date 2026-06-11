@@ -13,7 +13,7 @@ import pytest
 import requests
 
 import _helpers.config as _cfg
-from _helpers.validators import assert_error_response
+from _helpers.validators import assert_error_response, parity_check
 from web_form.conftest import options_preflight
 
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
@@ -128,14 +128,14 @@ def test_get_payment_session_response_identical_to_old(payment_token):
     """
     resp_new = _get(payment_token)
     resp_old = _get_old(payment_token)
-    assert resp_new.status_code == 200, f"New endpoint: {resp_new.status_code}: {resp_new.text}"
-    assert resp_old.status_code == 200, f"Old endpoint: {resp_old.status_code}: {resp_old.text}"
-    data_new = resp_new.json()
-    data_old = resp_old.json()
-    # Сравниваем ключевые поля данных платежа
-    for field in ("service_id", "state", "payment_request"):
-        assert data_new.get(field) == data_old.get(field), \
-            f"Field '{field}' differs: new={data_new.get(field)!r}, old={data_old.get(field)!r}"
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == 200, f"New endpoint: {resp_new.status_code}: {resp_new.text}"
+        assert resp_old.status_code == 200, f"Old endpoint: {resp_old.status_code}: {resp_old.text}"
+        data_new = resp_new.json()
+        data_old = resp_old.json()
+        for field in ("service_id", "state", "payment_request"):
+            assert data_new.get(field) == data_old.get(field), \
+                f"Field '{field}' differs: new={data_new.get(field)!r}, old={data_old.get(field)!r}"
 
 
 # ─────────────────────────────────────────────

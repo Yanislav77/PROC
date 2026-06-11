@@ -26,7 +26,7 @@ import pytest
 import requests
 
 import _helpers.config as _cfg
-from _helpers.validators import assert_error_response
+from _helpers.validators import assert_error_response, parity_check
 from web_form.conftest import options_preflight
 
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
@@ -77,6 +77,18 @@ def _post(token: str, body: dict, headers: dict | None = None) -> requests.Respo
     r    = requests.post(f"{_WEB3_HOST}{path}", data=raw, headers=h, timeout=_cfg.HTTP_TIMEOUT)
     assert_idempotency_echo(h, r)
     return r
+
+
+def _post_log_old(token: str, body: dict) -> requests.Response:
+    path = f"/payments/{token}/ui_logger"
+    raw  = json.dumps(body, separators=(",", ":"))
+    sid  = str(uuid.uuid4())
+    headers = {
+        "Content-Type":          "application/json",
+        "X-CUSTOMER-SESSION-ID": sid,
+        "X-REQUEST-SIGNATURE":   _calc_sig(path, sid, raw),
+    }
+    return requests.post(f"{_WEB3_HOST}{path}", data=raw, headers=headers, timeout=_cfg.HTTP_TIMEOUT)
 
 
 # ─────────────────────────────────────────────
@@ -255,3 +267,18 @@ def test_ui_logs_options_preflight(payment_token):
     allow = resp.headers.get("Access-Control-Allow-Headers", "").upper()
     assert "API-SESSION-ID" in allow, f"Api-Session-ID not in Allow-Headers: {allow}"
     assert "API-SIGNATURE"  in allow, f"Api-Signature not in Allow-Headers: {allow}"
+
+
+# ─────────────────────────────────────────────
+# PARITY
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("UL-015")
+def test_ui_log_response_keys_identical_to_old(payment_token):
+    """Ключи ответа нового и старого эндпоинта идентичны."""
+    resp_new = _post(payment_token, _LOG_BODY)
+    resp_old = _post_log_old(payment_token, _LOG_BODY)
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == 200, f"New: {resp_new.status_code}: {resp_new.text}"
+        assert resp_old.status_code == 200, f"Old: {resp_old.status_code}: {resp_old.text}"
+        assert set(resp_new.json().keys()) == set(resp_old.json().keys()), \
+            f"Response keys differ: new={set(resp_new.json().keys())}, old={set(resp_old.json().keys())}"

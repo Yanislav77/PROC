@@ -22,7 +22,7 @@ import pytest
 import requests
 
 import _helpers.config as _cfg
-from _helpers.validators import assert_error_response
+from _helpers.validators import assert_error_response, parity_check
 from web_form.conftest import create_payment_token, options_preflight
 
 _WEB3_HOST   = "https://web3preprod.testpaygate.com"
@@ -137,9 +137,10 @@ def test_change_requisite_behavior_identical_to_old_endpoint():
     token_old = create_payment_token()
     resp_new  = _post_reselect(token_new, _RESELECT_BODY)
     resp_old  = _post_reselect_old(token_old, _RESELECT_BODY)
-    assert resp_new.status_code == 200, f"New: {resp_new.status_code}: {resp_new.text}"
-    assert resp_old.status_code == 200, f"Old: {resp_old.status_code}: {resp_old.text}"
-    assert resp_new.json() == resp_old.json() == {}
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == 200, f"New: {resp_new.status_code}: {resp_new.text}"
+        assert resp_old.status_code == 200, f"Old: {resp_old.status_code}: {resp_old.text}"
+        assert resp_new.json() == resp_old.json() == {}
 
 
 @pytest.mark.tcid("RC-016")

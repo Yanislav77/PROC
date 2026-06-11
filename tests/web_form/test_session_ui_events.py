@@ -11,7 +11,7 @@ import pytest
 import requests
 
 import _helpers.config as _cfg
-from _helpers.validators import assert_error_response
+from _helpers.validators import assert_error_response, parity_check
 from web_form.conftest import options_preflight
 
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
@@ -47,6 +47,18 @@ def _post_event(token: str, body: dict | str, headers: dict | None = None) -> re
     raw  = body if isinstance(body, str) else json.dumps(body, separators=(",", ":"))
     h    = headers if headers is not None else _make_headers(path, raw)
     return requests.post(f"{_WEB3_HOST}{path}", data=raw, headers=h, timeout=_cfg.HTTP_TIMEOUT)
+
+
+def _post_event_old(token: str, body: dict | str) -> requests.Response:
+    path = f"/payments/{token}/ui-interactions"
+    raw  = body if isinstance(body, str) else json.dumps(body, separators=(",", ":"))
+    sid  = str(uuid.uuid4())
+    headers = {
+        "Content-Type":          "application/json",
+        "X-CUSTOMER-SESSION-ID": sid,
+        "X-REQUEST-SIGNATURE":   _calc_sig(path, sid, raw),
+    }
+    return requests.post(f"{_WEB3_HOST}{path}", data=raw, headers=headers, timeout=_cfg.HTTP_TIMEOUT)
 
 
 # ─────────────────────────────────────────────
@@ -236,3 +248,18 @@ def test_ui_events_options_preflight(payment_token):
     allow = resp.headers.get("Access-Control-Allow-Headers", "").upper()
     assert "API-SESSION-ID" in allow, f"Api-Session-ID not in Allow-Headers: {allow}"
     assert "API-SIGNATURE"  in allow, f"Api-Signature not in Allow-Headers: {allow}"
+
+
+# ─────────────────────────────────────────────
+# PARITY
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("UE-015")
+def test_ui_event_response_identical_to_old(payment_token):
+    """Ответ нового и старого эндпоинта идентичен для одного события."""
+    resp_new = _post_event(payment_token, _EVENT_BODY)
+    resp_old = _post_event_old(payment_token, _EVENT_BODY)
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == 201, f"New: {resp_new.status_code}: {resp_new.text}"
+        assert resp_old.status_code == 200, f"Old: {resp_old.status_code}: {resp_old.text}"
+        assert resp_new.json() == resp_old.json(), \
+            f"Responses differ:\n  new: {resp_new.json()}\n  old: {resp_old.json()}"

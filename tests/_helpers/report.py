@@ -4,6 +4,8 @@ from datetime import datetime
 from http import HTTPStatus
 from pathlib import Path
 
+from _helpers.validators import PARITY_BUG_PREFIX
+
 _DB_CELL_MAX_LEN    = 200  # chars, DB table cell content truncation
 _REDIS_CELL_MAX_LEN = 300  # chars, Redis field value truncation
 
@@ -208,10 +210,13 @@ def _write_report_entry(nodeid: str, status: str, error, ungrouped: list, tc_id:
     idx = _test_counter
     f = _report_file
 
+    is_parity = bool(error and PARITY_BUG_PREFIX in error)
     if status == "PASSED":
         css, badge = "passed", "✓ PASSED"
     elif status == "SKIPPED":
         css, badge = "skipped", "⊘ SKIPPED"
+    elif is_parity:
+        css, badge = "parity", "⚠ PARITY BUG"
     else:
         css, badge = "failed", "✗ FAILED"
 
@@ -225,8 +230,17 @@ def _write_report_entry(nodeid: str, status: str, error, ungrouped: list, tc_id:
     f.write(f'  <div class="panel-body">\n')
 
     if error:
-        f.write('    <div class="section-label">Error</div>\n')
-        f.write(f'    <div class="error-block"><pre>{_esc(error)}</pre></div>\n')
+        if is_parity:
+            f.write('    <div class="parity-bug-block">\n')
+            f.write('      <div class="parity-bug-header">\n')
+            f.write('        <span class="parity-bug-badge">⚠ PARITY BUG</span>\n')
+            f.write('        <span class="parity-bug-title">Та же ошибка на старом эндпоинте — требуется отдельная задача</span>\n')
+            f.write('      </div>\n')
+            f.write(f'      <pre>{_esc(error)}</pre>\n')
+            f.write('    </div>\n')
+        else:
+            f.write('    <div class="section-label">Error</div>\n')
+            f.write(f'    <div class="error-block"><pre>{_esc(error)}</pre></div>\n')
 
     for entry in (ws_entries or []):
         _render_ws_block(f, entry)
@@ -372,6 +386,15 @@ details[open].tx-group>summary::before{{transform:rotate(90deg)}}
 .db-table th{{background:#1e1433;color:#c9a8ff;padding:4px 10px;text-align:left;border:1px solid #3a2a5a;white-space:nowrap;position:sticky;top:0}}
 .db-table td{{padding:4px 10px;border:1px solid #2a1e40;color:#cdd9e5;vertical-align:top;word-break:break-all;max-width:360px}}
 .db-table tr:nth-child(even) td{{background:#130f1e}}
+.panel.parity .panel-header{{background:#2a1400;border:1px solid #6b3a00;border-bottom:none}}
+.panel.parity .badge{{background:#e65c00;color:#fff0d0}}
+.panel.parity .panel-body{{border:1px solid #6b3a00;border-top:none}}
+.nav-item.parity .nav-badge{{color:#ff8c00}}
+.parity-bug-block{{background:#1f0e00;border:2px solid #ff8c00;border-radius:6px;padding:14px 16px;margin-top:8px}}
+.parity-bug-header{{display:flex;align-items:center;gap:10px;margin-bottom:10px}}
+.parity-bug-badge{{background:#ff8c00;color:#000;font-weight:bold;font-size:.75em;padding:3px 10px;border-radius:10px;white-space:nowrap}}
+.parity-bug-title{{color:#ff8c00;font-weight:bold;font-size:.9em;letter-spacing:.03em}}
+.parity-bug-block pre{{color:#ffd580;font-size:.82em;white-space:pre-wrap;word-break:break-all;max-height:420px;overflow-y:auto;margin:0}}
 </style>
 </head>
 <body>
@@ -417,7 +440,7 @@ def pytest_unconfigure(config):
     var tcid=p.dataset.tcid;
     var item=document.createElement('div');
     item.className='nav-item '+st;
-    item.innerHTML='<span class="nav-badge">'+(st==='passed'?'✓':st==='skipped'?'⊘':'✗')+'</span>'+(tcid?'<span class="nav-tcid">['+tcid+']</span> ':'')+nm;
+    item.innerHTML='<span class="nav-badge">'+(st==='passed'?'✓':st==='skipped'?'⊘':st==='parity'?'⚠':'✗')+'</span>'+(tcid?'<span class="nav-tcid">['+tcid+']</span> ':'')+nm;
     (function(panel,navItem){{
       navItem.onclick=function(){{
         panels.forEach(function(x){{x.classList.remove('active');}});

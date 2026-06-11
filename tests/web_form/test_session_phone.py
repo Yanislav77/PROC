@@ -19,7 +19,7 @@ import pytest
 import requests
 
 import _helpers.config as _cfg
-from _helpers.validators import assert_error_response
+from _helpers.validators import assert_error_response, parity_check
 from web_form.conftest import options_preflight
 
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
@@ -281,10 +281,11 @@ def test_phone_lookup_response_identical_to_old(payment_token, phone_body):
     """Ответы нового и старого эндпоинта идентичны для одного и того же номера."""
     resp_new = _post_phone(payment_token, phone_body)
     resp_old = _post_phone_old(payment_token, phone_body)
-    assert resp_new.status_code == 200, f"New: {resp_new.status_code}: {resp_new.text}"
-    assert resp_old.status_code == 200, f"Old: {resp_old.status_code}: {resp_old.text}"
-    assert resp_new.json() == resp_old.json(), \
-        f"Responses differ:\n  new: {resp_new.json()}\n  old: {resp_old.json()}"
+    with parity_check(lambda: resp_old):
+        assert resp_new.status_code == 200, f"New: {resp_new.status_code}: {resp_new.text}"
+        assert resp_old.status_code == 200, f"Old: {resp_old.status_code}: {resp_old.text}"
+        assert resp_new.json() == resp_old.json(), \
+            f"Responses differ:\n  new: {resp_new.json()}\n  old: {resp_old.json()}"
 
 
 # ─────────────────────────────────────────────

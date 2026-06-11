@@ -1,4 +1,45 @@
+from contextlib import contextmanager
+
 import requests
+
+PARITY_BUG_PREFIX = "⚠ PARITY BUG"
+
+
+@contextmanager
+def parity_check(old_call: "callable[[], requests.Response]", msg: str = ""):
+    """Automatically detects parity bugs between new and old endpoints.
+
+    Wrap assertions about the new endpoint response. If they fail AND the old
+    endpoint also returns an error, raises AssertionError with PARITY_BUG_PREFIX
+    so the HTML report renders it as an orange parity-bug block.
+
+    If the old endpoint succeeds, the original assertion error is re-raised as-is.
+
+    Usage:
+        resp_new = _post_phone(token, body)
+        with parity_check(lambda: _post_phone_old(token, body)):
+            assert resp_new.status_code == 200
+            assert resp_new.json()["provider_country"]["code"] == "643"
+    """
+    try:
+        yield
+    except AssertionError as original_err:
+        try:
+            resp_old = old_call()
+        except Exception:
+            raise original_err
+        if resp_old.status_code >= 400:
+            old_url  = (resp_old.request.url if resp_old.request else "")
+            old_body = resp_old.text[:500] if resp_old.text else "(no body)"
+            detail   = f"\n{msg}" if msg else ""
+            raise AssertionError(
+                f"{PARITY_BUG_PREFIX}{detail}\n"
+                f"Та же ошибка воспроизводится на старом эндпоинте.\n"
+                f"Требуется отдельная задача разработки.\n\n"
+                f"Старый: [{resp_old.status_code}]  {old_url}\n{old_body}\n\n"
+                f"--- Оригинальная ошибка нового эндпоинта ---\n{original_err}"
+            ) from None
+        raise original_err
 
 _VALID_STATUSES = frozenset({
     "completed", "authorized", "processing",
