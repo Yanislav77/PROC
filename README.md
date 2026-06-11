@@ -485,7 +485,7 @@ tests/
 │   ├── factories.py                   — make_block_payin (→ authorized), make_completed_payin (→ completed)
 │   ├── http_client.py                 — post_transaction, post_operation, get_request
 │   ├── signatures.py                  — HMAC-подпись запросов
-│   └── validators.py                  — assert_transaction_response, assert_error_response
+│   └── validators.py                  — assert_transaction_response, assert_error_response, parity_check
 ├── payin/                             — входящие платежи
 │   ├── test_card.py                   — карточные Payin (PC-xxx)
 │   ├── test_3ds.py                    — 3DS-флоу (3DS-xxx)
@@ -520,7 +520,8 @@ tests/
     ├── test_session_bin.py                      — BIN-lookup (BI-xxx)                          [PROC-67]
     ├── test_session_phone.py                    — lookup по телефону (PH-xxx)                  [PROC-68]
     ├── test_session_transactions.py             — submit card/cardless (TX-xxx, CL-xxx)        [PROC-69, 70]
-    ├── test_session_ui.py                       — UI-логи и события (UL-xxx, UE-xxx)           [PROC-63, 64]
+    ├── test_session_ui_events.py                — UI-события (UE-xxx)                          [PROC-64]
+    ├── test_session_ui_logs.py                  — UI-логи (UL-xxx)                             [PROC-63]
     ├── test_session_ws.py                       — WebSocket (WS-xxx)                           [PROC-65]
     ├── test_session_actions_cancel.py           — отмена платежа пользователем (AC-xxx)        [PROC-71]
     ├── test_session_actions_change_requisite.py — смена реквизитов (RC-xxx)                    [PROC-72]
@@ -854,7 +855,8 @@ DELETE `/api/v1/subscriptions/{token}`.
 | `test_session_bin.py` | BI-001…BI-016 | POST `.../bin` — BIN-lookup по номеру карты | PROC-67 |
 | `test_session_phone.py` | PH-001…PH-018 | POST `.../phone` — lookup страны по номеру телефона | PROC-68 |
 | `test_session_transactions.py` | TX-001…TX-023, CL-001…CL-021 | POST `.../transactions/card` и `.../cardless` | PROC-69, 70 |
-| `test_session_ui.py` | UL-001…UL-014, UE-001…UE-014 | POST `.../ui/logs` и `.../ui/events` — UI-логи и события | PROC-63, 64 |
+| `test_session_ui_events.py` | UE-001…UE-015 | POST `.../ui/events` — UI-события | PROC-64 |
+| `test_session_ui_logs.py` | UL-001…UL-015 | POST `.../ui/logs` — UI-логи | PROC-63 |
 | `test_session_ws.py` | WS-001…WS-012 | GET `.../ws` — WebSocket-соединение | PROC-65 |
 | `test_session_actions_cancel.py` | AC-001…AC-017 | POST `.../actions/transfer/cancel` — отмена платежа | PROC-71 |
 | `test_session_actions_change_requisite.py` | RC-001…RC-018 | POST `.../actions/transfer/change-requisite` — смена реквизитов | PROC-72 |
@@ -979,6 +981,24 @@ POST `/api/v1/payment-sessions/{token}/actions/transfer/confirm`
 - Левая панель — список всех тестов с маркерами PASSED/FAILED и ID кейса
 - Клик на тест — справа видны полный HTTP-запрос и ответ
 - Первый упавший тест открывается автоматически
+
+#### Parity Bug — оранжевый блок
+
+Parity-тесты (суффикс `-015`, `-016`, `-017`, `-020`) автоматически сравнивают новый и старый эндпоинт.
+Если тест падает **и одновременно** старый эндпоинт возвращает ту же ошибку, отчёт показывает
+оранжевый блок **⚠ PARITY BUG** вместо обычного красного FAILED:
+
+```
+⚠ PARITY BUG
+Та же ошибка воспроизводится на старом эндпоинте.
+Требуется отдельная задача разработки.
+
+Старый: [4xx]  /payments/…
+…
+```
+
+Это означает, что проблема существует в обоих поколениях API и требует отдельной задачи,
+а не фикса только нового эндпоинта.
 
 ### В PyCharm
 
