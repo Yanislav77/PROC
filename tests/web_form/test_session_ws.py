@@ -4,8 +4,11 @@
 
 Авторизация на handshake отсутствует — поведение идентично старому эндпоинту.
 Протокол: JSON-фреймы поверх WS (3DS_method, confirmation, push состояния).
+
+WS-013..014 используют WebSocketApp (threading): on_ping подавляет авто-pong в websocket-client ≥ 1.3.
 """
 import json
+import threading
 import time
 
 import pytest
@@ -188,6 +191,60 @@ def test_ws_state_push_on_payment_change(payment_token):
         assert "state" in msg, f"Expected state update, got: {msg}"
     finally:
         ws.close()
+
+
+# ─────────────────────────────────────────────
+# PING / PONG
+# ─────────────────────────────────────────────
+@pytest.mark.tcid("WS-013")
+@pytest.mark.slow
+def test_ws_no_pong_closes_connection(payment_token):
+    """Без pong-ответа на ping сервер закрывает соединение.
+    Максимальное ожидание закрытия — 120 сек. Тест медленный."""
+    closed = threading.Event()
+
+    def on_ping(ws, message):
+        pass  # намеренно не отвечаем pong
+
+    def on_close(ws, code, msg):
+        closed.set()
+
+    ws_app = websocket.WebSocketApp(
+        f"{_BASE_PATH}/{payment_token}/ws",
+        on_ping=on_ping,
+        on_close=on_close,
+    )
+    threading.Thread(target=ws_app.run_forever, daemon=True).start()
+    closed.wait(timeout=120)
+    ws_app.close()
+    assert closed.is_set(), "Server should close connection when pong responses are suppressed"
+
+
+@pytest.mark.tcid("WS-014")
+@pytest.mark.slow
+def test_ws_explicit_pong_keeps_connection(payment_token):
+    """Явные pong-ответы на каждый ping удерживают соединение живым 2 мин. Тест медленный (~120 сек)."""
+    DURATION = 120
+    closed = threading.Event()
+
+    def on_ping(ws, message):
+        ws.pong(message)  # явный pong
+
+    def on_close(ws, code, msg):
+        closed.set()
+
+    ws_app = websocket.WebSocketApp(
+        f"{_BASE_PATH}/{payment_token}/ws",
+        on_ping=on_ping,
+        on_close=on_close,
+    )
+    threading.Thread(target=ws_app.run_forever, daemon=True).start()
+    try:
+        time.sleep(DURATION)
+        assert not closed.is_set(), \
+            f"Connection should remain open for {DURATION}s with explicit pong responses"
+    finally:
+        ws_app.close()
 
 
 # ─────────────────────────────────────────────
