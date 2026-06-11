@@ -88,7 +88,7 @@ def test_phone_lookup_russian_number(payment_token):
     data = resp.json()
     country = data.get("provider_country")
     assert country is not None, f"Expected provider_country to be filled: {data}"
-    assert country.get("code") == "RU", f"Expected code=RU, got: {country}"
+    assert country.get("code") == "643", f"Expected code=643 (RU), got: {country}"
     assert "name_ru" in country and "name_en" in country, f"Missing name fields: {country}"
 
 
@@ -99,7 +99,7 @@ def test_phone_lookup_foreign_number(payment_token):
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     country = resp.json().get("provider_country")
     assert country is not None, f"Expected provider_country to be filled"
-    assert country.get("code") == "US", f"Expected code=US, got: {country}"
+    assert country.get("code") == "840", f"Expected code=840 (US), got: {country}"
 
 
 # ─────────────────────────────────────────────
@@ -270,10 +270,17 @@ def test_phone_lookup_old_endpoint_accepts_non_uuid_token():
 
 
 @pytest.mark.tcid("PH-016")
-def test_phone_lookup_response_identical_to_old(payment_token):
-    """Ответы нового и старого эндпоинта идентичны для одного номера."""
-    resp_new = _post_phone(payment_token, _PHONE_RU)
-    resp_old = _post_phone_old(payment_token, _PHONE_RU)
+@pytest.mark.parametrize("phone_body", [
+    pytest.param(_PHONE_RU,    id="ru"),
+    pytest.param(_PHONE_US,    id="us"),
+    pytest.param(_PHONE_EMPTY, id="empty"),
+    pytest.param(_PHONE_NONE,  id="missing_field"),
+    pytest.param(_PHONE_BAD,   id="invalid_format"),
+])
+def test_phone_lookup_response_identical_to_old(payment_token, phone_body):
+    """Ответы нового и старого эндпоинта идентичны для одного и того же номера."""
+    resp_new = _post_phone(payment_token, phone_body)
+    resp_old = _post_phone_old(payment_token, phone_body)
     assert resp_new.status_code == 200, f"New: {resp_new.status_code}: {resp_new.text}"
     assert resp_old.status_code == 200, f"Old: {resp_old.status_code}: {resp_old.text}"
     assert resp_new.json() == resp_old.json(), \
