@@ -196,7 +196,7 @@ def test_ui_event_old_endpoint_regression(payment_token):
         "X-REQUEST-SIGNATURE":   _calc_sig(path, sid, raw),
     }
     resp = requests.post(f"{_WEB3_HOST}{path}", data=raw, headers=headers, timeout=_cfg.HTTP_TIMEOUT)
-    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("UE-012")
