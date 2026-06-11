@@ -263,10 +263,10 @@ def test_phone_lookup_old_endpoint_no_auth(payment_token):
 
 
 @pytest.mark.tcid("PH-014")
-def test_phone_lookup_old_endpoint_accepts_non_uuid_token():
-    """Регресс: старый эндпоинт принимает не-UUID в токене (UUID не валидируется)."""
+def test_phone_lookup_old_endpoint_rejects_non_uuid_token():
+    """Регресс: старый эндпоинт отклоняет не-UUID токен (UUID валидируется). Ожидается 4xx."""
     resp = _post_phone_old("anything-not-uuid", _PHONE_RU)
-    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+    assert resp.status_code in range(400, 500), f"Expected 4xx, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("PH-016")
