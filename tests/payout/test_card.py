@@ -1,6 +1,8 @@
 """
 Тесты выплат методом card (type=payout, method=card).
 """
+import time
+
 import pytest
 
 from conftest import (
@@ -357,3 +359,36 @@ def test_payout_card_amount_with_kopecks():
     }
     data = _assert_payout_ok(post_transaction(body))
     assert data["financial_data"]["amount"] == 1050
+
+
+# ─────────────────────────────────────────────
+# РЕГРЕСС — отказ банка
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("PY-154")
+def test_payout_card_declined():
+    """Выплата на карту, которую банк отклоняет (pan=5000000000000009). Ожидается статус rejected."""
+    body = {
+        **_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_declined")},
+        "financial_data": {"amount": 1000, "currency": "RUB"},
+        "transaction_data": {"method": "card", "details": {"pan": "5000000000000009", "holder": "JOHN DOE"}},
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert_transaction_response(data)
+    tid = data["transaction_id"]
+    if data.get("status") == "rejected":
+        return
+    for _ in range(10):
+        time.sleep(2)
+        r = get_request(f"{BASE_URL}/{tid}")
+        if r.status_code != 200:
+            continue
+        status = r.json().get("status", "")
+        if status == "rejected":
+            return
+        if status in ("completed", "processing", "authorized", "cancelled", "failed"):
+            pytest.fail(f"Ожидался статус 'rejected', получен '{status}' — выплата не была отклонена")
+    pytest.fail(f"Транзакция {tid} не достигла статуса 'rejected' за отведённое время")
