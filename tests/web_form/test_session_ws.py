@@ -216,8 +216,11 @@ def test_ws_no_pong_closes_connection(payment_token):
         on_close=on_close,
     )
     threading.Thread(target=ws_app.run_forever, daemon=True).start()
+    server_closed = False
     try:
-        closed.wait(timeout=120)
+        # Capture return value before cleanup: our own sock.shutdown() can trigger
+        # on_close and set `closed`, which would make a naive is_set() check lie.
+        server_closed = closed.wait(timeout=120)
     finally:
         ws_app.keep_running = False
         if ws_app.sock:
@@ -225,7 +228,8 @@ def test_ws_no_pong_closes_connection(payment_token):
                 ws_app.sock.shutdown()
             except Exception:
                 pass
-    assert closed.is_set(), "Server should close connection when pong responses are suppressed"
+    if not server_closed:
+        pytest.fail("Server did not close connection within 120 s when pong responses were suppressed")
 
 
 @pytest.mark.tcid("WS-014")
