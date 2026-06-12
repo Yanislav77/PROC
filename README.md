@@ -15,6 +15,7 @@
    - [Секрет и ID терминала → `.env`](#секрет-и-id-терминала--файл-env)
    - [Разные терминалы → `terminals.json`](#разные-терминалы-для-разных-файлов-тестов--terminalsjson)
    - [Ручные транзакции для confirm-тестов → `tr_ids.json`](#ручные-транзакции-для-confirm-тестов--tr_idsjson)
+   - [BIN для web_form тестов → `bins.json`](#bin-для-web_form-тестов--binsjson)
    - [Данные карты, клиента, мерчанта](#данные-карты-клиента-мерчанта--tests_helperspayloadspy)
    - [Суммы и валюты](#суммы-и-валюты--конкретный-файл-теста)
    - [URL API](#url-api--tests_helpersconfigpy)
@@ -297,6 +298,47 @@ pytest tests/operations/test_confirm_user_action.py --tr-id UA-001:12351
 # один ID для всех кейсов:
 pytest tests/operations/test_confirm.py --tr-id 12345
 ```
+
+---
+
+### BIN для web_form тестов → `bins.json`
+
+Три кейса в `test_session_bin.py` требуют специфичного BIN и конфигурации стенда:
+
+| Кейс | Ключ в `bins.json` | Условие на стенде |
+|---|---|---|
+| BI-002 | `bin_8digit` | `CONFIG.BinLookup.UseExtended8Bins=true` |
+| BI-004 | `bin_foreign_routing` | `currency_code=RUB`, `spg.is_routing=1`, иностранный не-МИР BIN |
+| BI-005 | `bin_foreign_no_routing` | `spg.is_routing != 1`, иностранный BIN |
+
+В корне проекта есть `bins.json.example`. Создайте рядом файл `bins.json`:
+
+```
+copy bins.json.example bins.json
+```
+
+Откройте `bins.json` и заполните нужные BIN-ы:
+
+```json
+{
+  "bin_8digit": "41111111",
+  "bin_foreign_routing": "400000",
+  "bin_foreign_no_routing": "400000"
+}
+```
+
+- Если поле заполнено — тест запускается с этим BIN автоматически при запуске файла через PyCharm UI
+- Если поле `null` или отсутствует — тест скипается с подсказкой
+
+Альтернатива через CLI (перекрывает файл):
+```bash
+pytest tests/web_form/test_session_bin.py -k "BI002 or BI004 or BI005" \
+  --bin-8digit 41111111 \
+  --bin-foreign-routing 400000 \
+  --bin-foreign-no-routing 400000
+```
+
+> `bins.json` не попадает в git — заполняется локально, лежит рядом с `tr_ids.json`.
 
 ---
 
@@ -852,7 +894,7 @@ DELETE `/api/v1/subscriptions/{token}`.
 | Файл | ID | Что тестирует | PROC |
 |---|---|---|---|
 | `test_session.py` | GP-001…GP-014 | GET `/api/v1/payment-sessions/{token}` — получение сессии | PROC-66 |
-| `test_session_bin.py` | BI-001…BI-016 | POST `.../bin` — BIN-lookup по номеру карты | PROC-67 |
+| `test_session_bin.py` | BI-001…BI-039 | POST `.../bin` — BIN-lookup по номеру карты | PROC-67 |
 | `test_session_phone.py` | PH-001…PH-018 | POST `.../phone` — lookup страны по номеру телефона | PROC-68 |
 | `test_session_transactions.py` | TX-001…TX-023, CL-001…CL-021 | POST `.../transactions/card` и `.../cardless` | PROC-69, 70 |
 | `test_session_ui_events.py` | UE-001…UE-015 | POST `.../ui/events` — UI-события | PROC-64 |
