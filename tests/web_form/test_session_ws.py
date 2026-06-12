@@ -198,6 +198,7 @@ def test_ws_state_push_on_payment_change(payment_token):
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("WS-013")
 @pytest.mark.slow
+@pytest.mark.timeout(150)
 def test_ws_no_pong_closes_connection(payment_token):
     """Без pong-ответа на ping сервер закрывает соединение.
     Максимальное ожидание закрытия — 120 сек. Тест медленный."""
@@ -229,6 +230,7 @@ def test_ws_no_pong_closes_connection(payment_token):
 
 @pytest.mark.tcid("WS-014")
 @pytest.mark.slow
+@pytest.mark.timeout(150)
 def test_ws_explicit_pong_keeps_connection(payment_token):
     """Явные pong-ответы на каждый ping удерживают соединение живым 2 мин. Тест медленный (~120 сек)."""
     DURATION = 120
