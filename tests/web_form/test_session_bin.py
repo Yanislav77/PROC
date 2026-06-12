@@ -12,6 +12,7 @@ import hashlib
 import hmac
 import json
 import uuid
+from pathlib import Path
 
 import pytest
 import requests
@@ -29,6 +30,17 @@ _BIN_8       = {"bin": "41111111"}
 _BIN_UNKNOWN = {"bin": "000000"}
 _BIN_EMPTY   = {}
 _BIN_INVALID_JSON = "{not_a_json"
+
+_BINS_FILE = Path(__file__).parent.parent.parent / "bins.json"
+
+
+def _load_bins() -> dict:
+    if _BINS_FILE.exists():
+        try:
+            return json.loads(_BINS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
 
 
 # ─────────────────────────────────────────────
@@ -108,36 +120,39 @@ def test_bin_lookup_empty_body(payment_token):
 # ─────────────────────────────────────────────
 @pytest.fixture
 def bin_8digit(request):
-    """8-значный BIN для BI-002. Передать через: pytest --bin-8digit <BIN>"""
-    b = request.config.getoption("--bin-8digit")
+    """8-значный BIN для BI-002.
+    Приоритет: bins.json → --bin-8digit → skip."""
+    b = _load_bins().get("bin_8digit") or request.config.getoption("--bin-8digit")
     if not b:
         pytest.skip(
-            "Требует CONFIG.BinLookup.UseExtended8Bins=true — "
-            "передайте BIN: pytest --bin-8digit <8digits>"
+            "Укажите BIN в bins.json (\"bin_8digit\": \"...\") "
+            "или передайте: pytest --bin-8digit <8digits>"
         )
     return b
 
 
 @pytest.fixture
 def bin_foreign_routing(request):
-    """Иностранный BIN для BI-004. Передать через: pytest --bin-foreign-routing <BIN>"""
-    b = request.config.getoption("--bin-foreign-routing")
+    """Иностранный BIN для BI-004.
+    Приоритет: bins.json → --bin-foreign-routing → skip."""
+    b = _load_bins().get("bin_foreign_routing") or request.config.getoption("--bin-foreign-routing")
     if not b:
         pytest.skip(
-            "Требует сервис с currency_code=RUB, spg.is_routing=1 и иностранный не-МИР BIN — "
-            "передайте BIN: pytest --bin-foreign-routing <BIN>"
+            "Укажите BIN в bins.json (\"bin_foreign_routing\": \"...\") "
+            "или передайте: pytest --bin-foreign-routing <BIN>"
         )
     return b
 
 
 @pytest.fixture
 def bin_foreign_no_routing(request):
-    """Иностранный BIN для BI-005. Передать через: pytest --bin-foreign-no-routing <BIN>"""
-    b = request.config.getoption("--bin-foreign-no-routing")
+    """Иностранный BIN для BI-005.
+    Приоритет: bins.json → --bin-foreign-no-routing → skip."""
+    b = _load_bins().get("bin_foreign_no_routing") or request.config.getoption("--bin-foreign-no-routing")
     if not b:
         pytest.skip(
-            "Требует сервис с is_routing != 1 и иностранный BIN — "
-            "передайте BIN: pytest --bin-foreign-no-routing <BIN>"
+            "Укажите BIN в bins.json (\"bin_foreign_no_routing\": \"...\") "
+            "или передайте: pytest --bin-foreign-no-routing <BIN>"
         )
     return b
 
