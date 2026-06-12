@@ -1,3 +1,4 @@
+import atexit
 import html as _html
 import json
 from datetime import datetime
@@ -286,6 +287,18 @@ def _write_report_entry(nodeid: str, status: str, error, ungrouped: list, tc_id:
     f.flush()
 
 
+def _emergency_close():
+    """Закрывает файл отчёта при аварийном завершении процесса (os._exit, SIGKILL и т.п.)."""
+    global _report_file
+    if _report_file:
+        try:
+            _report_file.write("\n</div></div></body></html>\n")
+            _report_file.close()
+        except Exception:
+            pass
+        _report_file = None
+
+
 def pytest_configure(config):
     global _report_file, _test_counter
     _test_counter = 0
@@ -296,6 +309,7 @@ def pytest_configure(config):
     started = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     path = _REPORTS_DIR / f"{ts}_{suffix}.html"
     _report_file = path.open("w", encoding="utf-8")
+    atexit.register(_emergency_close)
     _report_file.write(f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -412,6 +426,7 @@ details[open].tx-group>summary::before{{transform:rotate(90deg)}}
 
 def pytest_unconfigure(config):
     global _report_file
+    atexit.unregister(_emergency_close)
     if _report_file:
         finished = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         _report_file.write(f"""
