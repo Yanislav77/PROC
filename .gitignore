@@ -1,6 +1,7 @@
 .env
 terminals.json
 tr_ids.json
+bins.json
 __pycache__/
 .pytest_cache/
 *.pyc
