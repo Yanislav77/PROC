@@ -50,6 +50,16 @@ def pytest_addoption(parser):
             "or just ID as a fallback for all (e.g. --tr-id 111)."
         ),
     )
+    parser.addoption(
+        "--user-action-token",
+        action="store",
+        default=None,
+        metavar="UUID",
+        help=(
+            "Payment token (UUID) in state 'user_action' for AC-001..003, AC-005, AC-015. "
+            "Create a fresh P2P payment manually, wait for state=user_action, then pass the token here."
+        ),
+    )
 
 
 def pytest_configure(config):

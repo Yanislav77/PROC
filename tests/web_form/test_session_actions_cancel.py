@@ -30,28 +30,32 @@ _BASE_PATH   = "/api/v1/payment-sessions"
 _OLD_PATH    = "/payments"
 _INVALID_JSON = "{not_a_json"
 
-_USER_ACTION_TOKEN = "bf7cfa91-bd4b-4797-b874-2c06eb745b58"
-
-
 @pytest.fixture
-def user_action_token():
-    """Токен платежа в state 'user_action'. Проверяет состояние через WS и пропускает тест если оно изменилось."""
+def user_action_token(request):
+    """Токен платежа в state 'user_action'.
+    Передать через: pytest --user-action-token <UUID>
+    Проверяет state через WS и пропускает тест если оно изменилось."""
+    token = request.config.getoption("--user-action-token")
+    if not token:
+        pytest.skip(
+            "Требует платёж в state 'user_action' — передайте токен: "
+            "pytest --user-action-token <UUID>"
+        )
     try:
         ws = websocket.create_connection(
-            f"wss://web3preprod.testpaygate.com/api/v1/payment-sessions/{_USER_ACTION_TOKEN}/ws",
+            f"wss://web3preprod.testpaygate.com/api/v1/payment-sessions/{token}/ws",
             timeout=5,
         )
         msg = json.loads(ws.recv())
         ws.close()
     except Exception as e:
-        pytest.skip(f"user_action_token: не удалось подключиться — {e}")
+        pytest.skip(f"user_action_token: не удалось подключиться к {token!r} — {e}")
     state = msg.get("state")
     if state != "user_action":
         pytest.skip(
-            f"user_action_token: ожидается state='user_action', получен '{state}' — "
-            f"обновите _USER_ACTION_TOKEN вручную"
+            f"user_action_token: ожидается state='user_action', получен '{state}' для токена {token!r}"
         )
-    return _USER_ACTION_TOKEN
+    return token
 
 _CANCEL_BODY = {
     "CancellationReason":            "too_long",
