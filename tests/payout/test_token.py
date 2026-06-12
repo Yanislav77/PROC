@@ -158,3 +158,20 @@ def test_idempotency_same_key_returns_same_transaction_id():
         f"Duplicate key created new transaction: "
         f"r1.tid={r1.json().get('transaction_id')}, r2.tid={r2.json().get('transaction_id')}"
     )
+
+
+# ─────────────────────────────────────────────
+# РЕГРЕСС — копейки
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("PY-153")
+def test_payout_token_amount_with_kopecks():
+    """Выплата по токену — сумма с копейками (1050 = 10.50 руб). Ожидается 201 и amount=1050 в ответе."""
+    body = {
+        **_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("kopecks")},
+        "financial_data": {"amount": 1050, "currency": "RUB"},
+        "transaction_data": {"method": "token", "details": {"token": "b928586b-e6ec-4400-9039-e36f19c0094c"}},
+    }
+    data = _assert_payout_ok(post_transaction(body))
+    assert data["financial_data"]["amount"] == 1050

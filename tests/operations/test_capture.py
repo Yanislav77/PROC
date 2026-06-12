@@ -865,3 +865,20 @@ def test_capture_nonexistent_domain_webhook_url():
     assert resp.status_code == 200, \
         f"Expected 200 (webhook is async), got {resp.status_code}: {resp.text}"
     assert_transaction_response(resp.json())
+
+
+# ─────────────────────────────────────────────
+# РЕГРЕСС — копейки
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("CAP-058")
+def test_capture_amount_with_kopecks():
+    """Capture с суммой, содержащей копейки (505 = 5.05 руб). Ожидается 200."""
+    oid = gen_order_id("cap_kopecks")
+    tid = make_block_payin(oid)
+    resp = post_operation(tid, "capture", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 505, "currency": "RUB"},
+    })
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
+    assert_transaction_response(resp.json())

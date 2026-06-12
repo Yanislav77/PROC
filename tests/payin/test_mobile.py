@@ -889,3 +889,19 @@ def test_idempotency_same_key_returns_same_transaction_id():
         f"Duplicate key created new transaction: "
         f"r1.tid={r1.json().get('transaction_id')}, r2.tid={r2.json().get('transaction_id')}"
     )
+
+
+# ─────────────────────────────────────────────
+# РЕГРЕСС — копейки
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("MOB-29-1")
+def test_mobile_amount_with_kopecks():
+    """Оплата mobile — сумма с копейками (10050 = 100.50 руб). Ожидается 201 и amount=10050 в ответе."""
+    body = {
+        **_MOBILE_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("kopecks")},
+        "financial_data": {"amount": 10050, "currency": "RUB"},
+    }
+    data = _ok(post_transaction(body))
+    assert data["financial_data"]["amount"] == 10050

@@ -535,3 +535,20 @@ def test_cancel_idempotency_same_key_different_body():
         assert r2.status_code in (400, 409), \
             f"Expected cached response or conflict error, got {r2.status_code}: {r2.text}"
         assert_error_response(r2)
+
+
+# ─────────────────────────────────────────────
+# РЕГРЕСС — копейки
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("CAN-034")
+def test_cancel_amount_with_kopecks():
+    """Cancel с суммой, содержащей копейки (505 = 5.05 руб). Ожидается 200 или 201."""
+    oid = gen_order_id("can_kopecks")
+    tid = make_block_payin(oid)
+    resp = post_operation(tid, "cancel", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": 505, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+    assert_transaction_response(resp.json())

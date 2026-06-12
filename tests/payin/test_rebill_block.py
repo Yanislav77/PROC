@@ -1115,3 +1115,27 @@ def test_rebill_token_after_cancel():
     # Шаг 3: rebill — токен должен остаться активным
     tid_r, _ = _rebill(token, "auto")
     _assert_status(tid_r, "completed")
+
+
+# ─────────────────────────────────────────────
+# РЕГРЕСС — копейки
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("RB-055")
+def test_rebill_amount_with_kopecks():
+    """Rebill с суммой, содержащей копейки (5050 = 50.50 руб). Ожидается 201 и amount=5050 в ответе."""
+    token = _get_token()
+    oid = gen_order_id("rb_kopecks")
+    body = {
+        "type": "payin",
+        "merchant_data": {**MERCHANT_DATA, "order_id": oid},
+        "financial_data": {"amount": 5050, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "customer_data": CUSTOMER_DATA,
+        "transaction_data": {"method": "token", "details": {"token": token}},
+    }
+    resp = post_transaction(body)
+    assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
+    data = resp.json()
+    assert_transaction_response(data)
+    assert data["financial_data"]["amount"] == 5050

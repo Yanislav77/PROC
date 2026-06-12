@@ -820,3 +820,19 @@ def test_refund_webhook_url_empty_string(refund_tid):
     body = {"merchant_data": {"order_id": "order_refund_test", "webhook_url": ""}, "financial_data": {"amount": 100, "currency": "RUB"}}
     resp = post_operation(refund_tid, "refund", body)
     assert resp.status_code in (200, 201, 400), f"Unexpected {resp.status_code}"
+
+
+# ─────────────────────────────────────────────
+# РЕГРЕСС — копейки
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("RF-060")
+def test_refund_amount_with_kopecks(refund_tid):
+    """Частичный возврат с суммой, содержащей копейки (5050 = 50.50 руб). Ожидается 200 или 201."""
+    body = {
+        "merchant_data": {"order_id": gen_order_id("kopecks"), "webhook_url": "https://example.com/webhook"},
+        "financial_data": {"amount": 5050, "currency": "RUB"},
+    }
+    resp = post_operation(refund_tid, "refund", body)
+    assert resp.status_code in (200, 201), f"Expected 200/201, got {resp.status_code}: {resp.text}"
+    assert_transaction_response(resp.json())

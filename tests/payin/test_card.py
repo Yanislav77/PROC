@@ -4,6 +4,7 @@ POST /api/v1/transactions — type:payin, method:card
 Включает: happy path, обязательные поля, валидация карты, финансовых данных, merchant_data.
 """
 import copy
+import time
 import uuid
 import pytest
 from datetime import datetime
@@ -1562,6 +1563,54 @@ def test_customer_data_null_returns_400():
 def test_financial_data_null_returns_400():
     """financial_data = null. Ожидается 400."""
     resp = post_transaction({**_BASE, "financial_data": None})
+
+
+# ─────────────────────────────────────────────
+# РЕГРЕСС — копейки и отклонение
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("PC-166")
+def test_payin_card_amount_with_kopecks():
+    """Оплата картой — сумма с копейками (10050 = 100.50 руб). Ожидается 201 и amount=10050 в ответе."""
+    body = {
+        **_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("kopecks")},
+        "financial_data": {"amount": 10050, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+    }
+    data = _assert_payin_ok(post_transaction(body))
+    assert data["financial_data"]["amount"] == 10050
+    tid = data["transaction_id"]
+    if data.get("status") != "completed":
+        poll_status(tid, "completed")
+
+
+@pytest.mark.tcid("PC-167")
+def test_payin_card_declined():
+    """Неуспешная оплата картой — expiry_month > 7 вызывает отклонение банком. Ожидается статус rejected."""
+    declined_details = {**CARD_DETAILS, "expiry_month": "08"}
+    body = {
+        **_BASE,
+        "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("declined")},
+        "financial_data": {"amount": 10000, "currency": "RUB"},
+        "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
+        "transaction_data": {"method": "card", "details": declined_details},
+    }
+    data = _assert_payin_ok(post_transaction(body))
+    tid = data["transaction_id"]
+    if data.get("status") == "rejected":
+        return
+    for _ in range(10):
+        time.sleep(2)
+        r = get_request(f"{BASE_URL}/{tid}")
+        if r.status_code != 200:
+            continue
+        status = r.json().get("status", "")
+        if status == "rejected":
+            return
+        if status in ("completed", "authorized", "cancelled", "failed"):
+            pytest.fail(f"Ожидался статус 'rejected', получен '{status}' — карта не была отклонена")
+    pytest.fail(f"Транзакция {tid} не достигла статуса 'rejected' за отведённое время")
     assert resp.status_code == 400
     assert_error_response(resp)
 
