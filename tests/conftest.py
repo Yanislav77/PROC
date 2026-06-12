@@ -60,6 +60,27 @@ def pytest_addoption(parser):
             "Create a fresh P2P payment manually, wait for state=user_action, then pass the token here."
         ),
     )
+    parser.addoption(
+        "--bin-8digit",
+        action="store",
+        default=None,
+        metavar="BIN",
+        help="8-digit BIN for BI-002 (requires CONFIG.BinLookup.UseExtended8Bins=true on the stand).",
+    )
+    parser.addoption(
+        "--bin-foreign-routing",
+        action="store",
+        default=None,
+        metavar="BIN",
+        help="Foreign non-MIR BIN for BI-004 (requires service with currency_code=RUB and spg.is_routing=1).",
+    )
+    parser.addoption(
+        "--bin-foreign-no-routing",
+        action="store",
+        default=None,
+        metavar="BIN",
+        help="Foreign BIN for BI-005 (requires service with spg.is_routing != 1).",
+    )
 
 
 def pytest_configure(config):

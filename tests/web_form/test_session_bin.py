@@ -106,11 +106,46 @@ def test_bin_lookup_empty_body(payment_token):
 # ─────────────────────────────────────────────
 # КЕЙСЫ С УСЛОВИЕМ НА КОНФИГ СЕРВИСА
 # ─────────────────────────────────────────────
+@pytest.fixture
+def bin_8digit(request):
+    """8-значный BIN для BI-002. Передать через: pytest --bin-8digit <BIN>"""
+    b = request.config.getoption("--bin-8digit")
+    if not b:
+        pytest.skip(
+            "Требует CONFIG.BinLookup.UseExtended8Bins=true — "
+            "передайте BIN: pytest --bin-8digit <8digits>"
+        )
+    return b
+
+
+@pytest.fixture
+def bin_foreign_routing(request):
+    """Иностранный BIN для BI-004. Передать через: pytest --bin-foreign-routing <BIN>"""
+    b = request.config.getoption("--bin-foreign-routing")
+    if not b:
+        pytest.skip(
+            "Требует сервис с currency_code=RUB, spg.is_routing=1 и иностранный не-МИР BIN — "
+            "передайте BIN: pytest --bin-foreign-routing <BIN>"
+        )
+    return b
+
+
+@pytest.fixture
+def bin_foreign_no_routing(request):
+    """Иностранный BIN для BI-005. Передать через: pytest --bin-foreign-no-routing <BIN>"""
+    b = request.config.getoption("--bin-foreign-no-routing")
+    if not b:
+        pytest.skip(
+            "Требует сервис с is_routing != 1 и иностранный BIN — "
+            "передайте BIN: pytest --bin-foreign-no-routing <BIN>"
+        )
+    return b
+
+
 @pytest.mark.tcid("BI-002")
-@pytest.mark.skip(reason="Требует CONFIG.BinLookup.UseExtended8Bins=true — проверить конфиг препрода")
-def test_bin_lookup_8digits_extended(payment_token):
+def test_bin_lookup_8digits_extended(payment_token, bin_8digit):
     """8-значный BIN при UseExtended8Bins=true. Ожидается 200 с extended-данными."""
-    resp = _post_bin(payment_token, _BIN_8)
+    resp = _post_bin(payment_token, {"bin": bin_8digit})
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     assert "provider_country" in resp.json()
 
@@ -127,20 +162,16 @@ def test_bin_lookup_mir_card(payment_token):
 
 
 @pytest.mark.tcid("BI-004")
-@pytest.mark.skip(reason="Требует сервис с currency_code=RUB, spg.is_routing=1 и иностранный не-МИР BIN")
-def test_bin_lookup_foreign_card_routing_enabled(payment_token):
+def test_bin_lookup_foreign_card_routing_enabled(payment_token, bin_foreign_routing):
     """Иностранная карта + is_routing=1 + RUB-сервис — convert_currency вызывается."""
-    foreign_bin = {"bin": "400000", "client_amount": 1500}  # заменить на реальный иностранный BIN
-    resp = _post_bin(payment_token, foreign_bin)
+    resp = _post_bin(payment_token, {"bin": bin_foreign_routing, "client_amount": 1500})
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
 
 
 @pytest.mark.tcid("BI-005")
-@pytest.mark.skip(reason="Требует сервис с is_routing != 1 и иностранный BIN")
-def test_bin_lookup_foreign_card_routing_disabled(payment_token):
+def test_bin_lookup_foreign_card_routing_disabled(payment_token, bin_foreign_no_routing):
     """Иностранная карта + is_routing != 1 — convert_currency не вызывается."""
-    foreign_bin = {"bin": "400000"}  # заменить на реальный иностранный BIN
-    resp = _post_bin(payment_token, foreign_bin)
+    resp = _post_bin(payment_token, {"bin": bin_foreign_no_routing})
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     assert resp.json().get("convert_data") is None
 
