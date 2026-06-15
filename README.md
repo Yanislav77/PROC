@@ -294,7 +294,7 @@ pytest tests/operations/test_confirm_user_action.py --tr-id UA-001:12351
 
 ---
 
-#### Web Form gate-тесты (`web_form/test_session_gate.py`)
+#### Web Form gate-тесты (`web_form/test_session_gate.py` и `web_form/test_session_gate_return_data.py`)
 
 Значение — **payment token UUID** (не transaction_id!), например `550e8400-e29b-41d4-a716-446655440000`.
 Токен можно найти в URL платёжной формы или в логах по transaction_id.
@@ -607,7 +607,8 @@ tests/
     ├── test_session_actions_cancel.py           — отмена платежа пользователем (AC-xxx)        [PROC-71]
     ├── test_session_actions_change_requisite.py — смена реквизитов (RC-xxx)                    [PROC-72]
     ├── test_session_actions_confirm.py          — подтверждение действия (CA-xxx)              [PROC-73]
-    └── test_session_gate.py                     — gate-эндпоинты (GR/GD/GN/G3/G3R-xxx)       [PROC-74..78]
+    ├── test_session_gate.py                     — gate-эндпоинты (GR/GN/G3/G3R-xxx)          [PROC-74,76..78]
+    └── test_session_gate_return_data.py         — gate/return/data (GD-xxx)                  [PROC-75]
 ```
 
 ---
@@ -942,7 +943,8 @@ DELETE `/api/v1/subscriptions/{token}`.
 | `test_session_actions_cancel.py` | AC-001…AC-017 | POST `.../actions/transfer/cancel` — отмена платежа | PROC-71 |
 | `test_session_actions_change_requisite.py` | RC-001…RC-018 | POST `.../actions/transfer/change-requisite` — смена реквизитов | PROC-72 |
 | `test_session_actions_confirm.py` | CA-001…CA-020 | POST `.../actions/transfer/confirm` — подтверждение действия | PROC-73 |
-| `test_session_gate.py` | GR-001…GR-016, GD-001…GD-017, GN-001…GN-019, G3-001…G3-014, G3R-001…G3R-024 | gate-эндпоинты (redirect, return/data, return/no-data, 3ds2/method, 3ds2/result) | PROC-74..78 |
+| `test_session_gate.py` | GR-001…GR-016, GN-001…GN-019, G3-001…G3-014, G3R-001…G3R-024 | gate-эндпоинты (redirect, return/no-data, 3ds2/method, 3ds2/result) | PROC-74,76..78 |
+| `test_session_gate_return_data.py` | GD-001…GD-017 | gate/return/data (confirm) | PROC-75 |
 
 | Сценарии (общие для web_form) | Ожидаемый результат |
 |---|---|
@@ -1026,17 +1028,18 @@ POST `/api/v1/payment-sessions/{token}/actions/transfer/confirm`
 
 ---
 
-### `web_form/test_session_gate.py` — Gate-эндпоинты (GR/GD/GN/G3/G3R) · PROC-74..78
+### `web_form/test_session_gate.py` — Gate-эндпоинты (GR/GN/G3/G3R) · PROC-74,76..78
+### `web_form/test_session_gate_return_data.py` — Return data (GD) · PROC-75
 
-Покрывает пять gate-эндпоинтов нового `/api/v1/*`-контура. Все — браузерная/шлюзовая навигация, авторизация отсутствует.
+Покрывают gate-эндпоинты нового `/api/v1/*`-контура. Все — браузерная/шлюзовая навигация, авторизация отсутствует.
 
-| Группа | ID | Эндпоинт | Аналог | PROC |
-|---|---|---|---|---|
-| Redirect | GR-001…GR-016 | GET `.../gate/redirect` | `/payments/{token}/redirect` | PROC-74 |
-| Return data | GD-001…GD-017 | GET/POST `.../gate/return/data` | `/payments/{token}/confirm` | PROC-75 |
-| Return no-data | GN-001…GN-019 | GET/POST `.../gate/return/no-data` | `/confirm_void` + `/confirm_void_no_body` | PROC-76 |
-| 3DS2 method | G3-001…G3-014 | POST `.../gate/3ds2/method` | `/threedsecure/method` | PROC-77 |
-| 3DS2 result | G3R-001…G3R-024 | POST `.../gate/3ds2/result` | `/threedsecure/confirm` | PROC-78 |
+| Группа | ID | Эндпоинт | Аналог | PROC | Файл |
+|---|---|---|---|---|---|
+| Redirect | GR-001…GR-016 | GET `.../gate/redirect` | `/payments/{token}/redirect` | PROC-74 | `test_session_gate.py` |
+| Return data | GD-001…GD-017 | GET/POST `.../gate/return/data` | `/payments/{token}/confirm` | PROC-75 | `test_session_gate_return_data.py` |
+| Return no-data | GN-001…GN-019 | GET/POST `.../gate/return/no-data` | `/confirm_void` + `/confirm_void_no_body` | PROC-76 | `test_session_gate.py` |
+| 3DS2 method | G3-001…G3-014 | POST `.../gate/3ds2/method` | `/threedsecure/method` | PROC-77 | `test_session_gate.py` |
+| 3DS2 result | G3R-001…G3R-024 | POST `.../gate/3ds2/result` | `/threedsecure/confirm` | PROC-78 | `test_session_gate.py` |
 
 Общие сценарии по каждому эндпоинту:
 
