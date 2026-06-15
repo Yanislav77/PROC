@@ -522,9 +522,8 @@ def test_multiple_partial_cancel_full_sum():
     _assert_status(tid, "authorized")
 
     for i in range(10):
-        step_oid = gen_order_id(f"rb_mcancel_s{i}")
         resp = post_operation(tid, "cancel", {
-            "merchant_data":  {"order_id": step_oid},
+            "merchant_data":  {"order_id": oid},
             "financial_data": {"amount": 100, "currency": "RUB"},
         })
         assert resp.status_code in (200, 201), \
@@ -545,24 +544,27 @@ def test_multiple_partial_cancel_full_sum():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RB-024")
 def test_multiple_partial_capture_full_sum():
-    """10 частичных capture по 100 (итого 1000) — промежуточный статус authorized, финальный completed."""
+    """Block → первый частичный capture → статус completed; повторный capture → ошибка."""
     oid = gen_order_id("rb_multi_capture")
     tid = make_block_payin(oid)
     _assert_status(tid, "authorized")
 
-    for i in range(10):
-        step_oid = gen_order_id(f"rb_mcapture_s{i}")
-        resp = post_operation(tid, "capture", {
-            "merchant_data":  {"order_id": step_oid},
-            "financial_data": {"amount": 100, "currency": "RUB"},
-        })
-        assert resp.status_code in (200, 201), \
-            f"Capture шаг {i + 1}/10 failed: {resp.status_code}: {resp.text}"
-        time.sleep(SETUP_DELAY)
-        if i < 9:
-            _assert_status(tid, "authorized")
-
+    resp = post_operation(tid, "capture", {
+        "merchant_data":  {"order_id": oid},
+        "financial_data": {"amount": 100, "currency": "RUB"},
+    })
+    assert resp.status_code in (200, 201), \
+        f"First capture failed: {resp.status_code}: {resp.text}"
+    time.sleep(SETUP_DELAY)
     _assert_status(tid, "completed")
+
+    resp2 = post_operation(tid, "capture", {
+        "merchant_data":  {"order_id": oid},
+        "financial_data": {"amount": 100, "currency": "RUB"},
+    })
+    assert resp2.status_code in (400, 409, 422), \
+        f"Expected error for capture after completed, got {resp2.status_code}: {resp2.text}"
+    assert_error_response(resp2)
 
 
 # ─────────────────────────────────────────────
@@ -576,7 +578,7 @@ def test_block_partial_cancel_then_capture_remaining():
     _assert_status(tid, "authorized")
 
     resp = post_operation(tid, "cancel", {
-        "merchant_data":  {"order_id": gen_order_id("rb_ctc_cancel")},
+        "merchant_data":  {"order_id": oid},
         "financial_data": {"amount": 300, "currency": "RUB"},
     })
     assert resp.status_code in (200, 201), \
@@ -585,7 +587,7 @@ def test_block_partial_cancel_then_capture_remaining():
     _assert_status(tid, "authorized")
 
     resp = post_operation(tid, "capture", {
-        "merchant_data":  {"order_id": gen_order_id("rb_ctc_capture")},
+        "merchant_data":  {"order_id": oid},
         "financial_data": {"amount": 700, "currency": "RUB"},
     })
     assert resp.status_code in (200, 201), \
@@ -599,28 +601,27 @@ def test_block_partial_cancel_then_capture_remaining():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RB-026")
 def test_block_partial_capture_then_cancel_remaining():
-    """Block 1000 → capture 300 (authorized) → cancel 700 → completed."""
+    """Block → capture → статус completed; cancel оставшегося → ошибка (уже completed)."""
     oid = gen_order_id("rb_cap_then_cancel")
     tid = make_block_payin(oid)
     _assert_status(tid, "authorized")
 
     resp = post_operation(tid, "capture", {
-        "merchant_data":  {"order_id": gen_order_id("rb_cpc_capture")},
+        "merchant_data":  {"order_id": oid},
         "financial_data": {"amount": 300, "currency": "RUB"},
     })
     assert resp.status_code in (200, 201), \
-        f"Partial capture failed: {resp.status_code}: {resp.text}"
-    time.sleep(SETUP_DELAY)
-    _assert_status(tid, "authorized")
-
-    resp = post_operation(tid, "cancel", {
-        "merchant_data":  {"order_id": gen_order_id("rb_cpc_cancel")},
-        "financial_data": {"amount": 700, "currency": "RUB"},
-    })
-    assert resp.status_code in (200, 201), \
-        f"Cancel remaining failed: {resp.status_code}: {resp.text}"
+        f"Capture failed: {resp.status_code}: {resp.text}"
     time.sleep(SETUP_DELAY)
     _assert_status(tid, "completed")
+
+    resp = post_operation(tid, "cancel", {
+        "merchant_data":  {"order_id": oid},
+        "financial_data": {"amount": 700, "currency": "RUB"},
+    })
+    assert resp.status_code in (400, 409, 422), \
+        f"Expected error for cancel after completed, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 # ─────────────────────────────────────────────
@@ -634,7 +635,7 @@ def test_cancel_amount_exceeds_authorized():
     _assert_status(tid, "authorized")
 
     resp = post_operation(tid, "cancel", {
-        "merchant_data":  {"order_id": gen_order_id("rb_cancel_exceed_op")},
+        "merchant_data":  {"order_id": oid},
         "financial_data": {"amount": 1500, "currency": "RUB"},
     })
     assert resp.status_code in (400, 409, 422), \
@@ -653,7 +654,7 @@ def test_cancel_after_full_capture():
     _assert_status(tid, "authorized")
 
     resp = post_operation(tid, "capture", {
-        "merchant_data":  {"order_id": gen_order_id("rb_cac_capture")},
+        "merchant_data":  {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     })
     assert resp.status_code in (200, 201), f"Capture failed: {resp.status_code}: {resp.text}"
@@ -661,7 +662,7 @@ def test_cancel_after_full_capture():
     _assert_status(tid, "completed")
 
     resp = post_operation(tid, "cancel", {
-        "merchant_data":  {"order_id": gen_order_id("rb_cac_cancel")},
+        "merchant_data":  {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     })
     assert resp.status_code == 409, \
@@ -680,7 +681,7 @@ def test_cancel_auto_capture_transaction():
     _assert_status(tid, "completed")
 
     resp = post_operation(tid, "cancel", {
-        "merchant_data":  {"order_id": gen_order_id("rb_cancel_auto_op")},
+        "merchant_data":  {"order_id": oid},
         "financial_data": {"amount": 1000, "currency": "RUB"},
     })
     assert resp.status_code == 409, \
@@ -699,7 +700,7 @@ def test_cancel_zero_amount():
     _assert_status(tid, "authorized")
 
     resp = post_operation(tid, "cancel", {
-        "merchant_data":  {"order_id": gen_order_id("rb_cancel_zero_op")},
+        "merchant_data":  {"order_id": oid},
         "financial_data": {"amount": 0, "currency": "RUB"},
     })
     assert resp.status_code in (400, 422), \
@@ -744,30 +745,26 @@ def test_double_stage_rebill_capture_full():
 
 @pytest.mark.tcid("RB-032")
 def test_double_stage_rebill_capture_partial():
-    """Двухстадийный rebill → частичный capture → authorized → capture остатка → completed.
-    Шаг 1: rebill 10000, manual.
-    Шаг 2: /capture 3000 → authorized.
-    Шаг 3: GET → authorized.
-    Шаг 4: /capture 7000 → completed."""
+    """Двухстадийный rebill → первый частичный capture → completed; повторный capture → ошибка."""
     token = _get_token()
     tid_r, oid_r = _rebill(token, "manual")
     _assert_status(tid_r, "authorized")
 
     resp = post_operation(tid_r, "capture", {
-        "merchant_data":  {"order_id": gen_order_id("rb31_cap1")},
+        "merchant_data":  {"order_id": oid_r},
         "financial_data": {"amount": 3000, "currency": "RUB"},
     })
-    assert resp.status_code in (200, 201), f"Partial capture failed: {resp.status_code}: {resp.text}"
-    time.sleep(SETUP_DELAY)
-    _assert_status(tid_r, "authorized")
-
-    resp = post_operation(tid_r, "capture", {
-        "merchant_data":  {"order_id": gen_order_id("rb31_cap2")},
-        "financial_data": {"amount": 7000, "currency": "RUB"},
-    })
-    assert resp.status_code in (200, 201), f"Final capture failed: {resp.status_code}: {resp.text}"
+    assert resp.status_code in (200, 201), f"First capture failed: {resp.status_code}: {resp.text}"
     time.sleep(SETUP_DELAY)
     _assert_status(tid_r, "completed")
+
+    resp = post_operation(tid_r, "capture", {
+        "merchant_data":  {"order_id": oid_r},
+        "financial_data": {"amount": 7000, "currency": "RUB"},
+    })
+    assert resp.status_code in (400, 409, 422), \
+        f"Expected error for second capture after completed, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("RB-033")
@@ -778,7 +775,7 @@ def test_double_stage_rebill_cancel_before_capture():
     token = _get_token()
     tid_r, oid_r = _rebill(token, "manual")
     _assert_status(tid_r, "authorized")
-    _cancel_op(tid_r, gen_order_id("rb32_cancel"), _AMOUNT)
+    _cancel_op(tid_r, oid_r, _AMOUNT)
     _assert_status(tid_r, "cancelled")
 
 
@@ -792,11 +789,11 @@ def test_double_stage_rebill_partial_cancel_then_capture():
     tid_r, oid_r = _rebill(token, "manual")
     _assert_status(tid_r, "authorized")
 
-    _cancel_op(tid_r, gen_order_id("rb33_cancel"), 3000)
+    _cancel_op(tid_r, oid_r, 3000)
     _assert_status(tid_r, "authorized")
 
     resp = post_operation(tid_r, "capture", {
-        "merchant_data":  {"order_id": gen_order_id("rb33_cap")},
+        "merchant_data":  {"order_id": oid_r},
         "financial_data": {"amount": 7000, "currency": "RUB"},
     })
     assert resp.status_code in (200, 201), f"Capture remaining failed: {resp.status_code}: {resp.text}"
@@ -806,31 +803,26 @@ def test_double_stage_rebill_partial_cancel_then_capture():
 
 @pytest.mark.tcid("RB-035")
 def test_double_stage_rebill_partial_capture_then_cancel():
-    """Двухстадийный rebill → частичный capture → cancel остатка → completed.
-    Шаг 1: rebill 10000 (manual) → authorized.
-    Шаг 2: /capture 3000 → authorized.
-    Шаг 3: /cancel 7000 → completed (или cancelled, фиксируем поведение)."""
+    """Двухстадийный rebill → capture → статус completed; cancel оставшегося → ошибка (уже completed)."""
     token = _get_token()
     tid_r, oid_r = _rebill(token, "manual")
     _assert_status(tid_r, "authorized")
 
     resp = post_operation(tid_r, "capture", {
-        "merchant_data":  {"order_id": gen_order_id("rb34_cap")},
+        "merchant_data":  {"order_id": oid_r},
         "financial_data": {"amount": 3000, "currency": "RUB"},
     })
-    assert resp.status_code in (200, 201), f"Partial capture failed: {resp.status_code}: {resp.text}"
+    assert resp.status_code in (200, 201), f"Capture failed: {resp.status_code}: {resp.text}"
     time.sleep(SETUP_DELAY)
-    _assert_status(tid_r, "authorized")
+    _assert_status(tid_r, "completed")
 
     resp = post_operation(tid_r, "cancel", {
-        "merchant_data":  {"order_id": gen_order_id("rb34_cancel")},
+        "merchant_data":  {"order_id": oid_r},
         "financial_data": {"amount": 7000, "currency": "RUB"},
     })
-    assert resp.status_code in (200, 201), f"Cancel remaining failed: {resp.status_code}: {resp.text}"
-    time.sleep(SETUP_DELAY)
-    final = get_request(f"{BASE_URL}/{tid_r}").json().get("status")
-    assert final in ("completed", "cancelled"), \
-        f"Expected completed or cancelled after partial-capture + cancel, got {final!r}"
+    assert resp.status_code in (400, 409, 422), \
+        f"Expected error for cancel after completed, got {resp.status_code}: {resp.text}"
+    assert_error_response(resp)
 
 
 @pytest.mark.tcid("RB-036")
@@ -843,7 +835,7 @@ def test_double_stage_rebill_capture_amount_exceeds():
     _assert_status(tid_r, "authorized")
 
     resp = post_operation(tid_r, "capture", {
-        "merchant_data":  {"order_id": gen_order_id("rb35_cap")},
+        "merchant_data":  {"order_id": oid_r},
         "financial_data": {"amount": _AMOUNT + 1, "currency": "RUB"},
     })
     assert resp.status_code in (400, 409, 422), \
@@ -864,7 +856,7 @@ def test_double_stage_rebill_repeated_capture_after_full():
     _assert_status(tid_r, "completed")
 
     resp = post_operation(tid_r, "capture", {
-        "merchant_data":  {"order_id": gen_order_id("rb36_cap2")},
+        "merchant_data":  {"order_id": oid_r},
         "financial_data": {"amount": _AMOUNT, "currency": "RUB"},
     })
     assert resp.status_code == 409, \
