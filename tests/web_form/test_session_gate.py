@@ -87,11 +87,11 @@ def _get_redirect_old(token: str, allow_redirects: bool = False) -> requests.Res
 # КЕЙСЫ С УСЛОВИЕМ НА BAPI-СОСТОЯНИЕ (ручная настройка)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GR-001")
-@pytest.mark.skip(reason="Требует платёж с HTML_PAGE в BAPI tr_fields (tr_type=9) — настроить вручную")
-def test_gate_redirect_html_page_tr_type_9(payment_token):
+def test_gate_redirect_html_page_tr_type_9():
     """TC-01: HTML_PAGE из BAPI tr_fields (tr_type=9).
     Ожидается 200 OK, Content-Type: text/html, тело — url-decoded HTML_PAGE."""
-    resp = _get_redirect(payment_token, allow_redirects=False)
+    token = _token_from_tr_ids("GR-001")
+    resp = _get_redirect(token, allow_redirects=False)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
     assert "text/html" in resp.headers.get("Content-Type", ""), \
         f"Expected text/html, got: {resp.headers.get('Content-Type')}"
@@ -99,42 +99,42 @@ def test_gate_redirect_html_page_tr_type_9(payment_token):
 
 
 @pytest.mark.tcid("GR-002")
-@pytest.mark.skip(reason="Требует платёж с HTML_PAGE в BAPI tr_fields (tr_type=11) — настроить вручную")
-def test_gate_redirect_html_page_tr_type_11(payment_token):
+def test_gate_redirect_html_page_tr_type_11():
     """TC-02: HTML_PAGE из BAPI tr_fields (tr_type=11), на tr_type=9 пусто.
     Ожидается 200 OK, text/html, тело из tr_type=11."""
-    resp = _get_redirect(payment_token, allow_redirects=False)
+    token = _token_from_tr_ids("GR-002")
+    resp = _get_redirect(token, allow_redirects=False)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
     assert "text/html" in resp.headers.get("Content-Type", "")
 
 
 @pytest.mark.tcid("GR-003")
-@pytest.mark.skip(reason="Требует HTML_PAGE на обоих tr_type=9 и 11 с разными значениями — настроить вручную")
-def test_gate_redirect_html_page_priority_tr_type_9(payment_token):
+def test_gate_redirect_html_page_priority_tr_type_9():
     """TC-03: HTML_PAGE есть и на tr_type=9, и на tr_type=11.
     Ожидается тело из tr_type=9 (итерация в порядке (9, 11))."""
-    resp = _get_redirect(payment_token, allow_redirects=False)
+    token = _token_from_tr_ids("GR-003")
+    resp = _get_redirect(token, allow_redirects=False)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
     assert "text/html" in resp.headers.get("Content-Type", "")
 
 
 @pytest.mark.tcid("GR-004")
-@pytest.mark.skip(reason="Требует платёж с BANK_REDIRECT_URL и без break_iframe — настроить вручную")
-def test_gate_redirect_302_normal(payment_token):
+def test_gate_redirect_302_normal():
     """TC-04: HTML_PAGE пусто; BANK_REDIRECT_URL заполнен; spg.break_iframe не '1'.
     Ожидается 302 Found, Location: url-decoded BANK_REDIRECT_URL."""
-    resp = _get_redirect(payment_token, allow_redirects=False)
+    token = _token_from_tr_ids("GR-004")
+    resp = _get_redirect(token, allow_redirects=False)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert location, "Expected non-empty Location header for 302"
 
 
 @pytest.mark.tcid("GR-005")
-@pytest.mark.skip(reason="Требует платёж с BANK_REDIRECT_URL и spg.break_iframe='1' — настроить вручную")
-def test_gate_redirect_200_iframe_break(payment_token):
+def test_gate_redirect_200_iframe_break():
     """TC-05: HTML_PAGE пусто; BANK_REDIRECT_URL заполнен; spg.break_iframe='1'.
     Ожидается 200 OK, text/html с авто-кликом, ссылка target='_top'."""
-    resp = _get_redirect(payment_token, allow_redirects=False)
+    token = _token_from_tr_ids("GR-005")
+    resp = _get_redirect(token, allow_redirects=False)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
     assert "text/html" in resp.headers.get("Content-Type", "")
     assert "target=\"_top\"" in resp.text or "target='_top'" in resp.text, \
@@ -142,32 +142,31 @@ def test_gate_redirect_200_iframe_break(payment_token):
 
 
 @pytest.mark.tcid("GR-006")
-@pytest.mark.skip(reason="Требует платёж с BANK_REDIRECT_URL + X-Forwarded-For — проверить через BAPI — настроить вручную")
-def test_gate_redirect_ip_from_x_forwarded_for(payment_token):
+def test_gate_redirect_ip_from_x_forwarded_for():
     """TC-06: GET с X-Forwarded-For: 1.2.3.4.
     Ожидается: ответ любой ветки; в БД save_tr_data сохранил customer_info.ipaddress=1.2.3.4."""
-    resp = _get_redirect(payment_token, headers={"X-Forwarded-For": "1.2.3.4"},
-                         allow_redirects=False)
+    token = _token_from_tr_ids("GR-006")
+    resp = _get_redirect(token, headers={"X-Forwarded-For": "1.2.3.4"}, allow_redirects=False)
     assert resp.status_code in (200, 302), \
         f"Expected 200 or 302, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("GR-007")
-@pytest.mark.skip(reason="Требует платёж с BANK_REDIRECT_URL — проверить IP через BAPI — настроить вручную")
-def test_gate_redirect_ip_from_remote(payment_token):
+def test_gate_redirect_ip_from_remote():
     """TC-07: GET без X-Forwarded-For.
     Ожидается: save_tr_data сохранил IP из request.remote."""
-    resp = _get_redirect(payment_token, allow_redirects=False)
+    token = _token_from_tr_ids("GR-007")
+    resp = _get_redirect(token, allow_redirects=False)
     assert resp.status_code in (200, 302), \
         f"Expected 200 or 302, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("GR-012")
-@pytest.mark.skip(reason="Требует платёж с tr_fields — сравнение ответов вручную — настроить вручную")
-def test_gate_redirect_old_endpoint_regression_with_tr_fields(payment_token):
+def test_gate_redirect_old_endpoint_regression_with_tr_fields():
     """TC-12: Старый /payments/{token}/redirect и новый дают одинаковый ответ (status, Location/body)."""
-    resp_new = _get_redirect(payment_token, allow_redirects=False)
-    resp_old = _get_redirect_old(payment_token, allow_redirects=False)
+    token = _token_from_tr_ids("GR-012")
+    resp_new = _get_redirect(token, allow_redirects=False)
+    resp_old = _get_redirect_old(token, allow_redirects=False)
     with parity_check(lambda: resp_old):
         assert resp_new.status_code == resp_old.status_code, \
             f"Status mismatch: new={resp_new.status_code}, old={resp_old.status_code}"
@@ -179,7 +178,6 @@ def test_gate_redirect_old_endpoint_regression_with_tr_fields(payment_token):
 
 
 @pytest.mark.tcid("GR-013")
-@pytest.mark.skip(reason="Требует платёж с tr_fields — настроить вручную; tr_ids.json: 'GR-013-new', 'GR-013-old'")
 def test_gate_redirect_behavior_identical_to_old_endpoint():
     """TC-13: GET на оба URL с X-Forwarded-For — тела и Location идентичны."""
     token_new = _token_from_tr_ids("GR-013-new")
@@ -192,20 +190,20 @@ def test_gate_redirect_behavior_identical_to_old_endpoint():
 
 
 @pytest.mark.tcid("GR-015")
-@pytest.mark.skip(reason="Требует платёж в финальном состоянии (success/fail) — настроить вручную")
-def test_gate_redirect_payment_in_final_state(payment_token):
+def test_gate_redirect_payment_in_final_state():
     """TC-15: Платёж в state success/fail — эндпоинт отрабатывает без state-guard'а."""
-    resp = _get_redirect(payment_token, allow_redirects=False)
+    token = _token_from_tr_ids("GR-015")
+    resp = _get_redirect(token, allow_redirects=False)
     assert resp.status_code in (200, 302), \
         f"Expected 200 or 302 for final-state payment, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("GR-016")
-@pytest.mark.skip(reason="Требует платёж без HTML_PAGE и BANK_REDIRECT_URL в tr_fields — настроить вручную; уточнить ожидаемое поведение с разработчиком")
-def test_gate_redirect_no_tr_fields(payment_token):
+def test_gate_redirect_no_tr_fields():
     """TC-16: В BAPI tr_fields нет ни HTML_PAGE, ни BANK_REDIRECT_URL.
     Ожидаемое поведение уточняется — возможен 302 с пустым Location или 5xx."""
-    resp = _get_redirect(payment_token, allow_redirects=False)
+    token = _token_from_tr_ids("GR-016")
+    resp = _get_redirect(token, allow_redirects=False)
     # Зафиксировать actual поведение; предположительно 302 с Location: None
     assert resp.status_code in (200, 302, 500), \
         f"Unexpected status {resp.status_code}: {resp.text[:200]}"
@@ -352,90 +350,89 @@ def _post_return_data_old(token: str, body: str = _FORM_DATA) -> requests.Respon
 # КЕЙСЫ С УСЛОВИЕМ НА СОСТОЯНИЕ ПЛАТЕЖА (ручная настройка)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GD-001")
-@pytest.mark.skip(reason="Требует платёж в состоянии ожидания confirm (3DS/redirect) — настроить вручную")
-def test_gate_return_data_post_success(payment_token):
+def test_gate_return_data_post_success():
     """TC-01: POST с PaRes/MD, X-SPG-Origin — успешный возврат с банка.
     Ожидается 302 Found, Location: <origin>/payment-sessions/<token>."""
-    resp = _post_return_data(payment_token)
+    token = _token_from_tr_ids("GD-001")
+    resp = _post_return_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _SPG_ORIGIN in location, f"Expected origin in Location, got: {location!r}"
-    assert payment_token in location, f"Expected token in Location, got: {location!r}"
+    assert token in location, f"Expected token in Location, got: {location!r}"
 
 
 @pytest.mark.tcid("GD-002")
-@pytest.mark.skip(reason="Требует платёж в состоянии ожидания confirm — настроить вручную")
-def test_gate_return_data_get_success(payment_token):
+def test_gate_return_data_get_success():
     """TC-02: GET с ?MD=...&PaRes=..., X-SPG-Origin — Base3DSHelper использует extract_data_get.
     Ожидается 302 Found с тем же result_url."""
-    resp = _get_return_data(payment_token)
+    token = _token_from_tr_ids("GD-002")
+    resp = _get_return_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _SPG_ORIGIN in location, f"Expected origin in Location, got: {location!r}"
 
 
 @pytest.mark.tcid("GD-003")
-@pytest.mark.skip(reason="Требует платёж, переходящий в state=skip_pending + WS-клиент — настроить вручную")
-def test_gate_return_data_skip_pending_ws_push(payment_token):
+def test_gate_return_data_skip_pending_ws_push():
     """TC-03: После confirm state → skip_pending; WS-клиент получает push state='skip_pending'.
     Ожидается 302 Found; PaymentStateSync push виден в /ws-канале."""
-    resp = _post_return_data(payment_token)
+    token = _token_from_tr_ids("GD-003")
+    resp = _post_return_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     # Проверка WS-фрейма выполняется вручную
 
 
 @pytest.mark.tcid("GD-004")
-@pytest.mark.skip(reason="Требует CONFIG.need_expire_confirm=true + повторный вызов — настроить вручную")
-def test_gate_return_data_repeat_increments_request_count(payment_token):
+def test_gate_return_data_repeat_increments_request_count():
     """TC-04: Повторный POST — state_data.safe_object.request_count инкрементируется.
     Ожидается 302 Found; request_count = 2."""
-    resp = _post_return_data(payment_token)
+    token = _token_from_tr_ids("GD-004")
+    resp = _post_return_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     # Проверить request_count в БД вручную
 
 
 @pytest.mark.tcid("GD-005")
-@pytest.mark.skip(reason="Требует spg.check_ip='1' + несовпадение IP — настроить вручную")
-def test_gate_return_data_ip_mismatch(payment_token):
+def test_gate_return_data_ip_mismatch():
     """TC-05: spg.check_ip='1', X-Forwarded-For не совпадает с сохранённым IP.
     Ожидается 4xx (check_ip_address_matching)."""
+    token = _token_from_tr_ids("GD-005")
     headers = {**_FORM_HEADERS, "X-Forwarded-For": "1.2.3.4"}
-    resp = _post_return_data(payment_token, headers=headers)
+    resp = _post_return_data(token, headers=headers)
     assert resp.status_code in range(400, 500), \
         f"Expected 4xx for IP mismatch, got {resp.status_code}: {resp.text[:200]}"
     assert_error_response(resp)
 
 
 @pytest.mark.tcid("GD-006")
-@pytest.mark.skip(reason="Требует spg.check_ip='1' + совпадающий IP — настроить вручную")
-def test_gate_return_data_ip_match(payment_token):
+def test_gate_return_data_ip_match():
     """TC-06: spg.check_ip='1', X-Forwarded-For совпадает с сохранённым IP.
     Ожидается 302 Found."""
-    resp = _post_return_data(payment_token)
+    token = _token_from_tr_ids("GD-006")
+    resp = _post_return_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("GD-007")
-@pytest.mark.skip(reason="Требует платёж без spg.check_ip — настроить вручную")
-def test_gate_return_data_no_ip_check(payment_token):
+def test_gate_return_data_no_ip_check():
     """TC-07: spg.check_ip не установлен — IP не проверяется, любой X-Forwarded-For принимается.
     Ожидается 302 Found."""
+    token = _token_from_tr_ids("GD-007")
     headers = {**_FORM_HEADERS, "X-Forwarded-For": "99.99.99.99"}
-    resp = _post_return_data(payment_token, headers=headers)
+    resp = _post_return_data(token, headers=headers)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("GD-013")
-@pytest.mark.skip(reason="Требует платёж в нужном состоянии — поведение Base3DSHelper с пустым body уточнить вручную")
-def test_gate_return_data_empty_post_body(payment_token):
+def test_gate_return_data_empty_post_body():
     """TC-13: POST с пустым телом (Content-Length: 0).
     Ожидается 302 Found (Base3DSHelper получает пустой dict); поведение наследуется от старого."""
-    resp = _post_return_data(payment_token, body="")
+    token = _token_from_tr_ids("GD-013")
+    resp = _post_return_data(token, body="")
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("GD-015")
-@pytest.mark.skip(reason="Требует два платежа в нужном состоянии + одинаковый X-SPG-Origin — настроить вручную; tr_ids.json: 'GD-015-new', 'GD-015-old'")
 def test_gate_return_data_identical_to_old_endpoint():
     """TC-15: Одинаковый запрос на новый и старый URL — Location идентичен."""
     token_new = _token_from_tr_ids("GD-015-new")
@@ -448,10 +445,10 @@ def test_gate_return_data_identical_to_old_endpoint():
 
 
 @pytest.mark.tcid("GD-016")
-@pytest.mark.skip(reason="Требует платёж в нужном состоянии — настроить вручную")
-def test_gate_return_data_location_no_query_params(payment_token):
+def test_gate_return_data_location_no_query_params():
     """TC-16: Location в 302 не содержит банковских query-параметров (PaRes/MD не пробрасываются)."""
-    resp = _post_return_data(payment_token)
+    token = _token_from_tr_ids("GD-016")
+    resp = _post_return_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert "PaRes" not in location, f"PaRes leaked into Location: {location!r}"
@@ -460,11 +457,11 @@ def test_gate_return_data_location_no_query_params(payment_token):
 
 
 @pytest.mark.tcid("GD-017")
-@pytest.mark.skip(reason="Требует платёж в состоянии ожидания confirm — проверить GET и POST — настроить вручную")
-def test_gate_return_data_get_and_post_both_return_302(payment_token):
+def test_gate_return_data_get_and_post_both_return_302():
     """TC-17: method='*' — GET и POST с одинаковыми данными оба возвращают 302."""
-    resp_post = _post_return_data(payment_token)
-    resp_get  = _get_return_data(payment_token)
+    token = _token_from_tr_ids("GD-017")
+    resp_post = _post_return_data(token)
+    resp_get  = _get_return_data(token)
     assert resp_post.status_code == 302, f"POST: Expected 302, got {resp_post.status_code}: {resp_post.text[:200]}"
     assert resp_get.status_code  == 302, f"GET: Expected 302, got {resp_get.status_code}: {resp_get.text[:200]}"
 
@@ -493,13 +490,84 @@ def test_gate_return_data_nonexistent_token():
 # ─────────────────────────────────────────────
 # АВТОРИЗАЦИЯ НЕ ТРЕБУЕТСЯ (автоматизированы)
 # ─────────────────────────────────────────────
-@pytest.mark.tcid("GD-010")
-def test_gate_return_data_no_auth_headers_accepted():
-    """TC-10: POST без Api-* и X-CUSTOMER-* заголовков — не 4xx auth-ошибка."""
+@pytest.mark.tcid("GD-010a")
+def test_gate_return_data_post_no_api_session_id():
+    """TC-10a: POST — заголовок Api-Session-ID отсутствует → 302 Found (авторизация не требуется)."""
     token = create_payment_token()
-    resp  = _post_return_data(token, headers=_FORM_HEADERS)
-    assert resp.status_code not in range(401, 404), \
-        f"Expected no auth error, got {resp.status_code}: {resp.text[:200]}"
+    headers = {**_FORM_HEADERS, "Api-Signature": "0" * 64}
+    resp = _post_return_data(token, headers=headers)
+    assert resp.status_code == 302, \
+        f"Expected 302 (no auth required), got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("GD-010b")
+def test_gate_return_data_post_api_session_id_empty_value():
+    """TC-10b: POST — Api-Session-ID передан без значения X-CUSTOMER-SESSION-ID (пустая строка) → 302 Found."""
+    token = create_payment_token()
+    headers = {**_FORM_HEADERS, "Api-Session-ID": ""}
+    resp = _post_return_data(token, headers=headers)
+    assert resp.status_code == 302, \
+        f"Expected 302 (no auth required), got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("GD-010c")
+def test_gate_return_data_post_no_api_signature():
+    """TC-10c: POST — заголовок Api-Signature отсутствует → 302 Found (авторизация не требуется)."""
+    token = create_payment_token()
+    headers = {**_FORM_HEADERS, "Api-Session-ID": "00000000-0000-4000-8000-000000000001"}
+    resp = _post_return_data(token, headers=headers)
+    assert resp.status_code == 302, \
+        f"Expected 302 (no auth required), got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("GD-010d")
+def test_gate_return_data_post_api_signature_empty_value():
+    """TC-10d: POST — Api-Signature передан без значения X-REQUEST-SIGNATURE (пустая строка) → 302 Found."""
+    token = create_payment_token()
+    headers = {**_FORM_HEADERS, "Api-Signature": ""}
+    resp = _post_return_data(token, headers=headers)
+    assert resp.status_code == 302, \
+        f"Expected 302 (no auth required), got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("GD-010e")
+def test_gate_return_data_get_no_api_session_id():
+    """TC-10e: GET — заголовок Api-Session-ID отсутствует → 302 Found (авторизация не требуется)."""
+    token = create_payment_token()
+    headers = {"X-SPG-Origin": _SPG_ORIGIN, "Api-Signature": "0" * 64}
+    resp = _get_return_data(token, headers=headers)
+    assert resp.status_code == 302, \
+        f"Expected 302 (no auth required), got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("GD-010f")
+def test_gate_return_data_get_api_session_id_empty_value():
+    """TC-10f: GET — Api-Session-ID передан без значения X-CUSTOMER-SESSION-ID (пустая строка) → 302 Found."""
+    token = create_payment_token()
+    headers = {"X-SPG-Origin": _SPG_ORIGIN, "Api-Session-ID": ""}
+    resp = _get_return_data(token, headers=headers)
+    assert resp.status_code == 302, \
+        f"Expected 302 (no auth required), got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("GD-010g")
+def test_gate_return_data_get_no_api_signature():
+    """TC-10g: GET — заголовок Api-Signature отсутствует → 302 Found (авторизация не требуется)."""
+    token = create_payment_token()
+    headers = {"X-SPG-Origin": _SPG_ORIGIN, "Api-Session-ID": "00000000-0000-4000-8000-000000000001"}
+    resp = _get_return_data(token, headers=headers)
+    assert resp.status_code == 302, \
+        f"Expected 302 (no auth required), got {resp.status_code}: {resp.text[:200]}"
+
+
+@pytest.mark.tcid("GD-010h")
+def test_gate_return_data_get_api_signature_empty_value():
+    """TC-10h: GET — Api-Signature передан без значения X-REQUEST-SIGNATURE (пустая строка) → 302 Found."""
+    token = create_payment_token()
+    headers = {"X-SPG-Origin": _SPG_ORIGIN, "Api-Signature": ""}
+    resp = _get_return_data(token, headers=headers)
+    assert resp.status_code == 302, \
+        f"Expected 302 (no auth required), got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("GD-011")
@@ -616,22 +684,22 @@ def _get_old_confirm_void_no_body_ping(token: str) -> requests.Response:
 # КЕЙСЫ С УСЛОВИЕМ НА СОСТОЯНИЕ ПЛАТЕЖА (ручная настройка)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GN-001")
-@pytest.mark.skip(reason="Требует платёж в state='3ds' — настроить вручную")
-def test_gate_return_no_data_get_state_3ds(payment_token):
+def test_gate_return_no_data_get_state_3ds():
     """TC-01: GET, state='3ds' → 302, Location=/payment-sessions/<token>, state→'pending'."""
-    resp = _get_return_no_data(payment_token)
+    token = _token_from_tr_ids("GN-001")
+    resp = _get_return_no_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url fragment in Location, got: {location!r}"
     assert _OLD_RESULT_URL_FRAGMENT not in location, f"Old /pay/ fragment leaked into Location: {location!r}"
-    assert payment_token in location, f"Expected token in Location, got: {location!r}"
+    assert token in location, f"Expected token in Location, got: {location!r}"
 
 
 @pytest.mark.tcid("GN-002")
-@pytest.mark.skip(reason="Требует платёж в state='3ds_redirect' — настроить вручную")
-def test_gate_return_no_data_get_state_3ds_redirect(payment_token):
+def test_gate_return_no_data_get_state_3ds_redirect():
     """TC-02: GET, state='3ds_redirect' → 302 на новый result_url; state→'pending'."""
-    resp = _get_return_no_data(payment_token)
+    token = _token_from_tr_ids("GN-002")
+    resp = _get_return_no_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
@@ -639,10 +707,10 @@ def test_gate_return_no_data_get_state_3ds_redirect(payment_token):
 
 
 @pytest.mark.tcid("GN-003")
-@pytest.mark.skip(reason="Требует платёж в state='redirect' — настроить вручную")
-def test_gate_return_no_data_get_state_redirect(payment_token):
+def test_gate_return_no_data_get_state_redirect():
     """TC-03: GET, state='redirect' → 302 на новый result_url; state→'pending'."""
-    resp = _get_return_no_data(payment_token)
+    token = _token_from_tr_ids("GN-003")
+    resp = _get_return_no_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
@@ -650,48 +718,48 @@ def test_gate_return_no_data_get_state_redirect(payment_token):
 
 
 @pytest.mark.tcid("GN-004")
-@pytest.mark.skip(reason="Требует платёж в state вне redirect_states (new/pending/success/fail) — настроить вручную")
-def test_gate_return_no_data_get_state_not_in_redirect_states(payment_token):
+def test_gate_return_no_data_get_state_not_in_redirect_states():
     """TC-04: GET, state не в {'3ds','3ds_redirect','redirect'} → 302 на новый result_url; state НЕ меняется."""
-    resp = _get_return_no_data(payment_token)
+    token = _token_from_tr_ids("GN-004")
+    resp = _get_return_no_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
 
 
 @pytest.mark.tcid("GN-005")
-@pytest.mark.skip(reason="Требует не-финальный платёж + проверка set_pending_payment_state — настроить вручную")
-def test_gate_return_no_data_post_success(payment_token):
+def test_gate_return_no_data_post_success():
     """TC-05: POST, любое не-финальное состояние → 201; set_pending_payment_state отработал."""
-    resp = _post_return_no_data(payment_token)
+    token = _token_from_tr_ids("GN-005")
+    resp = _post_return_no_data(token)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text[:200]}"
     body = resp.json()
     assert body, f"Expected non-empty response_entity, got: {body!r}"
 
 
 @pytest.mark.tcid("GN-006")
-@pytest.mark.skip(reason="Требует платёж в state='skip_pending' + WS-клиент — настроить вручную")
-def test_gate_return_no_data_post_skip_pending_ws_push(payment_token):
+def test_gate_return_no_data_post_skip_pending_ws_push():
     """TC-06: POST, state→'skip_pending' после set_pending → WS-клиент получает push state='skip_pending'."""
-    resp = _post_return_no_data(payment_token)
+    token = _token_from_tr_ids("GN-006")
+    resp = _post_return_no_data(token)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text[:200]}"
     # Проверка WS-фрейма выполняется вручную
 
 
 @pytest.mark.tcid("GN-007")
-@pytest.mark.skip(reason="Требует не-финальный платёж — тело POST передаётся, но должно игнорироваться")
-def test_gate_return_no_data_post_body_ignored(payment_token):
+def test_gate_return_no_data_post_body_ignored():
     """TC-07: POST с непустым телом → 201; тело запроса игнорируется бизнес-логикой."""
-    resp = _post_return_no_data(payment_token, body='{"some": "data"}',
+    token = _token_from_tr_ids("GN-007")
+    resp = _post_return_no_data(token, body='{"some": "data"}',
                                 headers={"Content-Type": "application/json"})
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("GN-013")
-@pytest.mark.skip(reason="Требует платёж в state из redirect_states — настроить вручную")
-def test_gate_return_no_data_old_confirm_void_result_url_unchanged(payment_token):
+def test_gate_return_no_data_old_confirm_void_result_url_unchanged():
     """TC-13: Регресс старого GET /confirm_void — Location остаётся /pay/<token>, не /payment-sessions/."""
-    resp = _get_old_confirm_void(payment_token)
+    token = _token_from_tr_ids("GN-013")
+    resp = _get_old_confirm_void(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _OLD_RESULT_URL_FRAGMENT in location, f"Expected old /pay/ in Location, got: {location!r}"
@@ -699,17 +767,16 @@ def test_gate_return_no_data_old_confirm_void_result_url_unchanged(payment_token
 
 
 @pytest.mark.tcid("GN-014")
-@pytest.mark.skip(reason="Требует не-финальный платёж — настроить вручную")
-def test_gate_return_no_data_old_confirm_void_no_body_regression(payment_token):
+def test_gate_return_no_data_old_confirm_void_no_body_regression():
     """TC-14: Регресс старого POST /confirm_void_no_body → 201 с response_entity; side-effects идентичны."""
-    resp = _post_old_confirm_void_no_body(payment_token)
+    token = _token_from_tr_ids("GN-014")
+    resp = _post_old_confirm_void_no_body(token)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text[:200]}"
     body = resp.json()
     assert body, f"Expected non-empty response_entity, got: {body!r}"
 
 
 @pytest.mark.tcid("GN-016")
-@pytest.mark.skip(reason="Требует два платежа в state из redirect_states — настроить вручную; tr_ids.json: 'GN-016-new', 'GN-016-old'")
 def test_gate_return_no_data_result_url_differs_old_vs_new():
     """TC-16: GET на старый и новый URL — оба 302, но Location разный: /pay/ vs /payment-sessions/."""
     token_new = _token_from_tr_ids("GN-016-new")
@@ -726,7 +793,6 @@ def test_gate_return_no_data_result_url_differs_old_vs_new():
 
 
 @pytest.mark.tcid("GN-017")
-@pytest.mark.skip(reason="Требует два не-финальных платежа — настроить вручную; tr_ids.json: 'GN-017-new', 'GN-017-old'")
 def test_gate_return_no_data_post_identical_to_old():
     """TC-17: POST с пустым body на старый и новый URL — идентичный 201 с response_entity."""
     token_new = _token_from_tr_ids("GN-017-new")
@@ -739,10 +805,10 @@ def test_gate_return_no_data_post_identical_to_old():
 
 
 @pytest.mark.tcid("GN-018")
-@pytest.mark.skip(reason="Требует платёж в состоянии ожидания confirm — проверить /gate/return/data — настроить вручную")
-def test_gate_return_data_also_uses_new_result_url(payment_token):
+def test_gate_return_data_also_uses_new_result_url():
     """TC-18: /gate/return/data тоже возвращает /payment-sessions/<token> — единый формат V1-контура."""
-    resp = _post_return_data(payment_token)
+    token = _token_from_tr_ids("GN-018")
+    resp = _post_return_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected /payment-sessions/ in Location, got: {location!r}"
@@ -891,42 +957,42 @@ def _post_old_3ds_method(token: str, body: str = _3DS_METHOD_DATA) -> requests.R
 # КЕЙСЫ С УСЛОВИЕМ НА СОСТОЯНИЕ ПЛАТЕЖА (ручная настройка)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("G3-001")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS fingerprinting — настроить вручную")
-def test_gate_3ds2_method_post_success(payment_token):
+def test_gate_3ds2_method_post_success():
     """TC-01: POST с threeDSMethodData, X-SPG-Origin — 302, новый result_url, fingerprinting сохранён."""
-    resp = _post_3ds2_method(payment_token)
+    token = _token_from_tr_ids("G3-001")
+    resp = _post_3ds2_method(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected /payment-sessions/ in Location, got: {location!r}"
     assert _OLD_RESULT_URL_FRAGMENT not in location, f"Old /pay/ leaked into Location: {location!r}"
-    assert payment_token in location, f"Expected token in Location, got: {location!r}"
+    assert token in location, f"Expected token in Location, got: {location!r}"
 
 
 @pytest.mark.tcid("G3-002")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS fingerprinting — настроить вручную")
-def test_gate_3ds2_method_empty_body(payment_token):
+def test_gate_3ds2_method_empty_body():
     """TC-02: POST с пустым телом — threeds_secure_method получает пустой dict; ожидается 302."""
-    resp = _post_3ds2_method(payment_token, body="")
+    token = _token_from_tr_ids("G3-002")
+    resp = _post_3ds2_method(token, body="")
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
 
 
 @pytest.mark.tcid("G3-003")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS fingerprinting — настроить вручную")
-def test_gate_3ds2_method_json_content_type(payment_token):
+def test_gate_3ds2_method_json_content_type():
     """TC-03: POST с Content-Type: application/json — aiohttp парсит form только для form-encoded,
     threeds_secure_method получает пустой dict; ожидается 302."""
+    token = _token_from_tr_ids("G3-003")
     headers = {"Content-Type": "application/json", "X-SPG-Origin": _SPG_ORIGIN}
-    resp = _post_3ds2_method(payment_token, body='{"threeDSMethodData": "abc"}', headers=headers)
+    resp = _post_3ds2_method(token, body='{"threeDSMethodData": "abc"}', headers=headers)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("G3-004")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS fingerprinting — настроить вручную")
-def test_gate_3ds2_method_result_url_new_format(payment_token):
+def test_gate_3ds2_method_result_url_new_format():
     """TC-04: 302 Location содержит /payment-sessions/<token>, не /pay/<token>."""
-    resp = _post_3ds2_method(payment_token)
+    token = _token_from_tr_ids("G3-004")
+    resp = _post_3ds2_method(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected /payment-sessions/ in Location, got: {location!r}"
@@ -935,10 +1001,10 @@ def test_gate_3ds2_method_result_url_new_format(payment_token):
 
 
 @pytest.mark.tcid("G3-011")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS fingerprinting — настроить вручную")
-def test_gate_3ds2_method_old_endpoint_result_url_unchanged(payment_token):
+def test_gate_3ds2_method_old_endpoint_result_url_unchanged():
     """TC-11: Регресс старого POST /threedsecure/method — Location остаётся /pay/<token>, не /payment-sessions/."""
-    resp = _post_old_3ds_method(payment_token)
+    token = _token_from_tr_ids("G3-011")
+    resp = _post_old_3ds_method(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _OLD_RESULT_URL_FRAGMENT in location, f"Expected /pay/ in old endpoint Location, got: {location!r}"
@@ -946,7 +1012,6 @@ def test_gate_3ds2_method_old_endpoint_result_url_unchanged(payment_token):
 
 
 @pytest.mark.tcid("G3-012")
-@pytest.mark.skip(reason="Требует два платежа в состоянии 3DS fingerprinting — настроить вручную; tr_ids.json: 'G3-012-new', 'G3-012-old'")
 def test_gate_3ds2_method_result_url_differs_old_vs_new():
     """TC-12: POST на старый и новый URL — оба 302, но Location разный: /pay/ vs /payment-sessions/."""
     token_new = _token_from_tr_ids("G3-012-new")
@@ -1102,43 +1167,43 @@ def _post_old_3ds_confirm(token: str, body: str = _3DS_RESULT_CRES) -> requests.
 # ВЕТКИ ОБРАБОТКИ (ручная настройка — state-dependent)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("G3R-001")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS fingerprinting + WS-клиент — настроить вручную")
-def test_gate_3ds2_result_fingerprint_branch(payment_token):
+def test_gate_3ds2_result_fingerprint_branch():
     """TC-01: POST с threeDSMethodData → 200 OK; state='fingerprint'; PaymentStateSync push."""
-    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_FINGERPRINT,
+    token = _token_from_tr_ids("G3R-001")
+    resp = _post_3ds2_result(token, body=_3DS_RESULT_FINGERPRINT,
                              headers={"Content-Type": "application/x-www-form-urlencoded"})
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
     assert resp.text.strip() == "", f"Expected empty body, got: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("G3R-002")
-@pytest.mark.skip(reason="Требует платёж с initiator не Widget, customer_info.term_url задан — настроить вручную")
-def test_gate_3ds2_result_regular_3ds_branch_302(payment_token):
+def test_gate_3ds2_result_regular_3ds_branch_302():
     """TC-02: POST cres, не виджет, term_url есть → 302, Location=/payment-sessions/<token>, state='3ds'."""
-    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES)
+    token = _token_from_tr_ids("G3R-002")
+    resp = _post_3ds2_result(token, body=_3DS_RESULT_CRES)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected /payment-sessions/ in Location, got: {location!r}"
     assert _OLD_RESULT_URL_FRAGMENT not in location, f"Old /pay/ leaked into Location: {location!r}"
-    assert payment_token in location, f"Expected token in Location, got: {location!r}"
+    assert token in location, f"Expected token in Location, got: {location!r}"
 
 
 @pytest.mark.tcid("G3R-003")
-@pytest.mark.skip(reason="Требует платёж с initiator не Widget, customer_info.term_url отсутствует — настроить вручную")
-def test_gate_3ds2_result_regular_3ds_no_term_url_state_3ds2ws(payment_token):
+def test_gate_3ds2_result_regular_3ds_no_term_url_state_3ds2ws():
     """TC-03: POST cres, не виджет, term_url отсутствует → 302; state='3ds2.ws'; tds_acs_url=false."""
-    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES)
+    token = _token_from_tr_ids("G3R-003")
+    resp = _post_3ds2_result(token, body=_3DS_RESULT_CRES)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
 
 
 @pytest.mark.tcid("G3R-006")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — MD из query — настроить вручную")
-def test_gate_3ds2_result_md_from_query(payment_token):
+def test_gate_3ds2_result_md_from_query():
     """TC-06: POST ?MD=MD123 с cres в body, без MD в body → state_data.tds_md='MD123'."""
-    path    = _3ds2_result_path(payment_token)
-    resp    = requests.post(
+    token = _token_from_tr_ids("G3R-006")
+    path  = _3ds2_result_path(token)
+    resp  = requests.post(
         f"{_WEB3_HOST}{path}?MD=MD123",
         data="cres=eyJ0aHJlZURTU2VydmVyVHJhbnNJRCI6IjAwMC4uLiJ9",
         headers=_3DS_RESULT_FORM_HEADERS,
@@ -1149,48 +1214,48 @@ def test_gate_3ds2_result_md_from_query(payment_token):
 
 
 @pytest.mark.tcid("G3R-007")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — MD из body — настроить вручную")
-def test_gate_3ds2_result_md_from_body(payment_token):
+def test_gate_3ds2_result_md_from_body():
     """TC-07: POST с form-data cres=..., MD=MD456, без ?MD → state_data.tds_md='MD456'."""
-    resp = _post_3ds2_result(payment_token,
+    token = _token_from_tr_ids("G3R-007")
+    resp = _post_3ds2_result(token,
                              body="cres=eyJ0aHJlZURTU2VydmVyVHJhbnNJRCI6IjAwMC4uLiJ9&MD=MD456")
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("G3R-008")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — MD по умолчанию — настроить вручную")
-def test_gate_3ds2_result_md_default(payment_token):
+def test_gate_3ds2_result_md_default():
     """TC-08: POST с cres без MD ни в body ни в query → state_data.tds_md='MD'+transaction_id."""
-    resp = _post_3ds2_result(payment_token,
+    token = _token_from_tr_ids("G3R-008")
+    resp = _post_3ds2_result(token,
                              body="cres=eyJ0aHJlZURTU2VydmVyVHJhbnNJRCI6IjAwMC4uLiJ9")
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("G3R-009")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — creq=skipped → синтетический cres — настроить вручную")
-def test_gate_3ds2_result_creq_skipped_synthetic_cres(payment_token):
+def test_gate_3ds2_result_creq_skipped_synthetic_cres():
     """TC-09: POST с creq=skipped → tds_pares=base64('3DS_AUTHENTICATE'), tds_md='MD'+transaction_id."""
-    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CREQ_SKIP)
+    token = _token_from_tr_ids("G3R-009")
+    resp = _post_3ds2_result(token, body=_3DS_RESULT_CREQ_SKIP)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
 
 
 @pytest.mark.tcid("G3R-010")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — legacy sms_code — настроить вручную")
-def test_gate_3ds2_result_sms_code_legacy(payment_token):
+def test_gate_3ds2_result_sms_code_legacy():
     """TC-10: POST с sms_code (без cres) → tds_pares=base64(sms_code); 302."""
-    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_SMS)
+    token = _token_from_tr_ids("G3R-010")
+    resp = _post_3ds2_result(token, body=_3DS_RESULT_SMS)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
 
 
 @pytest.mark.tcid("G3R-012")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS (не виджет, cres) — настроить вручную")
-def test_gate_3ds2_result_302_location_new_format(payment_token):
+def test_gate_3ds2_result_302_location_new_format():
     """TC-12: 302 Location содержит /payment-sessions/<token>, не /pay/<token>."""
-    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES)
+    token = _token_from_tr_ids("G3R-012")
+    resp = _post_3ds2_result(token, body=_3DS_RESULT_CRES)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected /payment-sessions/ in Location, got: {location!r}"
@@ -1199,19 +1264,19 @@ def test_gate_3ds2_result_302_location_new_format(payment_token):
 
 
 @pytest.mark.tcid("G3R-017")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS fingerprinting — X-SPG-Origin не нужен в этой ветке")
-def test_gate_3ds2_result_fingerprint_no_x_spg_origin(payment_token):
+def test_gate_3ds2_result_fingerprint_no_x_spg_origin():
     """TC-17: POST threeDSMethodData без X-SPG-Origin → 200 OK (result_url не используется в ветке fingerprinting)."""
-    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_FINGERPRINT,
+    token = _token_from_tr_ids("G3R-017")
+    resp = _post_3ds2_result(token, body=_3DS_RESULT_FINGERPRINT,
                              headers={"Content-Type": "application/x-www-form-urlencoded"})
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("G3R-018")
-@pytest.mark.skip(reason="Требует платёж с initiator=Widget + cres — настроить вручную")
-def test_gate_3ds2_result_widget_branch_no_x_spg_origin(payment_token):
+def test_gate_3ds2_result_widget_branch_no_x_spg_origin():
     """TC-18: POST cres, MetaData.Initiator='Widget', без X-SPG-Origin → 200 OK text/plain."""
-    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES,
+    token = _token_from_tr_ids("G3R-018")
+    resp = _post_3ds2_result(token, body=_3DS_RESULT_CRES,
                              headers={"Content-Type": "application/x-www-form-urlencoded"})
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text[:200]}"
     assert "text/plain" in resp.headers.get("Content-Type", ""), \
@@ -1219,25 +1284,25 @@ def test_gate_3ds2_result_widget_branch_no_x_spg_origin(payment_token):
 
 
 @pytest.mark.tcid("G3R-019")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS — проверка игнорирования auth-заголовков в реальном флоу")
-def test_gate_3ds2_result_auth_headers_ignored_real_flow(payment_token):
+def test_gate_3ds2_result_auth_headers_ignored_real_flow():
     """TC-19: POST с Api-Session-ID / Api-Signature → то же поведение, что и без них."""
+    token = _token_from_tr_ids("G3R-019")
     headers = {
         **_3DS_RESULT_FORM_HEADERS,
         "Api-Session-ID": "00000000-0000-0000-0000-000000000001",
         "Api-Signature":  "0" * 64,
     }
-    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES, headers=headers)
+    resp = _post_3ds2_result(token, body=_3DS_RESULT_CRES, headers=headers)
     assert resp.status_code == 302, f"Expected 302 (auth headers ignored), got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _NEW_RESULT_URL_FRAGMENT in location, f"Expected new result_url, got: {location!r}"
 
 
 @pytest.mark.tcid("G3R-020")
-@pytest.mark.skip(reason="Требует платёж в состоянии 3DS (не виджет, cres) — настроить вручную")
-def test_gate_3ds2_result_old_endpoint_location_unchanged(payment_token):
+def test_gate_3ds2_result_old_endpoint_location_unchanged():
     """TC-20: Регресс — POST на /threedsecure/confirm → Location=/pay/<token>, не /payment-sessions/."""
-    resp = _post_old_3ds_confirm(payment_token, body=_3DS_RESULT_CRES)
+    token = _token_from_tr_ids("G3R-020")
+    resp = _post_old_3ds_confirm(token, body=_3DS_RESULT_CRES)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
     assert _OLD_RESULT_URL_FRAGMENT in location, f"Expected /pay/ in old endpoint, got: {location!r}"
@@ -1245,7 +1310,6 @@ def test_gate_3ds2_result_old_endpoint_location_unchanged(payment_token):
 
 
 @pytest.mark.tcid("G3R-021")
-@pytest.mark.skip(reason="Требует два платежа в состоянии 3DS (не виджет) — настроить вручную; tr_ids.json: 'G3R-021-new', 'G3R-021-old'")
 def test_gate_3ds2_result_result_url_differs_old_vs_new():
     """TC-21: POST на старый и новый URL (cres, не виджет) — оба 302, Location разный."""
     token_new = _token_from_tr_ids("G3R-021-new")
@@ -1262,7 +1326,6 @@ def test_gate_3ds2_result_result_url_differs_old_vs_new():
 
 
 @pytest.mark.tcid("G3R-022")
-@pytest.mark.skip(reason="Требует платежи в состоянии fingerprinting — настроить вручную; tr_ids.json: 'G3R-022-fp-new', 'G3R-022-fp-old'")
 def test_gate_3ds2_result_fingerprint_and_widget_identical_old_vs_new():
     """TC-22: Fingerprinting ветка — оба 200; side effects идентичны между старым и новым URL."""
     token_fp_new = _token_from_tr_ids("G3R-022-fp-new")
@@ -1275,10 +1338,10 @@ def test_gate_3ds2_result_fingerprint_and_widget_identical_old_vs_new():
 
 
 @pytest.mark.tcid("G3R-023")
-@pytest.mark.skip(reason="Требует платёж с initiator=Widget + cres — проверка skip_tds_confirm_logic не активен")
-def test_gate_3ds2_result_skip_tds_confirm_not_active(payment_token):
+def test_gate_3ds2_result_skip_tds_confirm_not_active():
     """TC-23: is_skip_tds_confirm=False — widget-ветка идёт по обычной логике, не по skip_tds_confirm_logic."""
-    resp = _post_3ds2_result(payment_token, body=_3DS_RESULT_CRES,
+    token = _token_from_tr_ids("G3R-023")
+    resp = _post_3ds2_result(token, body=_3DS_RESULT_CRES,
                              headers={"Content-Type": "application/x-www-form-urlencoded"})
     assert resp.status_code == 200, f"Expected 200 (widget branch), got {resp.status_code}: {resp.text[:200]}"
     assert "text/plain" in resp.headers.get("Content-Type", ""), \
