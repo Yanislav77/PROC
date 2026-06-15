@@ -46,6 +46,8 @@ import uuid
 
 import pytest
 
+from _helpers.payloads import CARD_ASYNC
+
 from conftest import (
     post_transaction,
     post_operation,
@@ -55,6 +57,7 @@ from conftest import (
     SUBSCRIPTIONS_URL,
     MERCHANT_DATA,
     CUSTOMER_DATA,
+    CARD_DETAILS,
     THREED,
     SETUP_DELAY,
     assert_transaction_response,
@@ -91,7 +94,7 @@ _UUID4_RE = re.compile(
 # ─────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────
-def _payin_card(capture_mode: str, is_recurrent: bool) -> tuple[int, str, str | None]:
+def _payin_card(capture_mode: str, is_recurrent: bool, card: dict | None = None) -> tuple[int, str, str | None]:
     """Создаёт card-payin, поллит статус, возвращает (tid, order_id, recurrent_token|None)."""
     oid  = gen_order_id(f"rb_{capture_mode}")
     body = {
@@ -100,7 +103,7 @@ def _payin_card(capture_mode: str, is_recurrent: bool) -> tuple[int, str, str | 
         "financial_data":   {"amount": _AMOUNT, "currency": "RUB"},
         "flow_data":        {"is_recurrent": is_recurrent, "capture_mode": capture_mode, "threed_secure": THREED},
         "customer_data":    CUSTOMER_DATA,
-        "transaction_data": {"method": "card", "details": _CARD},
+        "transaction_data": {"method": "card", "details": card or _CARD},
     }
     resp = post_transaction(body)
     assert resp.status_code == 201, f"card payin failed: {resp.status_code}: {resp.text}"
@@ -1062,9 +1065,9 @@ def test_block_with_cancel_single_stage_rebill():
 
 @pytest.mark.tcid("RB-053")
 def test_block_with_cancel_double_stage_rebill():
-    """Block → полный cancel → двухстадийный rebill → capture → completed."""
+    """Block (4242424242424242) → полный cancel → двухстадийный rebill → capture → completed."""
     # Шаг 1: block → token
-    tid_p, oid_p, token = _payin_card("manual", is_recurrent=True)
+    tid_p, oid_p, token = _payin_card("manual", is_recurrent=True, card=CARD_ASYNC)
     assert token, "recurrent_token must be present"
     _assert_status(tid_p, "authorized")
 
