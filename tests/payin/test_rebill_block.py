@@ -112,6 +112,13 @@ def _payin_card(capture_mode: str, is_recurrent: bool, card: dict | None = None)
     poll = get_request(f"{BASE_URL}/{tid}")
     assert poll.status_code == 200
     token = (poll.json().get("transaction_data") or {}).get("recurrent_token")
+    if is_recurrent and not token:
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline and not token:
+            time.sleep(2)
+            poll = get_request(f"{BASE_URL}/{tid}")
+            assert poll.status_code == 200
+            token = (poll.json().get("transaction_data") or {}).get("recurrent_token")
     return tid, oid, token
 
 
