@@ -13,6 +13,9 @@
   G3-001..014   POST /gate/3ds2/method       (PROC-77)
   G3R-001..024  POST /gate/3ds2/result       (PROC-78, TC-04 и TC-05 в спеке отсутствуют)
 """
+import json
+from pathlib import Path
+
 import pytest
 import requests
 
@@ -23,6 +26,25 @@ from web_form.conftest import create_payment_token
 _WEB3_HOST = "https://web3preprod.testpaygate.com"
 _BASE_PATH  = "/api/v1/payment-sessions"
 _OLD_PATH   = "/payments"
+
+_TR_IDS_FILE = Path(__file__).parent.parent.parent / "tr_ids.json"
+
+
+def _load_tr_ids() -> dict:
+    if _TR_IDS_FILE.exists():
+        try:
+            return json.loads(_TR_IDS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def _token_from_tr_ids(key: str) -> str:
+    """Возвращает payment token UUID из tr_ids.json по ключу; pytest.skip если ключ отсутствует."""
+    val = _load_tr_ids().get(key)
+    if val is None:
+        pytest.skip(f'Add "{key}": "<token-uuid>" to tr_ids.json to run this test')
+    return str(val)
 
 
 # ─────────────────────────────────────────────
@@ -157,11 +179,11 @@ def test_gate_redirect_old_endpoint_regression_with_tr_fields(payment_token):
 
 
 @pytest.mark.tcid("GR-013")
-@pytest.mark.skip(reason="Требует платёж с tr_fields — настроить вручную")
+@pytest.mark.skip(reason="Требует платёж с tr_fields — настроить вручную; tr_ids.json: 'GR-013-new', 'GR-013-old'")
 def test_gate_redirect_behavior_identical_to_old_endpoint():
     """TC-13: GET на оба URL с X-Forwarded-For — тела и Location идентичны."""
-    token_new = create_payment_token()
-    token_old = create_payment_token()
+    token_new = _token_from_tr_ids("GR-013-new")
+    token_old = _token_from_tr_ids("GR-013-old")
     h = {"X-Forwarded-For": "203.0.113.42"}
     resp_new = _get_redirect(token_new, headers=h, allow_redirects=False)
     resp_old = _get_redirect_old(token_old, allow_redirects=False)
@@ -413,11 +435,11 @@ def test_gate_return_data_empty_post_body(payment_token):
 
 
 @pytest.mark.tcid("GD-015")
-@pytest.mark.skip(reason="Требует два платежа в нужном состоянии + одинаковый X-SPG-Origin — настроить вручную")
+@pytest.mark.skip(reason="Требует два платежа в нужном состоянии + одинаковый X-SPG-Origin — настроить вручную; tr_ids.json: 'GD-015-new', 'GD-015-old'")
 def test_gate_return_data_identical_to_old_endpoint():
     """TC-15: Одинаковый запрос на новый и старый URL — Location идентичен."""
-    token_new = create_payment_token()
-    token_old = create_payment_token()
+    token_new = _token_from_tr_ids("GD-015-new")
+    token_old = _token_from_tr_ids("GD-015-old")
     resp_new  = _post_return_data(token_new)
     resp_old  = _post_return_data_old(token_old)
     with parity_check(lambda: resp_old):
@@ -687,11 +709,11 @@ def test_gate_return_no_data_old_confirm_void_no_body_regression(payment_token):
 
 
 @pytest.mark.tcid("GN-016")
-@pytest.mark.skip(reason="Требует два платежа в state из redirect_states — настроить вручную")
+@pytest.mark.skip(reason="Требует два платежа в state из redirect_states — настроить вручную; tr_ids.json: 'GN-016-new', 'GN-016-old'")
 def test_gate_return_no_data_result_url_differs_old_vs_new():
     """TC-16: GET на старый и новый URL — оба 302, но Location разный: /pay/ vs /payment-sessions/."""
-    token_new = create_payment_token()
-    token_old = create_payment_token()
+    token_new = _token_from_tr_ids("GN-016-new")
+    token_old = _token_from_tr_ids("GN-016-old")
     resp_new  = _get_return_no_data(token_new)
     resp_old  = _get_old_confirm_void(token_old)
     with parity_check(lambda: resp_old):
@@ -704,11 +726,11 @@ def test_gate_return_no_data_result_url_differs_old_vs_new():
 
 
 @pytest.mark.tcid("GN-017")
-@pytest.mark.skip(reason="Требует два не-финальных платежа — настроить вручную")
+@pytest.mark.skip(reason="Требует два не-финальных платежа — настроить вручную; tr_ids.json: 'GN-017-new', 'GN-017-old'")
 def test_gate_return_no_data_post_identical_to_old():
     """TC-17: POST с пустым body на старый и новый URL — идентичный 201 с response_entity."""
-    token_new = create_payment_token()
-    token_old = create_payment_token()
+    token_new = _token_from_tr_ids("GN-017-new")
+    token_old = _token_from_tr_ids("GN-017-old")
     resp_new  = _post_return_no_data(token_new)
     resp_old  = _post_old_confirm_void_no_body(token_old)
     with parity_check(lambda: resp_old):
@@ -924,11 +946,11 @@ def test_gate_3ds2_method_old_endpoint_result_url_unchanged(payment_token):
 
 
 @pytest.mark.tcid("G3-012")
-@pytest.mark.skip(reason="Требует два платежа в состоянии 3DS fingerprinting — настроить вручную")
+@pytest.mark.skip(reason="Требует два платежа в состоянии 3DS fingerprinting — настроить вручную; tr_ids.json: 'G3-012-new', 'G3-012-old'")
 def test_gate_3ds2_method_result_url_differs_old_vs_new():
     """TC-12: POST на старый и новый URL — оба 302, но Location разный: /pay/ vs /payment-sessions/."""
-    token_new = create_payment_token()
-    token_old = create_payment_token()
+    token_new = _token_from_tr_ids("G3-012-new")
+    token_old = _token_from_tr_ids("G3-012-old")
     resp_new  = _post_3ds2_method(token_new)
     resp_old  = _post_old_3ds_method(token_old)
     with parity_check(lambda: resp_old):
@@ -1223,11 +1245,11 @@ def test_gate_3ds2_result_old_endpoint_location_unchanged(payment_token):
 
 
 @pytest.mark.tcid("G3R-021")
-@pytest.mark.skip(reason="Требует два платежа в состоянии 3DS (не виджет) — настроить вручную")
+@pytest.mark.skip(reason="Требует два платежа в состоянии 3DS (не виджет) — настроить вручную; tr_ids.json: 'G3R-021-new', 'G3R-021-old'")
 def test_gate_3ds2_result_result_url_differs_old_vs_new():
     """TC-21: POST на старый и новый URL (cres, не виджет) — оба 302, Location разный."""
-    token_new = create_payment_token()
-    token_old = create_payment_token()
+    token_new = _token_from_tr_ids("G3R-021-new")
+    token_old = _token_from_tr_ids("G3R-021-old")
     resp_new  = _post_3ds2_result(token_new, body=_3DS_RESULT_CRES)
     resp_old  = _post_old_3ds_confirm(token_old, body=_3DS_RESULT_CRES)
     with parity_check(lambda: resp_old):
@@ -1240,11 +1262,11 @@ def test_gate_3ds2_result_result_url_differs_old_vs_new():
 
 
 @pytest.mark.tcid("G3R-022")
-@pytest.mark.skip(reason="Требует платежи в состоянии fingerprinting и Widget — настроить вручную")
+@pytest.mark.skip(reason="Требует платежи в состоянии fingerprinting — настроить вручную; tr_ids.json: 'G3R-022-fp-new', 'G3R-022-fp-old'")
 def test_gate_3ds2_result_fingerprint_and_widget_identical_old_vs_new():
-    """TC-22: Fingerprinting и widget ветки — оба 200; side effects идентичны между старым и новым URL."""
-    token_fp_new = create_payment_token()
-    token_fp_old = create_payment_token()
+    """TC-22: Fingerprinting ветка — оба 200; side effects идентичны между старым и новым URL."""
+    token_fp_new = _token_from_tr_ids("G3R-022-fp-new")
+    token_fp_old = _token_from_tr_ids("G3R-022-fp-old")
     resp_fp_new = _post_3ds2_result(token_fp_new, body=_3DS_RESULT_FINGERPRINT,
                                     headers={"Content-Type": "application/x-www-form-urlencoded"})
     resp_fp_old = _post_old_3ds_confirm(token_fp_old, body=_3DS_RESULT_FINGERPRINT)

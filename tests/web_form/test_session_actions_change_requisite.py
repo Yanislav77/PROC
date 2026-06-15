@@ -162,12 +162,12 @@ def test_change_requisite_silent_200_on_non_user_action_state():
     token = create_payment_token()
     resp  = _post_reselect(token, _RESELECT_BODY)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
-    assert resp.json() == {}, f"Expected empty body, got: {resp.text}"
+    assert resp.content == b"", f"Expected empty body, got: {resp.text}"
 
 
 @pytest.mark.tcid("RC-017")
 def test_change_requisite_idempotent_on_non_user_action_state():
-    """TC-17: Два запроса подряд на платёж в state != 'user_action' — оба 200 {}.
+    """TC-17: Два запроса подряд на платёж в state != 'user_action' — оба 200 с пустым телом.
     PAPI не вызывается, PaymentStateSync push не отправляется."""
     token = create_payment_token()
     path  = _reselect_path(token)
@@ -176,7 +176,7 @@ def test_change_requisite_idempotent_on_non_user_action_state():
         resp = _post_reselect(token, _RESELECT_BODY, headers=_make_headers(path, raw))
         assert resp.status_code == 200, \
             f"Request {i + 1}: Expected 200, got {resp.status_code}: {resp.text}"
-        assert resp.json() == {}, \
+        assert resp.content == b"", \
             f"Request {i + 1}: Expected empty body, got: {resp.text}"
 
 
@@ -294,11 +294,11 @@ def test_change_requisite_nonexistent_token():
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("RC-013b")
 def test_change_requisite_old_endpoint_regression_silent():
-    """TC-13 (state=new): Старый /payments/{token}/reselect с X-* заголовками, state=new → тихий 200 {}."""
+    """TC-13 (state=new): Старый /payments/{token}/reselect с X-* заголовками, state=new → тихий 200 с пустым телом."""
     token = create_payment_token()
     resp  = _post_reselect_old(token, _RESELECT_BODY)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
-    assert resp.json() == {}, f"Expected empty body, got: {resp.text}"
+    assert resp.content == b"", f"Expected empty body, got: {resp.text}"
 
 
 @pytest.mark.tcid("RC-014")
