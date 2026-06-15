@@ -251,14 +251,9 @@ DB_HOST=...
 
 ### Ручные транзакции для confirm-тестов → `tr_ids.json`
 
-Некоторые happy-path тесты требуют транзакцию в определённом статусе.
-По умолчанию каждый тест создаёт её сам через фикстуру. Если транзакция уже есть — можно указать её ID вручную,
-чтобы не тратить время на создание.
-
-| Ключ | Статус транзакции | Тесты |
-|---|---|---|
-| `CON-045`, `CON-052`, `CON-072–075` | `waiting_3DS` | `test_confirm.py` |
-| `UA-001..005` | `waiting_action` (P2P) | `test_confirm_user_action.py` |
+Ряд тестов требует транзакцию или платёжный токен в определённом состоянии и берёт их из `tr_ids.json`.
+Тест автоматически вызывает `pytest.skip` если нужный ключ отсутствует — это позволяет запускать весь suite,
+не настраивая вручную каждый стенд.
 
 В корне проекта есть `tr_ids.json.example`. Создайте рядом файл `tr_ids.json`:
 
@@ -266,38 +261,82 @@ DB_HOST=...
 copy tr_ids.json.example tr_ids.json
 ```
 
-Откройте `tr_ids.json` и заполните нужные ID:
+> `tr_ids.json` не попадает в git — заполняется локально, лежит рядом с `terminals.json`.
+
+---
+
+#### BAPI-тесты (`operations/`)
+
+Значение — числовой **transaction_id**.
+
+| Ключ | Статус транзакции | Тест |
+|---|---|---|
+| `CON-045`, `CON-052`, `CON-072–075` | `waiting_3DS` | `test_confirm.py` |
+| `UA-001..005` | `waiting_action` (P2P) | `test_confirm_user_action.py` |
 
 ```json
 {
   "CON-045": 12345,
   "CON-052": 12346,
-  "CON-072": 12347,
-  "CON-073": 12348,
-  "CON-074": 12349,
-  "CON-075": 12350,
-  "UA-001": 12351,
-  "UA-002": 12352
+  "UA-001": 12351
 }
 ```
 
-- Если для кейса указан ID — тест использует эту транзакцию (GET /{id} для получения `order_id`)
-- Если оставить `null` — тест создаст транзакцию сам, как обычно
-- Каждый тест переводит транзакцию в другой статус, поэтому для каждого кейса нужна **отдельная** транзакция
-- P2P-транзакции (`waiting_action`) одноразовые: после первого запуска теста нужно обновить ID
+- Если оставить `null` — тест создаст транзакцию сам через фикстуру
+- P2P-транзакции (`waiting_action`) одноразовые: после запуска теста нужно обновить ID
 
-> `tr_ids.json` не попадает в git — заполняется локально перед запуском, лежит рядом с `terminals.json`.
-
-Альтернатива через CLI (удобно в терминале, перекрывает файл):
+Альтернатива через CLI (перекрывает файл):
 ```bash
 pytest tests/operations/test_confirm.py -k "CON-045" --tr-id CON-045:12345
-# несколько сразу:
 pytest tests/operations/test_confirm.py --tr-id CON-045:111 --tr-id CON-052:222
-# UA-тесты:
 pytest tests/operations/test_confirm_user_action.py --tr-id UA-001:12351
-# один ID для всех кейсов:
-pytest tests/operations/test_confirm.py --tr-id 12345
 ```
+
+---
+
+#### Web Form gate-тесты (`web_form/test_session_gate.py`)
+
+Значение — **payment token UUID** (не transaction_id!), например `550e8400-e29b-41d4-a716-446655440000`.
+Токен можно найти в URL платёжной формы или в логах по transaction_id.
+
+Большинство success-кейсов gate-тестов (GR/GD/GN/G3/G3R) требуют платёж в конкретном состоянии.
+Без нужного ключа в `tr_ids.json` тест **скипается**, а не падает.
+
+Полностью автоматизированы (tr_ids.json **не нужен**):
+- **GD-001, GD-002** — создают токен и отправляют submit автоматически (карта 4111111111111111, CVC=111 → 3DS)
+- **GD-005, GD-006, GD-007** — то же + проверка X-Forwarded-For / check_ip
+
+Требуют ручной настройки (нужен payment token UUID в нужном состоянии):
+
+| Ключ | Требуемое состояние | Тест |
+|---|---|---|
+| `GR-001..003` | HTML_PAGE в BAPI tr_fields (tr_type=9 или 11) | redirect → 200 text/html |
+| `GR-004`, `GR-005` | BANK_REDIRECT_URL заполнен | redirect → 302 |
+| `GR-006`, `GR-007` | BANK_REDIRECT_URL + проверка IP | redirect → 302 |
+| `GR-012`, `GR-015`, `GR-016` | разные tr_fields / финальный state / нет tr_fields | redirect |
+| `GD-003`, `GD-004` | ожидание confirm (3DS/redirect) | return/data → 302 |
+| `GD-013`, `GD-016`, `GD-017` | ожидание confirm | return/data → 302 |
+| `GD-015` | ожидание confirm | новый и старый эндпоинт → оба 302 |
+| `GN-001..007` | state из redirect_states (3ds / 3ds_redirect / redirect) | return/no-data → 302 |
+| `GN-013`, `GN-014`, `GN-018` | state из redirect_states / не-финальный | return/no-data |
+| `GN-016-new`, `GN-016-old` | state из redirect_states | сравнение old vs new result_url |
+| `GN-017-new`, `GN-017-old` | не-финальный state | POST old vs new → 201 |
+| `G3-001..004`, `G3-011` | 3DS fingerprinting | 3ds2/method → 302 |
+| `G3-012-new`, `G3-012-old` | 3DS fingerprinting | сравнение old vs new |
+| `G3R-001..003` | 3DS fingerprinting / ветка cres / нет term_url | 3ds2/result → 200/302 |
+| `G3R-006..010`, `G3R-012` | разные ветки tds_md, creq, sms_code | 3ds2/result → 302 |
+| `G3R-017..020`, `G3R-023` | fingerprinting без X-SPG-Origin / Widget / реальный флоу / old endpoint | 3ds2/result |
+| `G3R-021-new`, `G3R-021-old` | 3DS (cres, не виджет) | сравнение old vs new |
+| `G3R-022-fp-new`, `G3R-022-fp-old` | fingerprinting | сравнение 200 old vs new |
+
+Пример минимального `tr_ids.json` для запуска GN-001:
+```json
+{
+  "GN-001": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+> **GD-015** использует один ключ `"GD-015"` (не `"GD-015-new"`/`"GD-015-old"`): один токен вызывается на оба эндпоинта.
 
 ---
 
@@ -1010,7 +1049,7 @@ POST `/api/v1/payment-sessions/{token}/actions/transfer/confirm`
 | Регресс старых эндпоинтов | старый result_url `/pay/<token>` |
 | Новый result_url | `/payment-sessions/<token>` (не `/pay/<token>`) |
 
-Большинство success-кейсов (`state=3ds`, `state=redirect`, ветки с реальными 3DS-данными) скипнуты — требуют платёж в конкретном состоянии, настраивается вручную.
+Success-кейсы, требующие конкретного состояния платежа, берут токен из `tr_ids.json` и **скипаются** (не падают) если ключ не заполнен — заполни нужный ключ, и тест запустится автоматически. GD-001/002/005/006/007 полностью автоматизированы. 4 теста с ручной проверкой (G3-013, G3-014, GN-019, G3R-024) скипнуты безусловно.
 
 ---
 
