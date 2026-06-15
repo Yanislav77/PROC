@@ -13,7 +13,10 @@
   G3-001..014   POST /gate/3ds2/method       (PROC-77)
   G3R-001..024  POST /gate/3ds2/result       (PROC-78, TC-04 и TC-05 в спеке отсутствуют)
 """
+import hashlib
+import hmac as _hmac
 import json
+import uuid
 from pathlib import Path
 
 import pytest
@@ -346,14 +349,65 @@ def _post_return_data_old(token: str, body: str = _FORM_DATA) -> requests.Respon
     )
 
 
+_SUBMIT_BODY = {
+    "CustomerInfo": {"Phone": "+79991234567", "Email": "test@example.com"},
+    "PaymentMethod": "Card",
+    "PaymentDetails": {
+        "CardholderName": "TEST TEST",
+        "CVC": "111",
+        "CardNumber": "4111111111111111",
+        "ExpMonth": "01",
+        "ExpYear": "29",
+    },
+    "RebillFlag": False,
+    "ExtraData": {
+        "ScreenHeight": 1080, "ScreenWidth": 1920, "JavaEnabled": False,
+        "TimeZoneOffset": -180, "Region": "ru-RU", "UserLang": "ru",
+        "DeviceType": "desktop", "OsType": "windows", "ColorDepth": 32,
+        "UserAgent": "Mozilla/5.0", "acceptHeader": "text/html",
+        "javaScriptEnabled": True,
+    },
+    "ReceiptData": {},
+}
+
+
+def _submit_payment(token: str, x_forwarded_for: str | None = None) -> requests.Response:
+    """POST /payments/{token}/submit — кладёт платёж в состояние 3DS (CVC=111 < 600)."""
+    path = f"{_OLD_PATH}/{token}/submit"
+    raw  = json.dumps(_SUBMIT_BODY, separators=(",", ":"))
+    sid  = uuid.uuid4().hex[:8]
+    sig  = _hmac.new(
+        _cfg.CUSTOMER_MAC_KEY.encode(),
+        f"POST\n{path}\n{sid}\n{raw}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    headers = {
+        "Content-Type":          "application/json",
+        "X-CUSTOMER-SESSION-ID": sid,
+        "X-REQUEST-SIGNATURE":   sig,
+        "Origin":                _WEB3_HOST,
+        "Referer":               f"{_WEB3_HOST}/pay/{token}",
+    }
+    if x_forwarded_for:
+        headers["X-Forwarded-For"] = x_forwarded_for
+    return requests.post(
+        f"{_WEB3_HOST}{path}",
+        data=raw,
+        headers=headers,
+        timeout=_cfg.HTTP_TIMEOUT,
+    )
+
+
 # ─────────────────────────────────────────────
 # КЕЙСЫ С УСЛОВИЕМ НА СОСТОЯНИЕ ПЛАТЕЖА (ручная настройка)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GD-001")
 def test_gate_return_data_post_success():
     """TC-01: POST с PaRes/MD, X-SPG-Origin — успешный возврат с банка.
+    Предусловие: create_payment_token → submit (CVC=111 → 3DS).
     Ожидается 302 Found, Location: <origin>/payment-sessions/<token>."""
-    token = _token_from_tr_ids("GD-001")
+    token = create_payment_token()
+    _submit_payment(token)
     resp = _post_return_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
@@ -364,8 +418,10 @@ def test_gate_return_data_post_success():
 @pytest.mark.tcid("GD-002")
 def test_gate_return_data_get_success():
     """TC-02: GET с ?MD=...&PaRes=..., X-SPG-Origin — Base3DSHelper использует extract_data_get.
+    Предусловие: create_payment_token → submit (CVC=111 → 3DS).
     Ожидается 302 Found с тем же result_url."""
-    token = _token_from_tr_ids("GD-002")
+    token = create_payment_token()
+    _submit_payment(token)
     resp = _get_return_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
@@ -395,9 +451,11 @@ def test_gate_return_data_repeat_increments_request_count():
 @pytest.mark.tcid("GD-005")
 def test_gate_return_data_ip_mismatch():
     """TC-05: spg.check_ip='1', X-Forwarded-For не совпадает с сохранённым IP.
-    Ожидается 4xx (check_ip_address_matching)."""
-    token = _token_from_tr_ids("GD-005")
-    headers = {**_FORM_HEADERS, "X-Forwarded-For": "1.2.3.4"}
+    Предусловие: submit с X-Forwarded-For=1.1.1.1; gate/return/data — с 2.2.2.2.
+    Ожидается 4xx (check_ip_address_matching — точный тип уточнить у разработчика)."""
+    token = create_payment_token()
+    _submit_payment(token, x_forwarded_for="1.1.1.1")
+    headers = {**_FORM_HEADERS, "X-Forwarded-For": "2.2.2.2"}
     resp = _post_return_data(token, headers=headers)
     assert resp.status_code in range(400, 500), \
         f"Expected 4xx for IP mismatch, got {resp.status_code}: {resp.text[:200]}"
@@ -407,17 +465,23 @@ def test_gate_return_data_ip_mismatch():
 @pytest.mark.tcid("GD-006")
 def test_gate_return_data_ip_match():
     """TC-06: spg.check_ip='1', X-Forwarded-For совпадает с сохранённым IP.
+    Предусловие: submit с X-Forwarded-For=1.1.1.1; gate/return/data — с тем же IP.
     Ожидается 302 Found."""
-    token = _token_from_tr_ids("GD-006")
-    resp = _post_return_data(token)
+    token = create_payment_token()
+    _submit_payment(token, x_forwarded_for="1.1.1.1")
+    headers = {**_FORM_HEADERS, "X-Forwarded-For": "1.1.1.1"}
+    resp = _post_return_data(token, headers=headers)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
 
 
 @pytest.mark.tcid("GD-007")
 def test_gate_return_data_no_ip_check():
-    """TC-07: spg.check_ip не установлен — IP не проверяется, любой X-Forwarded-For принимается.
+    """TC-07: spg.check_ip не установлен (check_ip=0) — IP не проверяется.
+    Предусловие: submit с X-Forwarded-For=1.1.1.1; gate/return/data — с другим IP.
+    ВАЖНО: запускать после установки check_ip=0 в SPG-параметрах сервиса.
     Ожидается 302 Found."""
-    token = _token_from_tr_ids("GD-007")
+    token = create_payment_token()
+    _submit_payment(token, x_forwarded_for="1.1.1.1")
     headers = {**_FORM_HEADERS, "X-Forwarded-For": "99.99.99.99"}
     resp = _post_return_data(token, headers=headers)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
@@ -434,14 +498,20 @@ def test_gate_return_data_empty_post_body():
 
 @pytest.mark.tcid("GD-015")
 def test_gate_return_data_identical_to_old_endpoint():
-    """TC-15: Одинаковый запрос на новый и старый URL — Location идентичен."""
-    token_new = _token_from_tr_ids("GD-015-new")
-    token_old = _token_from_tr_ids("GD-015-old")
-    resp_new  = _post_return_data(token_new)
-    resp_old  = _post_return_data_old(token_old)
+    """TC-15: Один токен — новый и старый URL оба возвращают 302 на Location с тем же токеном.
+    Предусловие: tr_ids.json 'GD-015' — токен платежа в состоянии ожидания confirm (3DS)."""
+    token    = _token_from_tr_ids("GD-015")
+    resp_new = _post_return_data(token)
+    resp_old = _post_return_data_old(token)
     with parity_check(lambda: resp_old):
-        assert resp_new.status_code == resp_old.status_code == 302, \
-            f"Status mismatch: new={resp_new.status_code}, old={resp_old.status_code}"
+        assert resp_new.status_code == 302, \
+            f"New endpoint: Expected 302, got {resp_new.status_code}: {resp_new.text[:200]}"
+        assert resp_old.status_code == 302, \
+            f"Old endpoint: Expected 302, got {resp_old.status_code}: {resp_old.text[:200]}"
+        loc_new = resp_new.headers.get("Location", "")
+        loc_old = resp_old.headers.get("Location", "")
+        assert token in loc_new, f"New: token not in Location: {loc_new!r}"
+        assert token in loc_old, f"Old: token not in Location: {loc_old!r}"
 
 
 @pytest.mark.tcid("GD-016")
