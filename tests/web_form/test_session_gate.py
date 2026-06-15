@@ -13,7 +13,10 @@
 
   GD-001..017   GET/POST /gate/return/data   → см. test_session_gate_return_data.py (PROC-75)
 """
+import hashlib
+import hmac as _hmac
 import json
+import uuid
 from pathlib import Path
 
 import pytest
@@ -360,13 +363,57 @@ def _get_old_confirm_void_no_body_ping(token: str) -> requests.Response:
     )
 
 
+_SUBMIT_BODY = {
+    "CustomerInfo": {"Phone": "+79991234567", "Email": "test@example.com"},
+    "PaymentMethod": "Card",
+    "PaymentDetails": {
+        "CardholderName": "TEST TEST",
+        "CVC": "111",
+        "CardNumber": "4111111111111111",
+        "ExpMonth": "01",
+        "ExpYear": "29",
+    },
+    "RebillFlag": False,
+    "ExtraData": {
+        "ScreenHeight": 1080, "ScreenWidth": 1920, "JavaEnabled": False,
+        "TimeZoneOffset": -180, "Region": "ru-RU", "UserLang": "ru",
+        "DeviceType": "desktop", "OsType": "windows", "ColorDepth": 32,
+        "UserAgent": "Mozilla/5.0", "acceptHeader": "text/html",
+        "javaScriptEnabled": True,
+    },
+    "ReceiptData": {},
+}
+
+
+def _submit_payment(token: str) -> requests.Response:
+    """POST /payments/{token}/submit — кладёт платёж в состояние 3DS (CVC=111 < 600)."""
+    path = f"{_OLD_PATH}/{token}/submit"
+    raw  = json.dumps(_SUBMIT_BODY, separators=(",", ":"))
+    sid  = uuid.uuid4().hex[:8]
+    sig  = _hmac.new(
+        _cfg.CUSTOMER_MAC_KEY.encode(),
+        f"POST\n{path}\n{sid}\n{raw}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    headers = {
+        "Content-Type":          "application/json",
+        "X-CUSTOMER-SESSION-ID": sid,
+        "X-REQUEST-SIGNATURE":   sig,
+        "Origin":                _WEB3_HOST,
+        "Referer":               f"{_WEB3_HOST}/pay/{token}",
+    }
+    return requests.post(f"{_WEB3_HOST}{path}", data=raw, headers=headers, timeout=_cfg.HTTP_TIMEOUT)
+
+
 # ─────────────────────────────────────────────
 # КЕЙСЫ С УСЛОВИЕМ НА СОСТОЯНИЕ ПЛАТЕЖА (ручная настройка)
 # ─────────────────────────────────────────────
 @pytest.mark.tcid("GN-001")
 def test_gate_return_no_data_get_state_3ds():
-    """TC-01: GET, state='3ds' → 302, Location=/payment-sessions/<token>, state→'pending'."""
-    token = _token_from_tr_ids("GN-001")
+    """TC-01: GET, state='3ds' → 302, Location=/payment-sessions/<token>, state→'pending'.
+    Предусловие: create_payment_token → submit (CVC=111 → 3DS)."""
+    token = create_payment_token()
+    _submit_payment(token)
     resp = _get_return_no_data(token)
     assert resp.status_code == 302, f"Expected 302, got {resp.status_code}: {resp.text[:200]}"
     location = resp.headers.get("Location", "")
