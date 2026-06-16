@@ -314,12 +314,14 @@ def test_gate_return_data_get_without_query_params():
 
 @pytest.mark.tcid("GD-017")
 def test_gate_return_data_get_and_post_same_response():
-    """TC-17: GET и POST с одинаковым PaRes/MD — оба возвращают 302, статус-коды совпадают.
-    Предусловие: create_payment_token → submit (CVC=111 → 3DS)."""
-    token    = create_payment_token()
-    _submit_payment(token)
-    resp_get  = _get_return_data(token)
-    resp_post = _post_return_data(token)
+    """TC-17: GET и POST с одинаковым PaRes/MD — статус-коды совпадают.
+    Каждый запрос использует свой токен. PaRes/MD одинаковые (_FORM_DATA)."""
+    token1 = create_payment_token(); _submit_payment(token1)
+    resp_get  = _get_return_data(token1, params=_FORM_DATA)
+
+    token2 = create_payment_token(); _submit_payment(token2)
+    resp_post = _post_return_data(token2, body=_FORM_DATA)
+
     assert resp_get.status_code == 302, \
         f"GET: Expected 302, got {resp_get.status_code}: {resp_get.text[:200]}"
     assert resp_post.status_code == 302, \
