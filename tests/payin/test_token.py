@@ -32,11 +32,11 @@ _BASE = {
 _STUB_TOKEN = "b928586b-e6ec-4400-9039-e36f19c0094c"
 
 _CARD_FOR_TOKEN = {
-    "pan": "4111111111111111",
+    "pan": "5413000000000000",
     "holder": "JOHN DOE",
     "expiry_month": "01",
     "expiry_year": "29",
-    "cvv": "999",
+    "cvv": "666",
 }
 
 _TOKEN_BASE = {
@@ -752,7 +752,7 @@ def test_token_details_with_pan(recurrent_token):
     body = {
         **_TOKEN_BASE,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("det_pan")},
-        "transaction_data": {"method": "token", "details": {"token": recurrent_token, "pan": "4111111111111111"}},
+        "transaction_data": {"method": "token", "details": {"token": recurrent_token, "pan": "5413000000000000"}},
     }
     resp = post_transaction(body)
     assert resp.status_code in (201, 400), f"Got {resp.status_code}: {resp.text}"

@@ -5,7 +5,7 @@ import pytest
 from _helpers.config import BASE_URL
 from _helpers.http_client import get_request
 
-POLL_ATTEMPTS = 6
+POLL_ATTEMPTS = 10
 POLL_DELAY    = 2.0
 
 

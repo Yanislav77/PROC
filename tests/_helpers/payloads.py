@@ -45,26 +45,71 @@ MERCHANT_DATA = {
     "return_url": "https://merchant.com/return",
 }
 
+# Non-3DS, success (Mastercard)
 CARD_DETAILS = {
-    "pan": "4111111111111111",
+    "pan": "5413000000000000",
     "holder": "JOHN DOE",
     "expiry_month": "05",
     "expiry_year": "27",
     "cvv": "666",
 }
 
-# Заглушка для нескольких карт. Сейчас используется только "default" (= CARD_DETAILS).
-# Когда понадобится — добавьте новую карту по образцу и используйте CARDS["visa"] и т.д.
-CARD_3DS  = {**CARD_DETAILS, "cvv": "550"}
+# Non-3DS, decline (Visa)
+CARD_DECLINE = {
+    "pan": "4716000000000007",
+    "holder": "JOHN DOE",
+    "expiry_month": "05",
+    "expiry_year": "27",
+    "cvv": "666",
+}
+
+# 3DS challenge, success (Visa)
+CARD_3DS = {
+    "pan": "4539000000000002",
+    "holder": "JOHN DOE",
+    "expiry_month": "05",
+    "expiry_year": "27",
+    "cvv": "666",
+}
+
+# 3DS challenge, decline (MIR)
+CARD_3DS_DECLINE = {
+    "pan": "2204000000000000",
+    "holder": "JOHN DOE",
+    "expiry_month": "05",
+    "expiry_year": "27",
+    "cvv": "666",
+}
+
+# 3DS redirect, success (Visa)
+CARD_3DS_REDIRECT = {
+    "pan": "4929000000000000",
+    "holder": "JOHN DOE",
+    "expiry_month": "05",
+    "expiry_year": "27",
+    "cvv": "666",
+}
+
+# 3DS redirect, decline (Visa)
+CARD_3DS_REDIRECT_DECLINE = {
+    "pan": "4556000000000000",
+    "holder": "JOHN DOE",
+    "expiry_month": "05",
+    "expiry_year": "27",
+    "cvv": "666",
+}
 
 # Async card (Case 4): NEW->PENDING->(CHARGED|REJECTED), delay = amount in seconds (max 20s).
-# Use small amounts (e.g. 5) to get a predictable processing window for status assertions.
 CARD_ASYNC = {**CARD_DETAILS, "pan": "4242424242424242"}
 
 CARDS = {
-    "default": CARD_DETAILS,
-    "3ds":     CARD_3DS,
-    "async":   CARD_ASYNC,
+    "default":               CARD_DETAILS,
+    "decline":               CARD_DECLINE,
+    "3ds":                   CARD_3DS,
+    "3ds_decline":           CARD_3DS_DECLINE,
+    "3ds_redirect":          CARD_3DS_REDIRECT,
+    "3ds_redirect_decline":  CARD_3DS_REDIRECT_DECLINE,
+    "async":                 CARD_ASYNC,
 }
 
 THREED = {"challenge_window_size": "05"}

@@ -46,7 +46,7 @@ def test_payout_card():
     body = {
         **_BASE,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("payout_card")},
-        "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
+        "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": "JOHN DOE"}},
     }
     data = _assert_payout_ok(post_transaction(body))
     tid = data["transaction_id"]
@@ -69,7 +69,7 @@ def test_payout_card_missing_pan():
 @pytest.mark.tcid("PY-013")
 def test_payout_card_missing_holder():
     """Выплата на карту без holder (обязательное). Ожидается 400."""
-    body = {**_BASE, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111"}}}
+    body = {**_BASE, "transaction_data": {"method": "card", "details": {"pan": "5413000000000000"}}}
     resp = post_transaction(body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -90,7 +90,7 @@ def test_payout_negative_amount():
     body = {
         **_BASE,
         "financial_data": {"amount": -1000, "currency": "RUB"},
-        "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
+        "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": "JOHN DOE"}},
     }
     resp = post_transaction(body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
@@ -103,7 +103,7 @@ def test_payout_zero_amount():
     body = {
         **_BASE,
         "financial_data": {"amount": 0, "currency": "RUB"},
-        "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
+        "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": "JOHN DOE"}},
     }
     resp = post_transaction(body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
@@ -116,7 +116,7 @@ def test_payout_invalid_currency():
     body = {
         **_BASE,
         "financial_data": {"amount": 1000, "currency": "INVALID"},
-        "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
+        "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": "JOHN DOE"}},
     }
     resp = post_transaction(body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
@@ -156,7 +156,7 @@ def test_payout_card_pan_too_short():
 @pytest.mark.tcid("PY-067")
 def test_payout_card_pan_too_long():
     """card.pan более 19 цифр. Ожидается 400."""
-    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "41111111111111111111", "holder": "JOHN DOE"}}}
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "54130000000000001111", "holder": "JOHN DOE"}}}
     resp = post_transaction(body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -183,7 +183,7 @@ def test_payout_card_pan_with_dashes():
 @pytest.mark.tcid("PY-070")
 def test_payout_card_holder_empty():
     """card.holder = '' (пустая строка). Ожидается 400."""
-    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": ""}}}
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": ""}}}
     resp = post_transaction(body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -192,7 +192,7 @@ def test_payout_card_holder_empty():
 @pytest.mark.tcid("PY-071")
 def test_payout_card_holder_spaces():
     """card.holder = '   ' (только пробелы). Ожидается 400."""
-    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "   "}}}
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": "   "}}}
     resp = post_transaction(body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -201,7 +201,7 @@ def test_payout_card_holder_spaces():
 @pytest.mark.tcid("PY-072")
 def test_payout_card_holder_cyrillic():
     """card.holder = 'ИВАН ПЕТРОВ' (кириллица). Ожидается 400."""
-    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "ИВАН ПЕТРОВ"}}}
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": "ИВАН ПЕТРОВ"}}}
     resp = post_transaction(body)
     assert resp.status_code == 400, f"Expected 400, got {resp.status_code}: {resp.text}"
     assert_error_response(resp)
@@ -210,7 +210,7 @@ def test_payout_card_holder_cyrillic():
 @pytest.mark.tcid("PY-073")
 def test_payout_card_holder_with_dot():
     """card.holder = 'JOHN DOE JR.' (с точкой). Ожидается 201 или 400."""
-    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE JR."}}}
+    body = {**_VALID, "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": "JOHN DOE JR."}}}
     resp = post_transaction(body)
     assert resp.status_code in (201, 400), f"Expected 201 or 400, got {resp.status_code}: {resp.text}"
 
@@ -219,7 +219,7 @@ def test_payout_card_holder_with_dot():
 def test_payout_card_expiry_month_13():
     """card.expiry_month = '13' (невалидный месяц). Ожидается 400."""
     body = {**_VALID, "transaction_data": {"method": "card", "details": {
-        "pan": "4111111111111111", "holder": "JOHN DOE",
+        "pan": "5413000000000000", "holder": "JOHN DOE",
         "expiry_month": "13", "expiry_year": "30", "cvv": "123",
     }}}
     resp = post_transaction(body)
@@ -231,7 +231,7 @@ def test_payout_card_expiry_month_13():
 def test_payout_card_expiry_month_00():
     """card.expiry_month = '00'. Ожидается 400."""
     body = {**_VALID, "transaction_data": {"method": "card", "details": {
-        "pan": "4111111111111111", "holder": "JOHN DOE",
+        "pan": "5413000000000000", "holder": "JOHN DOE",
         "expiry_month": "00", "expiry_year": "30", "cvv": "123",
     }}}
     resp = post_transaction(body)
@@ -243,7 +243,7 @@ def test_payout_card_expiry_month_00():
 def test_payout_card_expiry_month_single_digit():
     """card.expiry_month = '5' (без ведущего нуля). Ожидается 400."""
     body = {**_VALID, "transaction_data": {"method": "card", "details": {
-        "pan": "4111111111111111", "holder": "JOHN DOE",
+        "pan": "5413000000000000", "holder": "JOHN DOE",
         "expiry_month": "5", "expiry_year": "30", "cvv": "123",
     }}}
     resp = post_transaction(body)
@@ -255,7 +255,7 @@ def test_payout_card_expiry_month_single_digit():
 def test_payout_card_expired():
     """Истёкший срок действия карты (год 20). Ожидается 400."""
     body = {**_VALID, "transaction_data": {"method": "card", "details": {
-        "pan": "4111111111111111", "holder": "JOHN DOE",
+        "pan": "5413000000000000", "holder": "JOHN DOE",
         "expiry_month": "01", "expiry_year": "20", "cvv": "123",
     }}}
     resp = post_transaction(body)
@@ -267,7 +267,7 @@ def test_payout_card_expired():
 def test_payout_card_expiry_year_far_future():
     """card.expiry_year = '50' (слишком далёкий год). Ожидается 201 или 400."""
     body = {**_VALID, "transaction_data": {"method": "card", "details": {
-        "pan": "4111111111111111", "holder": "JOHN DOE",
+        "pan": "5413000000000000", "holder": "JOHN DOE",
         "expiry_month": "01", "expiry_year": "50", "cvv": "123",
     }}}
     resp = post_transaction(body)
@@ -279,7 +279,7 @@ def test_payout_card_without_expiry_fields():
     """Payout card без expiry_month/expiry_year — поля опциональны для payout. Ожидается 201."""
     body = {**_BASE,
             "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_no_exp")},
-            "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}}}
+            "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": "JOHN DOE"}}}
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"
 
@@ -289,7 +289,7 @@ def test_payout_card_response_has_transaction_id():
     """Payout card — ответ содержит transaction_id."""
     body = {**_BASE,
             "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_tid")},
-            "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}}}
+            "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": "JOHN DOE"}}}
     resp = post_transaction(body)
     assert resp.status_code == 201
     assert "transaction_id" in resp.json(), "transaction_id отсутствует в ответе payout"
@@ -314,7 +314,7 @@ def test_idempotency_same_key_returns_same_transaction_id():
         "financial_data": {"amount": 1000, "currency": "RUB"},
         "flow_data": {"is_recurrent": False, "capture_mode": "auto", "threed_secure": THREED},
         "customer_data": CUSTOMER_DATA,
-        "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
+        "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": "JOHN DOE"}},
     }
     raw = json.dumps(body, separators=(",", ":"))
     key = str(uuid.uuid4())
@@ -355,7 +355,7 @@ def test_payout_card_amount_with_kopecks():
         **_BASE,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("kopecks")},
         "financial_data": {"amount": 1050, "currency": "RUB"},
-        "transaction_data": {"method": "card", "details": {"pan": "4111111111111111", "holder": "JOHN DOE"}},
+        "transaction_data": {"method": "card", "details": {"pan": "5413000000000000", "holder": "JOHN DOE"}},
     }
     data = _assert_payout_ok(post_transaction(body))
     assert data["financial_data"]["amount"] == 1050
@@ -367,12 +367,12 @@ def test_payout_card_amount_with_kopecks():
 
 @pytest.mark.tcid("PY-154")
 def test_payout_card_declined():
-    """Выплата на карту, которую банк отклоняет (pan=5000000000000009). Ожидается статус rejected."""
+    """Выплата на карту, которую банк отклоняет (pan=4716000000000007). Ожидается статус rejected."""
     body = {
         **_BASE,
         "merchant_data": {**MERCHANT_DATA, "order_id": gen_order_id("py_declined")},
         "financial_data": {"amount": 1000, "currency": "RUB"},
-        "transaction_data": {"method": "card", "details": {"pan": "5000000000000009", "holder": "JOHN DOE"}},
+        "transaction_data": {"method": "card", "details": {"pan": "4716000000000007", "holder": "JOHN DOE"}},
     }
     resp = post_transaction(body)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}: {resp.text}"

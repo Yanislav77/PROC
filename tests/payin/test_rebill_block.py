@@ -70,11 +70,11 @@ from conftest import (
 _AMOUNT = 10000
 
 _CARD = {
-    "pan":          "4111111111111111",
+    "pan":          "5413000000000000",
     "holder":       "JOHN DOE",
     "expiry_month": "05",
     "expiry_year":  "27",
-    "cvv":          "999",  # ≥ 600 → без 3DS
+    "cvv":          "666",
 }
 
 _CARD_MIR = {
