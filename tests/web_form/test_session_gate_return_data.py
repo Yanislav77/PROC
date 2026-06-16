@@ -254,13 +254,17 @@ def test_gate_return_data_empty_post_body():
 
 @pytest.mark.tcid("GD-015")
 def test_gate_return_data_identical_to_old_endpoint():
-    """TC-15: POST новый, GET новый и POST старый — все возвращают 302; статус-коды совпадают.
-    Предусловие: create_payment_token → submit (CVC=111 → 3DS)."""
-    token        = create_payment_token()
-    _submit_payment(token)
-    resp_post_new = _post_return_data(token)
-    resp_get_new  = _get_return_data(token)
-    resp_post_old = _post_return_data_old(token)
+    """TC-15: POST новый, GET новый и POST старый — каждый со своим токеном, все возвращают 302.
+    Предусловие (для каждого запроса): create_payment_token → submit (CVC=111 → 3DS)."""
+    token1 = create_payment_token(); _submit_payment(token1)
+    resp_post_new = _post_return_data(token1)
+
+    token2 = create_payment_token(); _submit_payment(token2)
+    resp_get_new  = _get_return_data(token2)
+
+    token3 = create_payment_token(); _submit_payment(token3)
+    resp_post_old = _post_return_data_old(token3)
+
     with parity_check(lambda: resp_post_old):
         assert resp_post_new.status_code == 302, \
             f"POST new: Expected 302, got {resp_post_new.status_code}: {resp_post_new.text[:200]}"
@@ -268,11 +272,11 @@ def test_gate_return_data_identical_to_old_endpoint():
             f"GET new: Expected 302, got {resp_get_new.status_code}: {resp_get_new.text[:200]}"
         assert resp_post_old.status_code == 302, \
             f"POST old: Expected 302, got {resp_post_old.status_code}: {resp_post_old.text[:200]}"
-        assert token in resp_post_new.headers.get("Location", ""), \
+        assert token1 in resp_post_new.headers.get("Location", ""), \
             f"POST new: token not in Location: {resp_post_new.headers.get('Location')!r}"
-        assert token in resp_get_new.headers.get("Location", ""), \
+        assert token2 in resp_get_new.headers.get("Location", ""), \
             f"GET new: token not in Location: {resp_get_new.headers.get('Location')!r}"
-        assert token in resp_post_old.headers.get("Location", ""), \
+        assert token3 in resp_post_old.headers.get("Location", ""), \
             f"POST old: token not in Location: {resp_post_old.headers.get('Location')!r}"
 
 
@@ -292,18 +296,18 @@ def test_gate_return_data_get_without_query_params():
 
 @pytest.mark.tcid("GD-017")
 def test_gate_return_data_get_and_post_same_response():
-    """TC-17: POST и GET с одинаковым PaRes/MD — оба возвращают 302, статус-коды совпадают.
+    """TC-17: GET и POST с одинаковым PaRes/MD — оба возвращают 302, статус-коды совпадают.
     Предусловие: create_payment_token → submit (CVC=111 → 3DS)."""
     token    = create_payment_token()
     _submit_payment(token)
-    resp_post = _post_return_data(token)
     resp_get  = _get_return_data(token)
-    assert resp_post.status_code == 302, \
-        f"POST: Expected 302, got {resp_post.status_code}: {resp_post.text[:200]}"
+    resp_post = _post_return_data(token)
     assert resp_get.status_code == 302, \
         f"GET: Expected 302, got {resp_get.status_code}: {resp_get.text[:200]}"
-    assert resp_post.status_code == resp_get.status_code, \
-        f"Status mismatch: POST={resp_post.status_code}, GET={resp_get.status_code}"
+    assert resp_post.status_code == 302, \
+        f"POST: Expected 302, got {resp_post.status_code}: {resp_post.text[:200]}"
+    assert resp_get.status_code == resp_post.status_code, \
+        f"Status mismatch: GET={resp_get.status_code}, POST={resp_post.status_code}"
 
 
 # ─────────────────────────────────────────────
