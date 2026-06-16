@@ -87,6 +87,17 @@ def _get_return_data(token: str, params: str = _FORM_DATA,
     )
 
 
+def _get_return_data_old(token: str, params: str = _FORM_DATA) -> requests.Response:
+    path = _old_return_data_path(token)
+    return requests.get(
+        f"{_WEB3_HOST}{path}",
+        params=params,
+        headers={"X-SPG-Origin": _SPG_ORIGIN},
+        allow_redirects=False,
+        timeout=_cfg.HTTP_TIMEOUT,
+    )
+
+
 def _post_return_data_old(token: str, body: str = _FORM_DATA) -> requests.Response:
     path = _old_return_data_path(token)
     return requests.post(
@@ -254,7 +265,7 @@ def test_gate_return_data_empty_post_body():
 
 @pytest.mark.tcid("GD-015")
 def test_gate_return_data_identical_to_old_endpoint():
-    """TC-15: POST новый, GET новый и POST старый — каждый со своим токеном, все возвращают 302.
+    """TC-15: POST новый, GET новый, POST старый, GET старый — каждый со своим токеном, все 302.
     Предусловие (для каждого запроса): create_payment_token → submit (CVC=111 → 3DS)."""
     token1 = create_payment_token(); _submit_payment(token1)
     resp_post_new = _post_return_data(token1)
@@ -265,6 +276,9 @@ def test_gate_return_data_identical_to_old_endpoint():
     token3 = create_payment_token(); _submit_payment(token3)
     resp_post_old = _post_return_data_old(token3)
 
+    token4 = create_payment_token(); _submit_payment(token4)
+    resp_get_old  = _get_return_data_old(token4)
+
     with parity_check(lambda: resp_post_old):
         assert resp_post_new.status_code == 302, \
             f"POST new: Expected 302, got {resp_post_new.status_code}: {resp_post_new.text[:200]}"
@@ -272,12 +286,16 @@ def test_gate_return_data_identical_to_old_endpoint():
             f"GET new: Expected 302, got {resp_get_new.status_code}: {resp_get_new.text[:200]}"
         assert resp_post_old.status_code == 302, \
             f"POST old: Expected 302, got {resp_post_old.status_code}: {resp_post_old.text[:200]}"
+        assert resp_get_old.status_code == 302, \
+            f"GET old: Expected 302, got {resp_get_old.status_code}: {resp_get_old.text[:200]}"
         assert token1 in resp_post_new.headers.get("Location", ""), \
             f"POST new: token not in Location: {resp_post_new.headers.get('Location')!r}"
         assert token2 in resp_get_new.headers.get("Location", ""), \
             f"GET new: token not in Location: {resp_get_new.headers.get('Location')!r}"
         assert token3 in resp_post_old.headers.get("Location", ""), \
             f"POST old: token not in Location: {resp_post_old.headers.get('Location')!r}"
+        assert token4 in resp_get_old.headers.get("Location", ""), \
+            f"GET old: token not in Location: {resp_get_old.headers.get('Location')!r}"
 
 
 @pytest.mark.tcid("GD-016")
