@@ -75,7 +75,10 @@ def test_get_payment_session(payment_token):
     Response 200 OK:
       Content-Type: application/json
       {
-        "service_id": "...",
+        "main_data": {
+          "service_id": "...",
+          ...
+        },
         "state": "...",
         "payment_request": { ... },
         "theme": { ... }
@@ -84,8 +87,11 @@ def test_get_payment_session(payment_token):
     resp = _get(payment_token)
     assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.text}"
     data = resp.json()
-    for field in ("service_id", "state", "payment_request", "theme"):
+    for field in ("main_data", "state", "payment_request", "theme"):
         assert field in data, f"Missing field '{field}' in response: {list(data.keys())}"
+    assert "service_id" in data["main_data"], (
+        f"Missing field 'service_id' in main_data: {list(data['main_data'].keys())}"
+    )
 
 
 @pytest.mark.tcid("GP-014")
