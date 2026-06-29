@@ -3,7 +3,7 @@
 Интеграционные тесты для CORE REST API платёжного шлюза.
 Тесты делают реальные HTTP-запросы к препрод-окружению — никаких моков.
 
-**1530+ тестов** в 35 файлах, покрывают все эндпоинты API.
+**1580+ тестов** в 36 файлах, покрывают все эндпоинты API.
 
 ---
 
@@ -214,6 +214,7 @@ copy terminals.json.example terminals.json
 | `general/test_merchant.py` | Мерчант API |
 | `general/test_payment_links.py` | Платёжные ссылки |
 | `general/test_subscriptions.py` | Подписки |
+| `operations/test_field_mismatch_validation.py` | Валидация несовпадения полей |
 
 > Тесты в `web_form/` используют отдельную авторизацию (`CUSTOMER_MAC_KEY`) и не управляются через `terminals.json`.
 
@@ -588,7 +589,8 @@ tests/
 │   ├── test_cancel.py                 — отмена (CAN-xxx)
 │   ├── test_confirm.py                — подтверждение 3DS (CON-xxx)
 │   ├── test_confirm_user_action.py    — подтверждение user-action (UA-xxx)
-│   └── test_refund.py                 — возврат (RF-xxx)
+│   ├── test_refund.py                 — возврат (RF-xxx)
+│   └── test_field_mismatch_validation.py — валидация несовпадения полей (VAL-xxx)
 ├── general/                           — общие сценарии
 │   ├── test_auth.py                   — авторизация (A-xxx)
 │   ├── test_get_transactions.py       — GET статус (GT-xxx)
@@ -742,6 +744,25 @@ GET `/api/v1/transactions/{id}` и GET `/api/v1/transactions?order_id=`.
 | PAN и CVV не возвращаются в ответе | 200 |
 | masked_pan в нужном формате | 200 |
 | transaction_id — int, created_at в полях | 200 |
+
+---
+
+### `operations/test_field_mismatch_validation.py` — Валидация несовпадения полей (52 теста, VAL-001…VAL-050 + VAL-GET-01…VAL-GET-02)
+
+Проверяют, что при несовпадении `financial_data` или `merchant_data` в дочерней операции API возвращает `4xx`, а при совпадении — `200`.
+Охватывают эндпоинты `/confirm`, `/capture`, `/refund`, `/cancel` и GET-запросы.
+
+| Группа | ID | Сценарии |
+|---|---|---|
+| **Несовпадение amount** | VAL-001..004 | confirm / capture / refund / cancel — amount отличается → 4xx |
+| **Несовпадение currency** | VAL-005..008 | те же эндпоинты — currency отличается → 4xx |
+| **Несовпадение order_id** | VAL-009..012 | те же эндпоинты — order_id отличается → 4xx |
+| **Несовпадение description** | VAL-013..016 | те же эндпоинты — description отличается → 4xx или 200 |
+| **Несовпадение webhook_url** | VAL-017..020 | те же эндпоинты — webhook_url отличается → 4xx или 200 |
+| **Совпадающие значения** | VAL-021..032 | все комбинации корректных полей → 200 |
+| **Граничные случаи** | VAL-033..038 | null-значения, float вместо int, пустые строки |
+| **Актуальность GET** | VAL-GET-01..02 | GET `/transactions/{id}` и `?order_id=` возвращают данные родительской транзакции |
+| **return_url и прочее** | VAL-039..050 | несовпадение return_url, отсутствие полей — фиксация поведения |
 
 ---
 

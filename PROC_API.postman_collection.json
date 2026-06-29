@@ -1,0 +1,644 @@
+{
+  "info": {
+    "name": "PROC Payment API",
+    "description": "Payment processing API collection. Uses HMAC-SHA256 signature authentication.\n\nRequired environment variables:\n- BASE_URL: https://papiv3preprod.testpaygate.com\n- TERMINAL_ID: your terminal ID\n- SERVICE_SECRET: your signing secret\n- WEBPAY_BASE_URL: https://web3preprod.testpaygate.com",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "BASE_URL",
+      "value": "https://papiv3preprod.testpaygate.com",
+      "type": "string"
+    },
+    {
+      "key": "WEBPAY_BASE_URL",
+      "value": "https://web3preprod.testpaygate.com",
+      "type": "string"
+    },
+    {
+      "key": "TERMINAL_ID",
+      "value": "374",
+      "type": "string"
+    },
+    {
+      "key": "SERVICE_SECRET",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transaction_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "subscription_token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// ── Signature helper (runs before every request) ──",
+          "const timestamp = Math.floor(Date.now() / 1000).toString();",
+          "const terminalId = pm.variables.get('TERMINAL_ID');",
+          "const secret = pm.variables.get('SERVICE_SECRET');",
+          "",
+          "// Build raw body string (empty string for GET/DELETE)",
+          "let rawBody = '';",
+          "if (pm.request.body && pm.request.body.raw) {",
+          "    rawBody = pm.request.body.raw;",
+          "    // Resolve any {{variable}} references in body before signing",
+          "    rawBody = pm.variables.replaceIn(rawBody);",
+          "}",
+          "",
+          "const message = timestamp + terminalId + rawBody;",
+          "const signature = CryptoJS.HmacSHA256(message, secret).toString(CryptoJS.enc.Hex);",
+          "",
+          "pm.request.headers.upsert({ key: 'Api-Terminal-ID',    value: terminalId });",
+          "pm.request.headers.upsert({ key: 'Api-Timestamp',      value: timestamp });",
+          "pm.request.headers.upsert({ key: 'Api-Signature',      value: signature });",
+          "",
+          "// Add Idempotency-Key for mutating methods",
+          "if (['POST','PUT','PATCH'].includes(pm.request.method)) {",
+          "    const idempotencyKey = pm.variables.replaceIn('{{$guid}}');",
+          "    pm.request.headers.upsert({ key: 'Api-Idempotency-Key', value: idempotencyKey });",
+          "}"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "Create Payin (card)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.transaction_id) {",
+                  "        pm.collectionVariables.set('transaction_id', json.transaction_id);",
+                  "        console.log('Saved transaction_id:', json.transaction_id);",
+                  "    }",
+                  "    if (json.transaction_data && json.transaction_data.recurrent_token) {",
+                  "        pm.collectionVariables.set('subscription_token', json.transaction_data.recurrent_token);",
+                  "        console.log('Saved subscription_token:', json.transaction_data.recurrent_token);",
+                  "    }",
+                  "}",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payin\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\",\n    \"description\": \"Test payin\",\n    \"webhook_url\": \"https://webhook.site/your-uuid\",\n    \"return_url\": \"https://example.com/return\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"customer_data\": {\n    \"contact_info\": {\n      \"email\": \"test@example.com\",\n      \"phone\": \"+19991231212\"\n    },\n    \"browser_info\": {\n      \"screen_height\": 1080,\n      \"screen_width\": 1920,\n      \"time_zone\": -120,\n      \"color_depth\": 24,\n      \"user_agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64)\",\n      \"accept_header\": \"application/json\",\n      \"java_enabled\": false,\n      \"java_script_enabled\": true,\n      \"ip\": \"192.168.1.1\",\n      \"language\": \"en-US\"\n    }\n  },\n  \"transaction_data\": {\n    \"method\": \"card\",\n    \"details\": {\n      \"pan\": \"4111111111111111\",\n      \"holder\": \"JOHN DOE\",\n      \"expiry_month\": \"12\",\n      \"expiry_year\": \"26\",\n      \"cvv\": \"123\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            },
+            "description": "Create a payin transaction with card details. Saves `transaction_id` and `subscription_token` (if recurrent) to collection variables."
+          }
+        },
+        {
+          "name": "Create Payin (card, 3DS)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payin\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\",\n    \"return_url\": \"https://example.com/return\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"transaction_data\": {\n    \"method\": \"card\",\n    \"details\": {\n      \"pan\": \"4111111111111137\",\n      \"holder\": \"JOHN DOE\",\n      \"expiry_month\": \"12\",\n      \"expiry_year\": \"26\",\n      \"cvv\": \"123\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            },
+            "description": "Payin with a 3DS test card (4111111111111137). Response will contain action.type=threed_secure."
+          }
+        },
+        {
+          "name": "Create Payin (p2p)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payin\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"transaction_data\": {\n    \"method\": \"p2p\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Create Payin (qr)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payin\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"transaction_data\": {\n    \"method\": \"qr\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Create Payin (mobile)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payin\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"transaction_data\": {\n    \"method\": \"mobile\",\n    \"details\": {\n      \"phone\": \"+79991234567\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Create Payin (token / recurrent)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payin\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"transaction_data\": {\n    \"method\": \"token\",\n    \"details\": {\n      \"token\": \"{{subscription_token}}\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            },
+            "description": "Uses `subscription_token` saved from a previous payin with is_recurrent=true."
+          }
+        },
+        {
+          "name": "Create Payin (recurrent, save token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.transaction_data && json.transaction_data.recurrent_token) {",
+                  "        pm.collectionVariables.set('subscription_token', json.transaction_data.recurrent_token);",
+                  "    }",
+                  "    if (json.transaction_id) {",
+                  "        pm.collectionVariables.set('transaction_id', json.transaction_id);",
+                  "    }",
+                  "}",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payin\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"flow_data\": {\n    \"is_recurrent\": true\n  },\n  \"transaction_data\": {\n    \"method\": \"card\",\n    \"details\": {\n      \"pan\": \"4111111111111111\",\n      \"holder\": \"JOHN DOE\",\n      \"expiry_month\": \"12\",\n      \"expiry_year\": \"26\",\n      \"cvv\": \"123\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            },
+            "description": "Creates a payin with is_recurrent=true. Saves recurrent_token as `subscription_token`."
+          }
+        },
+        {
+          "name": "Create Payin (manual capture)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payin\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"flow_data\": {\n    \"capture_mode\": \"manual\"\n  },\n  \"transaction_data\": {\n    \"method\": \"card\",\n    \"details\": {\n      \"pan\": \"4111111111111111\",\n      \"holder\": \"JOHN DOE\",\n      \"expiry_month\": \"12\",\n      \"expiry_year\": \"26\",\n      \"cvv\": \"123\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            },
+            "description": "Creates a payin with capture_mode=manual. Transaction will be `authorized`, then use Capture endpoint."
+          }
+        },
+        {
+          "name": "Create Payout (card)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.transaction_id) {",
+                  "        pm.collectionVariables.set('transaction_id', json.transaction_id);",
+                  "    }",
+                  "}",
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payout\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\",\n    \"description\": \"Test payout\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"transaction_data\": {\n    \"method\": \"card\",\n    \"details\": {\n      \"pan\": \"4111111111111111\",\n      \"holder\": \"JOHN DOE\",\n      \"expiry_month\": \"12\",\n      \"expiry_year\": \"26\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Create Payout (bank_account)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payout\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"transaction_data\": {\n    \"method\": \"bank_account\",\n    \"details\": {\n      \"account_number\": \"40702810000000012345\",\n      \"swift_code\": \"SABRRUMM\",\n      \"bank_name\": \"Sberbank\",\n      \"account_holder_name\": \"JOHN DOE\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Create Payout (mobile)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payout\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"transaction_data\": {\n    \"method\": \"mobile\",\n    \"details\": {\n      \"phone\": \"+79991234567\",\n      \"provider\": \"Beeline\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Create Payout (sbp)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payout\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"transaction_data\": {\n    \"method\": \"sbp\",\n    \"details\": {\n      \"phone\": \"+79991234567\",\n      \"bank\": \"Sberbank\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Create Payout (wallet)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payout\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"transaction_data\": {\n    \"method\": \"wallet\",\n    \"details\": {\n      \"id\": \"wallet_abc123\",\n      \"brand\": \"PayPal\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Create Payout (token)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payout\",\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"transaction_data\": {\n    \"method\": \"token\",\n    \"details\": {\n      \"token\": \"{{subscription_token}}\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"]
+            },
+            "description": "Uses withdrawal_token from a previous payout response."
+          }
+        },
+        {
+          "name": "Get Transaction by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has transaction_id', () => {",
+                  "    pm.expect(pm.response.json()).to.have.property('transaction_id');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions/{{transaction_id}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions", "{{transaction_id}}"]
+            },
+            "description": "Retrieve a single transaction by its numeric ID. Uses `transaction_id` collection variable."
+          }
+        },
+        {
+          "name": "Get Transactions by Order ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions?order_id=order_123",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions"],
+              "query": [
+                { "key": "order_id", "value": "order_123", "description": "Merchant order ID" }
+              ]
+            },
+            "description": "Returns an array of transactions matching the given order_id."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transaction Operations",
+      "item": [
+        {
+          "name": "Confirm",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions/{{transaction_id}}/confirm",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions", "{{transaction_id}}", "confirm"]
+            },
+            "description": "Confirm a transaction that requires action (e.g. after 3DS)."
+          }
+        },
+        {
+          "name": "Capture",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions/{{transaction_id}}/capture",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions", "{{transaction_id}}", "capture"]
+            },
+            "description": "Capture an authorized transaction (created with capture_mode=manual)."
+          }
+        },
+        {
+          "name": "Cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions/{{transaction_id}}/cancel",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions", "{{transaction_id}}", "cancel"]
+            },
+            "description": "Cancel an authorized or pending transaction."
+          }
+        },
+        {
+          "name": "Refund",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/transactions/{{transaction_id}}/refund",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "transactions", "{{transaction_id}}", "refund"]
+            },
+            "description": "Refund a completed transaction. Supports partial refund (amount < original)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payment Links",
+      "item": [
+        {
+          "name": "Create Payment Link",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code === 201) {",
+                  "    const json = pm.response.json();",
+                  "    if (json.link_id) {",
+                  "        pm.collectionVariables.set('link_id', json.link_id);",
+                  "    }",
+                  "    console.log('Payment URL:', json.link_data && json.link_data.url);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"merchant_data\": {\n    \"order_id\": \"order_{{$randomInt}}\",\n    \"description\": \"Payment for order\",\n    \"return_url\": \"https://example.com/return\"\n  },\n  \"financial_data\": {\n    \"amount\": 10000,\n    \"currency\": \"RUB\"\n  },\n  \"customer_data\": {\n    \"contact_info\": {\n      \"email\": \"test@example.com\"\n    }\n  }\n}",
+              "options": { "raw": { "language": "json" } }
+            },
+            "url": {
+              "raw": "{{WEBPAY_BASE_URL}}/api/v1/payment-links",
+              "host": ["{{WEBPAY_BASE_URL}}"],
+              "path": ["api", "v1", "payment-links"]
+            },
+            "description": "Create a hosted payment page link. Response contains link_data.url for the customer."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Subscriptions",
+      "item": [
+        {
+          "name": "Cancel Subscription",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/subscriptions/{{subscription_token}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "subscriptions", "{{subscription_token}}"]
+            },
+            "description": "Cancel a recurring subscription by its token (UUID). Uses `subscription_token` collection variable."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Merchant",
+      "item": [
+        {
+          "name": "Get Balance",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Has financial_data', () => {",
+                  "    pm.expect(pm.response.json()).to.have.property('financial_data');",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/merchant/balance",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "merchant", "balance"]
+            },
+            "description": "Get current merchant balance. Response: {financial_data: {amount, currency}}"
+          }
+        }
+      ]
+    }
+  ]
+}

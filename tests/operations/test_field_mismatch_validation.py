@@ -775,3 +775,232 @@ def test_get_by_order_id_returns_parent_data():
     assert tx.get("merchant_data", {}).get("order_id") == oid, (
         f"order_id в ответе {tx.get('merchant_data', {}).get('order_id')!r} != {oid!r}"
     )
+
+
+# ─────────────────────────────────────────────
+# merchant_data.return_url — несовпадение и отсутствие
+# ─────────────────────────────────────────────
+
+_WRONG_RETURN_URL = "https://wrong-return.example.com/return"
+
+
+@pytest.mark.tcid("VAL-039")
+def test_confirm_return_url_mismatch():
+    """confirm: return_url отличается от родительской транзакции.
+    Фиксируем поведение: 4xx (ошибка несовпадения) или 200 (игнорируется)."""
+    oid = gen_order_id("val039_con_ru")
+    tid = _make_waiting_3ds(oid)
+    resp = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": oid, "return_url": _WRONG_RETURN_URL},
+        "financial_data": {"amount": _PARENT_AMOUNT, "currency": _PARENT_CURRENCY},
+        "result": {
+            "type": "threed_secure",
+            "details": {"data": {"pares": "test_pares", "md": "test_md"}},
+        },
+    })
+    assert resp.status_code in (200, 201, 400, 409, 422), (
+        f"Неожиданный статус при несовпадении return_url: {resp.status_code}: {resp.text}"
+    )
+
+
+@pytest.mark.tcid("VAL-040")
+def test_capture_return_url_mismatch():
+    """capture: return_url отличается от родительской транзакции.
+    Фиксируем поведение: 4xx (ошибка несовпадения) или 200 (игнорируется)."""
+    oid = gen_order_id("val040_cap_ru")
+    tid = make_block_payin(oid)
+    resp = post_operation(tid, "capture", {
+        "merchant_data": {"order_id": oid, "return_url": _WRONG_RETURN_URL},
+        "financial_data": {"amount": _PARENT_AMOUNT, "currency": _PARENT_CURRENCY},
+    })
+    assert resp.status_code in (200, 201, 400, 409, 422), (
+        f"Неожиданный статус при несовпадении return_url: {resp.status_code}: {resp.text}"
+    )
+
+
+@pytest.mark.tcid("VAL-041")
+def test_refund_return_url_mismatch():
+    """refund: return_url отличается от родительской транзакции.
+    Фиксируем поведение: 4xx (ошибка несовпадения) или 200 (игнорируется)."""
+    oid = gen_order_id("val041_ref_ru")
+    tid = make_completed_payin(oid)
+    resp = post_operation(tid, "refund", {
+        "merchant_data": {"order_id": oid, "return_url": _WRONG_RETURN_URL},
+        "financial_data": {"amount": _cfg.PAYIN_AMOUNT, "currency": _PARENT_CURRENCY},
+    })
+    assert resp.status_code in (200, 201, 400, 409, 422), (
+        f"Неожиданный статус при несовпадении return_url: {resp.status_code}: {resp.text}"
+    )
+
+
+@pytest.mark.tcid("VAL-042")
+def test_cancel_return_url_mismatch():
+    """cancel: return_url отличается от родительской транзакции.
+    Фиксируем поведение: 4xx (ошибка несовпадения) или 200 (игнорируется)."""
+    oid = gen_order_id("val042_can_ru")
+    tid = make_block_payin(oid)
+    resp = post_operation(tid, "cancel", {
+        "merchant_data": {"order_id": oid, "return_url": _WRONG_RETURN_URL},
+        "financial_data": {"amount": _PARENT_AMOUNT, "currency": _PARENT_CURRENCY},
+    })
+    assert resp.status_code in (200, 201, 400, 409, 422), (
+        f"Неожиданный статус при несовпадении return_url: {resp.status_code}: {resp.text}"
+    )
+
+
+@pytest.mark.tcid("VAL-043")
+def test_confirm_return_url_absent():
+    """confirm: return_url отсутствует в дочернем запросе, но есть в родительской транзакции.
+    Фиксируем поведение: ошибка (4xx) или игнорируется (200)."""
+    oid = gen_order_id("val043_con_no_ru")
+    tid = _make_waiting_3ds(oid)
+    resp = post_operation(tid, "confirm", {
+        "merchant_data": {"order_id": oid},  # return_url намеренно пропущен
+        "financial_data": {"amount": _PARENT_AMOUNT, "currency": _PARENT_CURRENCY},
+        "result": {
+            "type": "threed_secure",
+            "details": {"data": {"pares": "test_pares", "md": "test_md"}},
+        },
+    })
+    assert resp.status_code in (200, 201, 400, 409, 422), (
+        f"Неожиданный статус при отсутствии return_url: {resp.status_code}: {resp.text}"
+    )
+
+
+@pytest.mark.tcid("VAL-044")
+def test_capture_return_url_absent():
+    """capture: return_url отсутствует в дочернем запросе, но есть в родительской транзакции.
+    Фиксируем поведение: ошибка (4xx) или игнорируется (200)."""
+    oid = gen_order_id("val044_cap_no_ru")
+    tid = make_block_payin(oid)
+    resp = post_operation(tid, "capture", {
+        "merchant_data": {"order_id": oid},  # return_url намеренно пропущен
+        "financial_data": {"amount": _PARENT_AMOUNT, "currency": _PARENT_CURRENCY},
+    })
+    assert resp.status_code in (200, 201, 400, 409, 422), (
+        f"Неожиданный статус при отсутствии return_url: {resp.status_code}: {resp.text}"
+    )
+
+
+@pytest.mark.tcid("VAL-045")
+def test_refund_return_url_absent():
+    """refund: return_url отсутствует в дочернем запросе, но есть в родительской транзакции.
+    Фиксируем поведение: ошибка (4xx) или игнорируется (200)."""
+    oid = gen_order_id("val045_ref_no_ru")
+    tid = make_completed_payin(oid)
+    resp = post_operation(tid, "refund", {
+        "merchant_data": {"order_id": oid},  # return_url намеренно пропущен
+        "financial_data": {"amount": _cfg.PAYIN_AMOUNT, "currency": _PARENT_CURRENCY},
+    })
+    assert resp.status_code in (200, 201, 400, 409, 422), (
+        f"Неожиданный статус при отсутствии return_url: {resp.status_code}: {resp.text}"
+    )
+
+
+@pytest.mark.tcid("VAL-046")
+def test_cancel_return_url_absent():
+    """cancel: return_url отсутствует в дочернем запросе, но есть в родительской транзакции.
+    Фиксируем поведение: ошибка (4xx) или игнорируется (200)."""
+    oid = gen_order_id("val046_can_no_ru")
+    tid = make_block_payin(oid)
+    resp = post_operation(tid, "cancel", {
+        "merchant_data": {"order_id": oid},  # return_url намеренно пропущен
+        "financial_data": {"amount": _PARENT_AMOUNT, "currency": _PARENT_CURRENCY},
+    })
+    assert resp.status_code in (200, 201, 400, 409, 422), (
+        f"Неожиданный статус при отсутствии return_url: {resp.status_code}: {resp.text}"
+    )
+
+
+# ─────────────────────────────────────────────
+# Комбинированные несовпадения — capture и refund
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("VAL-047")
+def test_capture_all_fields_mismatch():
+    """capture: order_id, amount, currency, description, webhook_url — все неверны → 4xx.
+    Фиксируем: какая ошибка возвращается первой."""
+    oid = gen_order_id("val047_cap_all")
+    tid = make_block_payin(oid)
+    resp = post_operation(tid, "capture", {
+        "merchant_data": {
+            "order_id":    _WRONG_ORDER_ID,
+            "description": _WRONG_DESC,
+            "webhook_url": _WRONG_WEBHOOK,
+        },
+        "financial_data": {"amount": _WRONG_AMOUNT, "currency": _WRONG_CURRENCY},
+    })
+    assert resp.status_code >= 400, (
+        f"Ожидался 4xx при несовпадении всех полей, получен {resp.status_code}: {resp.text}"
+    )
+    assert_error_response(resp)
+    try:
+        print(f"\n[VAL-047] Первая ошибка при несовпадении всех полей в capture: {resp.json()}")
+    except Exception:
+        pass
+
+
+@pytest.mark.tcid("VAL-048")
+def test_refund_all_fields_mismatch():
+    """refund: order_id, amount (превышающий родительский), currency — все неверны → 4xx.
+    Фиксируем: какая ошибка возвращается первой."""
+    oid = gen_order_id("val048_ref_all")
+    tid = make_completed_payin(oid)
+    resp = post_operation(tid, "refund", {
+        "merchant_data": {
+            "order_id":    _WRONG_ORDER_ID,
+            "description": _WRONG_DESC,
+            "webhook_url": _WRONG_WEBHOOK,
+        },
+        "financial_data": {"amount": _cfg.PAYIN_AMOUNT + 1, "currency": _WRONG_CURRENCY},
+    })
+    assert resp.status_code >= 400, (
+        f"Ожидался 4xx при несовпадении всех полей, получен {resp.status_code}: {resp.text}"
+    )
+    assert_error_response(resp)
+    try:
+        print(f"\n[VAL-048] Первая ошибка при несовпадении всех полей в refund: {resp.json()}")
+    except Exception:
+        pass
+
+
+# ─────────────────────────────────────────────
+# Структура тела ошибки при несовпадении
+# ─────────────────────────────────────────────
+
+@pytest.mark.tcid("VAL-049")
+def test_mismatch_error_body_structure_on_order_id():
+    """cancel: при несовпадении order_id — тело ошибки содержит непустое поле message/error/errors."""
+    oid = gen_order_id("val049_err_body")
+    tid = make_block_payin(oid)
+    resp = post_operation(tid, "cancel", {
+        "merchant_data": {"order_id": _WRONG_ORDER_ID},
+        "financial_data": {"amount": _PARENT_AMOUNT, "currency": _PARENT_CURRENCY},
+    })
+    assert resp.status_code >= 400, (
+        f"Ожидался 4xx при несовпадении order_id, получен {resp.status_code}: {resp.text}"
+    )
+    data = resp.json()
+    has_message = bool(data.get("message") or data.get("error") or data.get("errors"))
+    assert has_message, (
+        f"Тело ошибки не содержит поля 'message', 'error' или 'errors': {data}"
+    )
+
+
+@pytest.mark.tcid("VAL-050")
+def test_mismatch_error_body_structure_on_amount():
+    """capture: при несовпадении amount — тело ошибки содержит непустое поле message/error/errors."""
+    oid = gen_order_id("val050_err_body_amt")
+    tid = make_block_payin(oid)
+    resp = post_operation(tid, "capture", {
+        "merchant_data": {"order_id": oid},
+        "financial_data": {"amount": _WRONG_AMOUNT, "currency": _PARENT_CURRENCY},
+    })
+    assert resp.status_code >= 400, (
+        f"Ожидался 4xx при несовпадении amount, получен {resp.status_code}: {resp.text}"
+    )
+    data = resp.json()
+    has_message = bool(data.get("message") or data.get("error") or data.get("errors"))
+    assert has_message, (
+        f"Тело ошибки не содержит поля 'message', 'error' или 'errors': {data}"
+    )

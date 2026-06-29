@@ -549,3 +549,119 @@ def test_content_type_not_json():
     resp = requests.post(BASE_URL, data=raw, headers=headers, timeout=30)
     assert_idempotency_echo(headers, resp)
     assert resp.status_code == 201, f"Expected 201, got {resp.status_code}"
+
+
+# ─────────────────────────────────────────────
+# GET-ЗАПРОСЫ — АУТЕНТИФИКАЦИЯ (A-026 … A-033)
+# Для GET: Api-Terminal-ID, Api-Signature, Api-Timestamp обязательны.
+# Api-Idempotency-Key для GET не требуется — намеренно не включаем.
+# Используем несуществующий ID /000000000000: если auth прошла → 404, иначе → 4xx auth-ошибка.
+# ─────────────────────────────────────────────
+_GET_URL = f"{BASE_URL}/000000000000"
+
+
+@pytest.mark.tcid("A-026")
+def test_get_empty_signature():
+    """GET с пустым Api-Signature. Ожидается 400, 401 или 403."""
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   "",
+        "Api-Timestamp":   str(int(time.time())),
+    }
+    resp = requests.get(_GET_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("A-027")
+def test_get_empty_terminal_id():
+    """GET с пустым Api-Terminal-ID. Ожидается 400, 401 или 403."""
+    ts = str(int(time.time()))
+    headers = {
+        "Api-Terminal-ID": "",
+        "Api-Signature":   calc_signature("", ts),
+        "Api-Timestamp":   ts,
+    }
+    resp = requests.get(_GET_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("A-028")
+def test_get_empty_timestamp():
+    """GET с пустым Api-Timestamp. Ожидается 400, 401 или 403."""
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   "0" * 64,
+        "Api-Timestamp":   "",
+    }
+    resp = requests.get(_GET_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("A-029")
+def test_get_invalid_timestamp_non_numeric():
+    """GET с нечисловым Api-Timestamp. Ожидается 400, 401 или 403."""
+    ts = "not_a_timestamp"
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   calc_signature(TERMINAL_ID, ts),
+        "Api-Timestamp":   ts,
+    }
+    resp = requests.get(_GET_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("A-030")
+def test_get_timestamp_as_float():
+    """GET с дробным Api-Timestamp. Ожидается 400, 401 или 403."""
+    ts = f"{int(time.time())}.5"
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   calc_signature(TERMINAL_ID, ts),
+        "Api-Timestamp":   ts,
+    }
+    resp = requests.get(_GET_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 401, 403), f"Expected 4xx, got {resp.status_code}"
+    assert_error_response(resp)
+
+
+@pytest.mark.tcid("A-031")
+def test_get_timestamp_boundary_exactly_5min_ago():
+    """GET с Api-Timestamp ровно 5 минут назад (граничное значение). Ожидается 400 или 404."""
+    ts = str(int(time.time()) - 300)
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   calc_signature(TERMINAL_ID, ts),
+        "Api-Timestamp":   ts,
+    }
+    resp = requests.get(_GET_URL, headers=headers, timeout=30)
+    assert resp.status_code in (400, 404), f"Expected 400 or 404, got {resp.status_code}"
+
+
+@pytest.mark.tcid("A-032")
+def test_get_timestamp_recent_past_within_window():
+    """GET с Api-Timestamp 4 минуты назад (внутри окна ±5 мин). Auth должна пройти → 404."""
+    ts = str(int(time.time()) - 240)
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   calc_signature(TERMINAL_ID, ts),
+        "Api-Timestamp":   ts,
+    }
+    resp = requests.get(_GET_URL, headers=headers, timeout=30)
+    assert resp.status_code == 404, f"Expected 404 (auth OK, tx not found), got {resp.status_code}: {resp.text}"
+
+
+@pytest.mark.tcid("A-033")
+def test_get_timestamp_near_future_within_window():
+    """GET с Api-Timestamp 4 минуты в будущем (внутри окна ±5 мин). Auth должна пройти → 404."""
+    ts = str(int(time.time()) + 240)
+    headers = {
+        "Api-Terminal-ID": TERMINAL_ID,
+        "Api-Signature":   calc_signature(TERMINAL_ID, ts),
+        "Api-Timestamp":   ts,
+    }
+    resp = requests.get(_GET_URL, headers=headers, timeout=30)
+    assert resp.status_code == 404, f"Expected 404 (auth OK, tx not found), got {resp.status_code}: {resp.text}"

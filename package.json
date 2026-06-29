@@ -1,0 +1,26 @@
+{
+  "name": "proc",
+  "version": "1.0.0",
+  "description": "Интеграционные тесты для CORE REST API платёжного шлюза. Тесты делают реальные HTTP-запросы к препрод-окружению — никаких моков.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Yanislav77/PROC.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Yanislav77/PROC/issues"
+  },
+  "homepage": "https://github.com/Yanislav77/PROC#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.61.0",
+    "@types/node": "^25.9.3"
+  }
+}
